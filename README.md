@@ -1,10 +1,10 @@
 # MoeKoeMusic Taskbar Lyrics
 
-> 嵌入到 Windows 任务栏内部的卡拉 OK 歌词显示插件
+> 浮动覆盖在 Windows 任务栏上方的卡拉 OK 歌词显示工具
 
 ## 项目简介
 
-这是一个独立运行的 Windows 工具，**不修改 MoeKoeMusic 本体**，通过监听其 WebSocket 服务（端口 6520）实时获取歌词与播放状态，并将歌词作为任务栏的子窗口进行渲染。
+这是一个独立运行的 Windows 工具，**不修改 MoeKoeMusic 本体**，通过监听其 WebSocket 服务（端口 6520）实时获取歌词与播放状态，并将歌词以浮动窗口形式覆盖在任务栏上方。采用独立浮动窗口方案（类似 TranslucentTB），不使用 `SetParent` 嵌入为子窗口。
 
 > **插件集成说明**
 >
@@ -12,9 +12,16 @@
 >
 > **当前无法作为正常插件运行的原因：**
 >
-> 宿主 MoeKoeMusic 的安装版（`app.asar`）中未包含 `native_launcher` 自动启动所需的 IPC 方法。源码版本的 `electron/preload.cjs` 虽然暴露了 `startNativeLauncher` / `stopNativeLauncher` / `isNativeLauncherRunning` 三个 API，但安装版的 `preload.cjs` 打包在 `app.asar` 内且不支持热替换。
+> Electron 安全沙箱限制：
+>
+> MoeKoeMusic 的 Electron popup 运行在 chrome-extension:// 或 file:// 协议下。
+>
+> Electron 中 Renderer / Popup 是受限环境，不能直接执行外部程序（child\_process.spawn、startNativeLauncher 等被禁）。
+>
+> 我希望插件的 exe 随主程序启动/退出，但现有 Electron API 没暴露这一能力。
 >
 > 因此插件在安装版环境下只能做到：
+>
 > - 通过 WebSocket 接收歌词与播放状态
 > - Popup 显示运行状态与控制按钮
 > - 通过 HTTP 接口停止 EXE
@@ -35,12 +42,12 @@
 
 ## 环境要求
 
-| 工具 | 版本 |
-|------|------|
-| Windows SDK | 10.0.20348+ |
+| 工具            | 版本          |
+| ------------- | ----------- |
+| Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
-| CMake | 3.20+ |
-| vcpkg | latest |
+| CMake         | 3.20+       |
+| vcpkg         | latest      |
 
 ## 构建
 
@@ -77,7 +84,7 @@ scripts\build.bat
 
 ## 协议
 
-详见 [MoeKoeMusic_TaskbarLyrics_开发文档.md](MoeKoeMusic_TaskbarLyrics_开发文档.md)
+详见 [MoeKoeMusic\_TaskbarLyrics\_开发文档.md](MoeKoeMusic_TaskbarLyrics_开发文档.md)
 
 ## 许可
 
