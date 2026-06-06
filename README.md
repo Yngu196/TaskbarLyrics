@@ -4,11 +4,13 @@
 
 ## 项目简介
 
-这是一个独立运行的 Windows 工具，**不修改 MoeKoeMusic 本体**，通过监听其 WebSocket 服务（端口 6520）实时获取歌词与播放状态，并将歌词以浮动窗口形式覆盖在任务栏上方。采用独立浮动窗口方案（类似 TranslucentTB），不使用 `SetParent` 嵌入为子窗口。
+MoeKoeMusic Taskbar Lyrics 是一个独立运行的 Windows 工具，**不修改 MoeKoeMusic 本体**。  
+它通过监听 MoeKoeMusic 提供的本地 WebSocket 服务（端口 6520），实时获取歌词和播放状态，并在任务栏上方以透明浮动窗口形式显示歌词。
 
-> **插件集成说明**
->
-> 本项目同时也是 MoeKoeMusic 的 Chrome Extension V3 插件，目录内包含 `manifest.json`、`background.js`、`popup.html` 等标准插件文件。
+
+> **插件集成说明**  
+> 本项目同时包含一个 Chrome Extension V3 插件（位于 `extension/` 目录），用于在 MoeKoeMusic Electron popup 中显示插件状态和控制按钮。  
+> **注意：** 由于 Electron 安全沙箱限制，插件无法直接启动本地 exe 程序，因此需要手动启动或使用 EXE 内置开机自启功能。
 >
 > **当前无法作为正常插件运行的原因：**
 >
