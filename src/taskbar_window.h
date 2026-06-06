@@ -5,12 +5,16 @@
 //   - 查找 Shell_TrayWnd
 //   - 创建作为其子窗口的 Layered Window
 //   - 监听任务栏变化并自适应调整位置 / 尺寸
+//   - 处理鼠标悬停/离开事件，显示控制按钮
 //
 #pragma once
+
+#include "lyrics_data.h"
 
 #include <windows.h>
 
 #include <cstdint>
+#include <functional>
 #include <string>
 
 namespace moekoe {
@@ -61,6 +65,17 @@ public:
     // 静态:查找任务栏窗口
     static HWND FindTaskbarHandle();
 
+    // 鼠标悬停状态
+    bool IsHovering() const { return isHovering_; }
+
+    // 按钮点击回调
+    using ButtonCallback = std::function<void(HoverButton)>;
+    void OnButtonClicked(ButtonCallback cb) { onButtonClicked_ = std::move(cb); }
+
+    // 悬停状态变化回调（用于立即触发重绘）
+    using HoverChangedCallback = std::function<void()>;
+    void OnHoverChanged(HoverChangedCallback cb) { onHoverChanged_ = std::move(cb); }
+
     // 窗口类名
     static constexpr const wchar_t* kWindowClass = L"MoeKoeTaskbarLyricsClass";
 
@@ -74,6 +89,7 @@ private:
     // 内部
     void DetectTaskbarInfo();
     void PositionLyricsInTaskbar();
+    HoverButton HitTestButton(int x, int y) const;
 
     // 状态
     HINSTANCE     hInstance_{nullptr};
@@ -82,6 +98,11 @@ private:
     TaskbarInfo   info_{};
     RECT          lastTaskbarRect_{0, 0, 0, 0};
     bool          created_{false};
+    bool          isHovering_{false};
+    bool          trackingMouse_{false};
+
+    ButtonCallback onButtonClicked_;
+    HoverChangedCallback onHoverChanged_;
 };
 
 } // namespace moekoe

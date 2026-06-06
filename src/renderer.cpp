@@ -87,7 +87,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             L"zh-CN",
             textFormat_.GetAddressOf());
         if (textFormat_) {
-            textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            textFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             textFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             textFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         }
@@ -196,9 +196,13 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
 
 void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset) {
     if (!renderTarget_ || !textFormat_ || !brush || text.empty()) return;
+    
+    // 水平偏移量（像素）
+    const float paddingX = 20.0f;
+    
     D2D1_RECT_F layout = D2D1::RectF(
-        0.0f, yOffset,
-        static_cast<FLOAT>(width_), yOffset + static_cast<FLOAT>(height_));
+        paddingX, yOffset,
+        static_cast<FLOAT>(width_) - paddingX, yOffset + static_cast<FLOAT>(height_));
     renderTarget_->DrawTextW(
         text.c_str(), static_cast<UINT32>(text.size()),
         textFormat_.Get(), layout, brush);
@@ -214,9 +218,12 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
 
+    // 水平偏移量（像素）
+    const float paddingX = 20.0f;
+
     // 先画全部普通颜色
     D2D1_RECT_F layoutRect = D2D1::RectF(
-        0.0f, 0.0f, static_cast<FLOAT>(width_), static_cast<FLOAT>(height_));
+        paddingX, 0.0f, static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_));
     renderTarget_->DrawTextW(
         text.c_str(), length, textFormat_.Get(), layoutRect, normalBrush_.Get());
 
@@ -230,13 +237,14 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
             Microsoft::WRL::ComPtr<IDWriteTextLayout> fullLayout;
             if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
                 text.c_str(), length, textFormat_.Get(),
-                static_cast<FLOAT>(width_), static_cast<FLOAT>(height_),
+                static_cast<FLOAT>(width_) - paddingX * 2.0f, static_cast<FLOAT>(height_),
                 fullLayout.GetAddressOf()))) {
 
                 DWRITE_TEXT_METRICS metrics{};
                 fullLayout->GetMetrics(&metrics);
 
-                const FLOAT textLeft = (static_cast<FLOAT>(width_) - metrics.width) / 2.0f;
+                // 文本左侧位置
+                const FLOAT textLeft = paddingX;
 
                 // 为了逐字高亮，我们需要知道每个字符的位置
                 // 这里我们用简单的方法：先计算出截止字符的位置
@@ -246,7 +254,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
                     highlightText.c_str(), static_cast<UINT32>(highlightText.size()),
                     textFormat_.Get(),
-                    static_cast<FLOAT>(width_), static_cast<FLOAT>(height_),
+                    static_cast<FLOAT>(width_) - paddingX * 2.0f, static_cast<FLOAT>(height_),
                     highlightLayout.GetAddressOf()))) {
 
                     DWRITE_TEXT_METRICS hlMetrics{};
@@ -256,7 +264,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
                     // 用裁剪区域画出高亮的部分
                     D2D1_RECT_F clipRect = D2D1::RectF(
-                        0.0f,
+                        textLeft,
                         0.0f,
                         textLeft + highlightWidth,
                         static_cast<FLOAT>(height_));
@@ -272,13 +280,85 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
 void TaskbarRenderer::DrawTranslatedText(const std::wstring& text) {
     if (!translationFormat_ || !translationBrush_ || text.empty()) return;
+    
+    // 水平偏移量（像素）
+    const float paddingX = 20.0f;
+    
     D2D1_RECT_F layout = D2D1::RectF(
-        0.0f, static_cast<FLOAT>(height_) * 0.55f,
-        static_cast<FLOAT>(width_), static_cast<FLOAT>(height_));
+        paddingX, static_cast<FLOAT>(height_) * 0.55f,
+        static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_));
     renderTarget_->DrawTextW(
         text.c_str(), static_cast<UINT32>(text.size()),
         translationFormat_.Get(),
         layout, translationBrush_.Get());
+}
+
+void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
+    if (!renderTarget_ || !normalBrush_) return;
+
+    const FLOAT w = static_cast<FLOAT>(width_);
+    const FLOAT h = static_cast<FLOAT>(height_);
+    const FLOAT btnSize = h * 0.7f;
+    const FLOAT spacing = 2.0f;
+    const FLOAT totalBtnWidth = btnSize * 3.0f + spacing * 2.0f;
+    const FLOAT startX = w - totalBtnWidth - 8.0f;
+    const FLOAT btnY = (h - btnSize) / 2.0f;
+
+    // 半透明背景
+    D2D1_RECT_F bgRect = D2D1::RectF(
+        startX - 4.0f, btnY - 2.0f,
+        startX + totalBtnWidth + 4.0f, btnY + btnSize + 2.0f);
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
+    renderTarget_->CreateSolidColorBrush(
+        D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
+        bgBrush.GetAddressOf());
+    if (bgBrush) {
+        renderTarget_->FillRoundedRectangle(
+            D2D1::RoundedRect(bgRect, 3.0f, 3.0f), bgBrush.Get());
+    }
+
+    // 按钮符号颜色
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> iconBrush;
+    renderTarget_->CreateSolidColorBrush(
+        D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.9f),
+        iconBrush.GetAddressOf());
+    if (!iconBrush) return;
+
+    // 创建按钮文字格式（小号字体）
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> btnFormat;
+    if (dwriteFactory_) {
+        dwriteFactory_->CreateTextFormat(
+            L"Segoe UI Symbol", nullptr,
+            DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            btnSize * 0.7f,
+            L"en-US",
+            btnFormat.GetAddressOf());
+        if (btnFormat) {
+            btnFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            btnFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        }
+    }
+    if (!btnFormat) return;
+
+    // 上一首 ⏮ (U+23EE)
+    D2D1_RECT_F prevRect = D2D1::RectF(startX, btnY, startX + btnSize, btnY + btnSize);
+    renderTarget_->DrawTextW(L"\u23EE", 1, btnFormat.Get(), prevRect, iconBrush.Get());
+
+    // 暂停/播放 ⏸ (U+23F8) / ▶ (U+25B6)
+    FLOAT ppX = startX + btnSize + spacing;
+    D2D1_RECT_F ppRect = D2D1::RectF(ppX, btnY, ppX + btnSize, btnY + btnSize);
+    if (isPlaying) {
+        renderTarget_->DrawTextW(L"\u23F8", 1, btnFormat.Get(), ppRect, iconBrush.Get());
+    } else {
+        renderTarget_->DrawTextW(L"\u25B6", 1, btnFormat.Get(), ppRect, iconBrush.Get());
+    }
+
+    // 下一首 ⏭ (U+23ED)
+    FLOAT nextX = startX + (btnSize + spacing) * 2.0f;
+    D2D1_RECT_F nextRect = D2D1::RectF(nextX, btnY, nextX + btnSize, btnY + btnSize);
+    renderTarget_->DrawTextW(L"\u23ED", 1, btnFormat.Get(), nextRect, iconBrush.Get());
 }
 
 void TaskbarRenderer::PresentToLayeredWindow() {
@@ -347,6 +427,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
                          state.currentLine != lastState_.currentLine ||
                          state.currentTranslated != lastState_.currentTranslated ||
                          state.isPlaying != lastState_.isPlaying ||
+                         state.isHovering != lastState_.isHovering ||
                          std::abs(state.progress - lastState_.progress) > 0.001);
     if (!stateChanged) {
         return;
@@ -363,8 +444,13 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
     renderTarget_->BeginDraw();
 
-    // 完全透明的背景！
-    renderTarget_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+    // 悬停时填充极低 alpha 背景，使整个窗口区域可接收鼠标消息
+    // alpha ≈ 1/255 肉眼不可见，但 Windows 不会将鼠标消息穿透
+    if (state.isHovering) {
+        renderTarget_->Clear(D2D1::ColorF(0, 0, 0, 0.004f));
+    } else {
+        renderTarget_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
+    }
 
     if (state.hasLyrics && !state.currentLine.empty()) {
         const std::wstring lineW = Utf8ToWide(state.currentLine);
@@ -378,6 +464,11 @@ void TaskbarRenderer::Render(const RenderState& state) {
         if (state.isPlaying) {
             DrawCentered(L"...", normalBrush_.Get(), 0.0f);
         }
+    }
+
+    // 鼠标悬停时绘制控制按钮
+    if (state.isHovering) {
+        DrawHoverControls(state.isPlaying);
     }
 
     HRESULT hr = renderTarget_->EndDraw();

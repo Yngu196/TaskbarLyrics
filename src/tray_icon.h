@@ -22,6 +22,8 @@ enum TrayMenuId : UINT {
     ID_MENU_AUTOSTART = ID_TRAY_MENU_BASE + 2,
     ID_MENU_RECONNECT = ID_TRAY_MENU_BASE + 3,
     ID_MENU_EXIT      = ID_TRAY_MENU_BASE + 4,
+    ID_MENU_SETTINGS  = ID_TRAY_MENU_BASE + 5,
+    ID_MENU_UNBIND    = ID_TRAY_MENU_BASE + 6,
 };
 
 class TrayIcon {
@@ -52,6 +54,9 @@ public:
     void SetMenuCheckedAutoStart(bool checked);
     void SetMenuLabelEnable(const std::wstring& label);
 
+    // 设置绑定模式（影响是否显示"解除绑定"菜单项）
+    void SetBoundMode(bool bound) { boundMode_ = bound; if (hMenu_) RebuildMenu(); }
+
     // 弹出右键菜单
     void ShowContextMenu(HWND hwnd);
 
@@ -75,6 +80,7 @@ private:
 
     bool checkedEnable_{true};
     bool checkedAutoStart_{true};
+    bool boundMode_{false};
     std::wstring labelEnable_{L"启用歌词显示"};
 
     MenuCallback menuCallback_;

@@ -6,6 +6,7 @@
 
 #include <shellapi.h>
 #include <windows.h>
+#include <windowsx.h>
 
 #include <algorithm>
 #include <vector>
@@ -55,12 +56,12 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     ::RegisterClassExW(&wc);
 
     // 3) 创建独立浮动窗口 (不嵌入任务栏)
-    //   WS_EX_TRANSPARENT  : 鼠标点击穿透
     //   WS_EX_NOACTIVATE   : 不抢夺焦点
     //   WS_EX_TOOLWINDOW   : 不在任务栏显示
     //   WS_EX_LAYERED      : 支持透明 (配合 UpdateLayeredWindow)
     //   WS_EX_TOPMOST      : 始终在任务栏上方
-    const DWORD exStyle = WS_EX_TRANSPARENT | WS_EX_NOACTIVATE |
+    //   注意: 不使用 WS_EX_TRANSPARENT，以便接收鼠标消息
+    const DWORD exStyle = WS_EX_NOACTIVATE |
                           WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TOPMOST;
     const DWORD style   = WS_POPUP;
 
@@ -309,6 +310,39 @@ void TaskbarWindow::Reposition() {
     PositionLyricsInTaskbar();
 }
 
+HoverButton TaskbarWindow::HitTestButton(int x, int y) const {
+    if (!hwnd_) return HoverButton::None;
+
+    RECT rc{};
+    ::GetWindowRect(hwnd_, &rc);
+    const int w = rc.right - rc.left;
+    const int h = rc.bottom - rc.top;
+
+    // 按钮区域: 在窗口右侧，三个按钮水平排列
+    // 每个按钮宽度约为高度的 1.2 倍，间距 2px
+    const int btnSize = static_cast<int>(h * 0.7);
+    const int btnY = (h - btnSize) / 2;
+    const int spacing = 2;
+    const int totalBtnWidth = btnSize * 3 + spacing * 2;
+    const int startX = w - totalBtnWidth - 8; // 右侧留 8px 边距
+
+    // 检查 y 是否在按钮区域内
+    if (y < btnY || y > btnY + btnSize) return HoverButton::None;
+
+    // Next 按钮 (最右侧)
+    int nextX = startX + (btnSize + spacing) * 2;
+    if (x >= nextX && x <= nextX + btnSize) return HoverButton::Next;
+
+    // PlayPause 按钮 (中间)
+    int ppX = startX + btnSize + spacing;
+    if (x >= ppX && x <= ppX + btnSize) return HoverButton::PlayPause;
+
+    // Prev 按钮 (最左侧)
+    if (x >= startX && x <= startX + btnSize) return HoverButton::Prev;
+
+    return HoverButton::None;
+}
+
 LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     TaskbarWindow* self = nullptr;
     if (msg == WM_NCCREATE) {
@@ -323,6 +357,43 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     if (!self) return ::DefWindowProcW(hwnd, msg, wParam, lParam);
 
     switch (msg) {
+    case WM_MOUSEMOVE: {
+        bool changed = false;
+        if (!self->isHovering_) {
+            self->isHovering_ = true;
+            changed = true;
+        }
+        if (!self->trackingMouse_) {
+            TRACKMOUSEEVENT tme{};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            tme.dwHoverTime = HOVER_DEFAULT;
+            ::TrackMouseEvent(&tme);
+            self->trackingMouse_ = true;
+        }
+        if (changed && self->onHoverChanged_) {
+            self->onHoverChanged_();
+        }
+        return 0;
+    }
+    case WM_MOUSELEAVE: {
+        self->isHovering_ = false;
+        self->trackingMouse_ = false;
+        if (self->onHoverChanged_) {
+            self->onHoverChanged_();
+        }
+        return 0;
+    }
+    case WM_LBUTTONDOWN: {
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
+        HoverButton btn = self->HitTestButton(x, y);
+        if (btn != HoverButton::None && self->onButtonClicked_) {
+            self->onButtonClicked_(btn);
+        }
+        return 0;
+    }
     case WM_DPICHANGED: {
         self->PositionLyricsInTaskbar();
         return 0;

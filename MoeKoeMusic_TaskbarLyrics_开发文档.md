@@ -1,12 +1,12 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
-> **版本：** v0.3（草案）  
-> **目标平台：** Windows 10/11（x64）  
-> **开发语言：** C++20  
-> **构建系统：** CMake + MSVC  
+> **版本：** v0.3（草案）\
+> **目标平台：** Windows 10/11（x64）\
+> **开发语言：** C++20\
+> **构建系统：** CMake + MSVC\
 > **协议：** GPL-2.0（继承自 MoeKoeMusic）
 
----
+***
 
 ## 目录
 
@@ -26,7 +26,7 @@
 6. [扩展与维护](#6-扩展与维护)
 7. [附录](#7-附录)
 
----
+***
 
 ## 1. 项目概述
 
@@ -40,23 +40,23 @@ MoeKoeMusic 是一款基于 Electron + Vue 3 的开源音乐播放器，其 Wind
 
 ### 1.3 设计原则
 
-| 原则 | 说明 |
-|------|------|
-| **零侵入** | 不修改 MoeKoeMusic 本体任何文件，独立 EXE 运行 |
-| **独立维护** | 插件可脱离主程序版本独立迭代 |
-| **轻量高效** | CPU 占用 < 2%，内存占用 < 20MB |
-| **用户友好** | 即开即用，系统托盘右键菜单控制启用/禁用 |
-| **嵌入任务栏** | 歌词窗口作为任务栏的子窗口，视觉上融为一体 |
+| 原则        | 说明                               |
+| --------- | -------------------------------- |
+| **零侵入**   | 不修改 MoeKoeMusic 本体任何文件，独立 EXE 运行 |
+| **独立维护**  | 插件可脱离主程序版本独立迭代                   |
+| **轻量高效**  | CPU 占用 < 2%，内存占用 < 20MB          |
+| **用户友好**  | 即开即用，系统托盘右键菜单控制启用/禁用             |
+| **嵌入任务栏** | 歌词窗口作为任务栏的子窗口，视觉上融为一体            |
 
 ### 1.4 数据获取策略
 
 采用 **WebSocket 监听**（端口 6520）获取歌词和播放状态数据，无需内存 Hook 或文件嗅探。
 
-| 方案 | 可行性 | 维护成本 | 推荐度 |
-|------|--------|---------|-------|
-| ✅ WebSocket 监听端口 6520 | MoeKoeMusic 原生推送 | 低 | ⭐⭐⭐ |
-| ⬜ 歌词缓存文件读取 | 项目无独立缓存文件 | 中 | ⭐⭐ |
-| ❌ 内存 Hook | 兼容性差、易崩溃 | 高 | ⭐ |
+| 方案                    | 可行性              | 维护成本 | 推荐度 |
+| --------------------- | ---------------- | ---- | --- |
+| ✅ WebSocket 监听端口 6520 | MoeKoeMusic 原生推送 | 低    | ⭐⭐⭐ |
+| ⬜ 歌词缓存文件读取            | 项目无独立缓存文件        | 中    | ⭐⭐  |
+| ❌ 内存 Hook             | 兼容性差、易崩溃         | 高    | ⭐   |
 
 ### 1.5 项目结构
 
@@ -80,7 +80,7 @@ MoeKoeMusic-TaskbarLyrics/
     └── build.bat               # 一键构建脚本
 ```
 
----
+***
 
 ## 2. 技术架构
 
@@ -148,26 +148,26 @@ MoeKoeMusic-TaskbarLyrics/
 
 ### 2.2 核心技术栈
 
-| 层级 | 技术 | 用途 |
-|------|------|------|
-| 窗口系统 | Win32 API | 查找任务栏窗口句柄、创建子窗口 |
-| 图形渲染 | **Direct2D** + **DirectWrite** | GPU 加速的文字渲染 |
-| 通信协议 | **WebSocket**（RFC 6455） | 从 MoeKoeMusic 获取实时数据 |
-| 网络库 | **ixwebsocket** | 轻量 C++ WebSocket 客户端库 |
-| 配置持久化 | JSON 文件 | 保存用户首选项 |
-| 系统托盘 | Win32 Shell API | 托盘图标 + 右键菜单 |
+| 层级    | 技术                             | 用途                    |
+| ----- | ------------------------------ | --------------------- |
+| 窗口系统  | Win32 API                      | 查找任务栏窗口句柄、创建子窗口       |
+| 图形渲染  | **Direct2D** + **DirectWrite** | GPU 加速的文字渲染           |
+| 通信协议  | **WebSocket**（RFC 6455）        | 从 MoeKoeMusic 获取实时数据  |
+| 网络库   | **ixwebsocket**                | 轻量 C++ WebSocket 客户端库 |
+| 配置持久化 | JSON 文件                        | 保存用户首选项               |
+| 系统托盘  | Win32 Shell API                | 托盘图标 + 右键菜单           |
 
 ### 2.3 关键性能目标
 
-| 指标 | 目标值 |
-|------|--------|
-| CPU 占用 (空闲/播放) | < 0.5% / < 2% |
-| 内存占用 | < 20 MB |
-| 帧率 (歌词滚动) | 30 FPS（人眼舒适） |
-| 启动延迟 | < 500 ms（从启动到显示歌词） |
-| 渲染延迟 | < 5 ms（从数据到画面） |
+| 指标             | 目标值                |
+| -------------- | ------------------ |
+| CPU 占用 (空闲/播放) | < 0.5% / < 2%      |
+| 内存占用           | < 20 MB            |
+| 帧率 (歌词滚动)      | 30 FPS（人眼舒适）       |
+| 启动延迟           | < 500 ms（从启动到显示歌词） |
+| 渲染延迟           | < 5 ms（从数据到画面）     |
 
----
+***
 
 ## 3. 模块设计
 
@@ -240,15 +240,15 @@ WebSocketClient::OnMessage()
 
 #### 重连策略
 
-| 尝试次数 | 等待时间 |
-|---------|---------|
-| 第 1 次 | 1 秒 |
-| 第 2 次 | 2 秒 |
-| 第 3 次 | 4 秒 |
-| 第 4 次 | 8 秒 |
+| 尝试次数   | 等待时间     |
+| ------ | -------- |
+| 第 1 次  | 1 秒      |
+| 第 2 次  | 2 秒      |
+| 第 3 次  | 4 秒      |
+| 第 4 次  | 8 秒      |
 | 第 5+ 次 | 15 秒（上限） |
 
----
+***
 
 ### 3.2 任务栏嵌入窗口模块
 
@@ -422,15 +422,15 @@ void PositionLyricsInTaskbar(HWND hLyrics, HWND hTaskbar) {
 
 #### 3.2.6 与"悬浮在上方"方案的关键区别
 
-| 维度 | 悬浮在任务栏上方（旧方案） | 嵌入任务栏内部（本方案） |
-|------|------------------------|------------------------|
-| **父窗口** | `nullptr`（顶层窗口） | `Shell_TrayWnd`（任务栏） |
-| **定位方式** | 屏幕坐标，紧贴任务栏边缘 | 任务栏客户区坐标，在任务栏内部 |
-| **视觉融合** | 歌词浮在任务栏上方，有缝隙 | 歌词在任务栏内部，无缝融合 |
-| **Z-order** | `WS_EX_TOPMOST` 置顶 | 继承任务栏 Z-order |
-| **任务栏隐藏** | 窗口留在屏幕上 | 窗口随任务栏一起隐藏 |
-| **全屏应用** | 窗口遮挡全屏内容 | 窗口随任务栏一起隐藏 |
-| **点击穿透** | 必须 `WS_EX_TRANSPARENT` | 可选（任务栏区域本身可交互） |
+| 维度          | 悬浮在任务栏上方（旧方案）          | 嵌入任务栏内部（本方案）         |
+| ----------- | ---------------------- | -------------------- |
+| **父窗口**     | `nullptr`（顶层窗口）        | `Shell_TrayWnd`（任务栏） |
+| **定位方式**    | 屏幕坐标，紧贴任务栏边缘           | 任务栏客户区坐标，在任务栏内部      |
+| **视觉融合**    | 歌词浮在任务栏上方，有缝隙          | 歌词在任务栏内部，无缝融合        |
+| **Z-order** | `WS_EX_TOPMOST` 置顶     | 继承任务栏 Z-order        |
+| **任务栏隐藏**   | 窗口留在屏幕上                | 窗口随任务栏一起隐藏           |
+| **全屏应用**    | 窗口遮挡全屏内容               | 窗口随任务栏一起隐藏           |
+| **点击穿透**    | 必须 `WS_EX_TRANSPARENT` | 可选（任务栏区域本身可交互）       |
 
 #### 3.2.7 消息处理
 
@@ -500,7 +500,7 @@ void CheckTaskbarResize(HWND hLyrics, HWND hTaskbar) {
 - 仅在歌词或进度变化时触发 `UpdateLayeredWindow`
 - 空闲状态（无歌词或无播放）停止定时器以节省资源
 
----
+***
 
 ### 3.3 歌词同步与解析模块
 
@@ -631,7 +631,7 @@ std::vector<LrcLine> ParseLRC(const std::string& lrcContent) {
 }
 ```
 
----
+***
 
 ### 3.4 渲染引擎模块
 
@@ -746,7 +746,7 @@ void DrawHighlightLyric(
 
 > **备选方案：** 对于不支持 `SetDrawingEffect` 的场景，可以使用 `DrawText` 分段绘制：先绘制整行灰色文字，再用 `PushAxisAlignedClip` + 高亮色绘制裁剪后的前半部分。
 
----
+***
 
 ### 3.5 配置管理模块
 
@@ -839,7 +839,7 @@ bool Config::SetAutoStartRegistry(bool enable) {
 %APPDATA%/MoeKoeTaskbarLyrics/config.json
 ```
 
----
+***
 
 ### 3.6 系统托盘模块
 
@@ -943,7 +943,7 @@ void OnTrayMenuCommand(UINT menuId) {
 }
 ```
 
----
+***
 
 ### 3.7 进程监控模块
 
@@ -1064,15 +1064,15 @@ void ProcessMonitor::MonitorLoop() {
 
 #### 3.7.5 绑定模式 vs 独立模式
 
-| 特性 | 绑定模式 | 独立模式 |
-|------|---------|---------|
-| 触发条件 | 插件与 MoeKoeMusic.exe 同目录 | 插件在任意其他目录 |
-| 启动方式 | 注册表 Run key（开机自启） | 用户手动启动 |
-| 生命周期 | 随 MoeKoeMusic 启停 | 常驻系统托盘 |
-| 进程监控 | 每 2 秒轮询 `MoeKoeMusic.exe` | 不监控 |
-| 退出行为 | MoeKoeMusic 退出 → 插件退出 | 用户点击"退出" |
+| 特性   | 绑定模式                      | 独立模式      |
+| ---- | ------------------------- | --------- |
+| 触发条件 | 插件与 MoeKoeMusic.exe 同目录   | 插件在任意其他目录 |
+| 启动方式 | 注册表 Run key（开机自启）         | 用户手动启动    |
+| 生命周期 | 随 MoeKoeMusic 启停          | 常驻系统托盘    |
+| 进程监控 | 每 2 秒轮询 `MoeKoeMusic.exe` | 不监控       |
+| 退出行为 | MoeKoeMusic 退出 → 插件退出     | 用户点击"退出"  |
 
----
+***
 
 ### 3.8 主程序入口
 
@@ -1246,7 +1246,7 @@ static LyricsParser* g_lyricsParser = nullptr;
 static WebSocketClient* g_wsClient = nullptr;
 ```
 
----
+***
 
 ## 4. 协议与接口
 
@@ -1333,27 +1333,27 @@ MoeKoeMusic 在端口 6520 提供 WebSocket 服务（定义于 `electron/service
 
 #### 数据格式注意事项
 
-| 字段 | 说明 |
-|------|------|
-| `characters[].startTime` | 单位：**毫秒** (ms) |
-| `characters[].endTime` | 单位：**毫秒** (ms) |
-| `currentTime` | 单位：**秒** (s)，浮点数 |
-| `text` | UTF-8 编码 |
-| `translated` | UTF-8 编码，可能为空 |
-| 歌词数组为空 | 表示当前歌曲无歌词 |
+| 字段                       | 说明               |
+| ------------------------ | ---------------- |
+| `characters[].startTime` | 单位：**毫秒** (ms)   |
+| `characters[].endTime`   | 单位：**毫秒** (ms)   |
+| `currentTime`            | 单位：**秒** (s)，浮点数 |
+| `text`                   | UTF-8 编码         |
+| `translated`             | UTF-8 编码，可能为空    |
+| 歌词数组为空                   | 表示当前歌曲无歌词        |
 
----
+***
 
 ## 5. 构建与部署
 
 ### 5.1 环境要求
 
-| 工具 | 版本要求 |
-|------|---------|
-| Windows SDK | 10.0.20348+ (Windows 11 SDK) |
-| Visual Studio | 2022 (v143 工具集) |
-| CMake | 3.20+ |
-| vcpkg | 最新版 |
+| 工具            | 版本要求                         |
+| ------------- | ---------------------------- |
+| Windows SDK   | 10.0.20348+ (Windows 11 SDK) |
+| Visual Studio | 2022 (v143 工具集)              |
+| CMake         | 3.20+                        |
+| vcpkg         | 最新版                          |
 
 ### 5.2 依赖管理
 
@@ -1457,13 +1457,13 @@ cmake --build build --config Release
 
 所有控制通过系统托盘右键菜单完成：
 
-| 操作 | 效果 |
-|------|------|
-| 取消勾选"启用歌词显示" | 删除注册表 Run key + 写入 `enabled:false` → 进程退出 |
-| 勾选"启用歌词显示" | 写入 `enabled:true` + 注册表 Run key → 重启后生效 |
-| 取消勾选"开机自动启动" | 仅删除注册表 Run key，插件仍保持启用 |
+| 操作             | 效果                                        |
+| -------------- | ----------------------------------------- |
+| 取消勾选"启用歌词显示"   | 删除注册表 Run key + 写入 `enabled:false` → 进程退出 |
+| 勾选"启用歌词显示"     | 写入 `enabled:true` + 注册表 Run key → 重启后生效   |
+| 取消勾选"开机自动启动"   | 仅删除注册表 Run key，插件仍保持启用                    |
 | 点击"解除绑定"（绑定模式） | 删除注册表 Run key + 写入 `enabled:false` → 进程退出 |
-| 点击"退出" | 进程退出（绑定模式下下次登录时 Run key 重启） |
+| 点击"退出"         | 进程退出（绑定模式下下次登录时 Run key 重启）               |
 
 ### 5.6 卸载
 
@@ -1471,47 +1471,47 @@ cmake --build build --config Release
 2. 右键托盘图标 → 退出
 3. 删除 `MoeKoeTaskbarLyrics.exe` 文件
 
----
+***
 
 ## 6. 扩展与维护
 
 ### 6.1 兼容性保障
 
-| 场景 | 策略 |
-|------|------|
-| MoeKoeMusic 更新 | 只要 WebSocket 协议不变，插件无需更新 |
-| WebSocket 协议变化 | 在插件中做 JSON 字段存在性检查 |
-| 多显示器 | 使用 `MonitorFromWindow` + `GetMonitorInfo` 定位 |
-| 任务栏隐藏/自动隐藏 | 子窗口随任务栏一起隐藏，无需额外处理 |
-| 任务栏位置变化 | 主动轮询 + `WM_SETTINGCHANGE` 双重检测 |
-| Windows 深色/浅色主题 | 可检测 `UISettings.GetColorValue` 自动适配主题色 |
-| Windows 11 任务栏居中 | `SetParent` 方案兼容居中任务栏 |
-| 绑定模式安装路径 | 插件只需与 `MoeKoeMusic.exe` 同目录，不影响文件结构 |
-| 绑定模式与独立模式切换 | 通过"解除绑定"菜单项或手动移动 EXE 文件位置 |
+| 场景               | 策略                                           |
+| ---------------- | -------------------------------------------- |
+| MoeKoeMusic 更新   | 只要 WebSocket 协议不变，插件无需更新                     |
+| WebSocket 协议变化   | 在插件中做 JSON 字段存在性检查                           |
+| 多显示器             | 使用 `MonitorFromWindow` + `GetMonitorInfo` 定位 |
+| 任务栏隐藏/自动隐藏       | 子窗口随任务栏一起隐藏，无需额外处理                           |
+| 任务栏位置变化          | 主动轮询 + `WM_SETTINGCHANGE` 双重检测               |
+| Windows 深色/浅色主题  | 可检测 `UISettings.GetColorValue` 自动适配主题色       |
+| Windows 11 任务栏居中 | `SetParent` 方案兼容居中任务栏                        |
+| 绑定模式安装路径         | 插件只需与 `MoeKoeMusic.exe` 同目录，不影响文件结构          |
+| 绑定模式与独立模式切换      | 通过"解除绑定"菜单项或手动移动 EXE 文件位置                    |
 
 ### 6.2 潜在风险与缓解
 
-| 风险 | 缓解方案 |
-|------|---------|
-| MoeKoeMusic 关闭后 WebSocket 连接失败 | 优雅显示"等待连接..."，不崩溃 |
-| 歌词数据异常（空字符、超长时间戳） | 增加数据校验，异常时显示"暂无歌词" |
-| 高 DPI 下文字渲染模糊 | 使用 DirectWrite 的 DPI 感知渲染 |
-| GPU 资源泄漏 | RAII 管理 Direct2D 资源，退出时释放 |
-| 任务栏窗口句柄获取失败 | 回退为悬浮窗口方案（`SetParent(nullptr)`） |
-| Windows 更新改变任务栏结构 | 主动轮询检测 + 优雅降级 |
+| 风险                             | 缓解方案                            |
+| ------------------------------ | ------------------------------- |
+| MoeKoeMusic 关闭后 WebSocket 连接失败 | 优雅显示"等待连接..."，不崩溃               |
+| 歌词数据异常（空字符、超长时间戳）              | 增加数据校验，异常时显示"暂无歌词"              |
+| 高 DPI 下文字渲染模糊                  | 使用 DirectWrite 的 DPI 感知渲染       |
+| GPU 资源泄漏                       | RAII 管理 Direct2D 资源，退出时释放       |
+| 任务栏窗口句柄获取失败                    | 回退为悬浮窗口方案（`SetParent(nullptr)`） |
+| Windows 更新改变任务栏结构              | 主动轮询检测 + 优雅降级                   |
 
 ### 6.3 未来功能扩展
 
-| 功能 | 难度 | 优先级 |
-|------|------|--------|
-| 歌词滚动动画（平滑移动） | 中 | ⭐⭐⭐ |
-| 双行歌词显示（上一行+当前行） | 低 | ⭐⭐⭐ |
-| 自定义字体和颜色（配置界面） | 低 | ⭐⭐ |
-| Chrome Extension 开关 UI（v2.0） | 中 | ⭐⭐ |
-| 歌词搜索（当 WebSocket 无数据时） | 高 | ⭐ |
-| 绑定模式高级检测（不依赖文件名） | 中 | ⭐⭐ |
-| 支持其他播放器（Foobar2000 等） | 高 | ⭐ |
-| 绑定模式自动修复（MoeKoeMusic 路径变更） | 中 | ⭐ |
+| 功能                           | 难度 | 优先级 |
+| ---------------------------- | -- | --- |
+| 歌词滚动动画（平滑移动）                 | 中  | ⭐⭐⭐ |
+| 双行歌词显示（上一行+当前行）              | 低  | ⭐⭐⭐ |
+| 自定义字体和颜色（配置界面）               | 低  | ⭐⭐  |
+| Chrome Extension 开关 UI（v2.0） | 中  | ⭐⭐  |
+| 歌词搜索（当 WebSocket 无数据时）       | 高  | ⭐   |
+| 绑定模式高级检测（不依赖文件名）             | 中  | ⭐⭐  |
+| 支持其他播放器（Foobar2000 等）        | 高  | ⭐   |
+| 绑定模式自动修复（MoeKoeMusic 路径变更）   | 中  | ⭐   |
 
 ### 6.4 调试与日志
 
@@ -1519,45 +1519,46 @@ cmake --build build --config Release
 - 日志文件位置：`%TEMP%\MoeKoeTaskbarLyrics\debug.log`
 - 可通过配置 `"debug_log": true` 启用详细日志
 
----
+***
 
 ## 7. 附录
 
 ### 7.1 参考文档
 
-| 主题 | 链接 |
-|------|------|
-| MoeKoeMusic 源码 | https://github.com/MoeKoeMusic/MoeKoeMusic |
-| Electron WebSocket 服务 | `electron/services/apiService.js` |
-| Layered Windows 官方文档 | https://learn.microsoft.com/en-us/windows/win32/winmsg/layered-windows |
-| Direct2D 官方教程 | https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-tutorial |
-| DirectWrite 文字渲染 | https://learn.microsoft.com/en-us/windows/win32/directwrite/text-formatting-and-layout |
-| High DPI 桌面应用 | https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows |
-| SHAppBarMessage | https://learn.microsoft.com/en-us/windows/win32/shell/abm-gettaskbarpos |
-| ixwebsocket | https://github.com/machinezone/IXWebSocket |
-| Taskbar-Lyrics 参考项目 | https://gitcode.com/gh_mirrors/ta/Taskbar-Lyrics |
+| 主题                    | 链接                                                                                                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| MoeKoeMusic 源码        | <https://github.com/MoeKoeMusic/MoeKoeMusic>                                                                |
+| Electron WebSocket 服务 | `electron/services/apiService.js`                                                                           |
+| Layered Windows 官方文档  | <https://learn.microsoft.com/en-us/windows/win32/winmsg/layered-windows>                                    |
+| Direct2D 官方教程         | <https://learn.microsoft.com/en-us/windows/win32/direct2d/direct2d-tutorial>                                |
+| DirectWrite 文字渲染      | <https://learn.microsoft.com/en-us/windows/win32/directwrite/text-formatting-and-layout>                    |
+| High DPI 桌面应用         | <https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows> |
+| SHAppBarMessage       | <https://learn.microsoft.com/en-us/windows/win32/shell/abm-gettaskbarpos>                                   |
+| ixwebsocket           | <https://github.com/machinezone/IXWebSocket>                                                                |
+| Taskbar-Lyrics 参考项目   | <https://gitcode.com/gh_mirrors/ta/Taskbar-Lyrics>                                                          |
 
 ### 7.2 字段格式对照
 
-| WebSocket JSON 字段 | 类型 | 示例 | 说明 |
-|---------------------|------|------|------|
-| `type` | string | `"lyrics"` | 消息类型 |
-| `data[].text` | string | `"你好世界"` | 歌词行文本 |
-| `data[].translated` | string | `"Hello World"` | 翻译文本 |
-| `data[].characters[].char` | string | `"你"` | 单个字符 |
-| `data[].characters[].startTime` | int64 | `12345` | 开始时间 (ms) |
-| `data[].characters[].endTime` | int64 | `12678` | 结束时间 (ms) |
-| `data.isPlaying` | bool | `true` | 播放状态 |
-| `data.currentTime` | double | `12.5` | 当前进度 (秒) |
+| WebSocket JSON 字段               | 类型     | 示例              | 说明        |
+| ------------------------------- | ------ | --------------- | --------- |
+| `type`                          | string | `"lyrics"`      | 消息类型      |
+| `data[].text`                   | string | `"你好世界"`        | 歌词行文本     |
+| `data[].translated`             | string | `"Hello World"` | 翻译文本      |
+| `data[].characters[].char`      | string | `"你"`           | 单个字符      |
+| `data[].characters[].startTime` | int64  | `12345`         | 开始时间 (ms) |
+| `data[].characters[].endTime`   | int64  | `12678`         | 结束时间 (ms) |
+| `data.isPlaying`                | bool   | `true`          | 播放状态      |
+| `data.currentTime`              | double | `12.5`          | 当前进度 (秒)  |
 
 ### 7.3 MoeKoeMusic 端口清单
 
-| 端口 | 用途 | 协议 |
-|------|------|------|
+| 端口   | 用途                           | 协议        |
+| ---- | ---------------------------- | --------- |
 | 6520 | WebSocket 服务（歌词 + 播放状态 + 控制） | WebSocket |
-| 6521 | KuGou Music API（HTTP REST） | HTTP |
+| 6521 | KuGou Music API（HTTP REST）   | HTTP      |
 
----
+***
 
-> **本文档为开发草案，将在实现过程中持续更新。**  
+> **本文档为开发草案，将在实现过程中持续更新。**\
 > 如有疑问，请参考 MoeKoeMusic 源码仓库或提交 Issue 讨论。
+

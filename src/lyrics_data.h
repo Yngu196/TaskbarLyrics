@@ -43,6 +43,14 @@ struct PlayerState {
     std::string songTitle;           // 可选,用于调试
 };
 
+// 悬停时点击的控制按钮
+enum class HoverButton {
+    None = 0,
+    Prev,
+    PlayPause,
+    Next,
+};
+
 // 渲染状态（由解析器在每帧计算）
 struct RenderState {
     std::string currentLine;          // 当前行文本
@@ -52,6 +60,7 @@ struct RenderState {
     bool        hasLyrics{false};
     bool        isPlaying{false};
     double      currentTime{0.0};     // 秒
+    bool        isHovering{false};    // 鼠标是否悬停在歌词窗口上
 };
 
 } // namespace moekoe

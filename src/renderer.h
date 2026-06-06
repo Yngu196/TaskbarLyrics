@@ -46,6 +46,7 @@ private:
                                           bool enableKaraoke);
     void DrawTranslatedText(const std::wstring& text);
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
+    void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
 
     static D2D1_COLOR_F ParseColor(const std::string& hex, float alpha = 1.0f);

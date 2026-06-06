@@ -101,22 +101,30 @@ message(STATUS "Found nlohmann_json: ${NLOHMANN_JSON_INCLUDE_DIR}")
 set(SOURCES
     src/main.cpp
     src/websocket_client.cpp
+    src/http_server.cpp
     src/lyrics_parser.cpp
     src/taskbar_window.cpp
     src/renderer.cpp
     src/config.cpp
     src/tray_icon.cpp
+    src/process_monitor.cpp
+    src/config_dialog.cpp
+    src/native_messaging.cpp
 )
 
 # 头文件目录
 set(HEADERS
     src/lyrics_data.h
     src/websocket_client.h
+    src/http_server.h
     src/lyrics_parser.h
     src/taskbar_window.h
     src/renderer.h
     src/config.h
     src/tray_icon.h
+    src/process_monitor.h
+    src/config_dialog.h
+    src/native_messaging.h
 )
 
 # 可执行目标
@@ -162,4 +170,12 @@ if(MSVC)
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
             COMMENT "Copying resources to output directory")
     endif()
+
+    # 复制 EXE 到 MoeKoeMusic 插件目录
+    set(PLUGIN_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../MoeKoeMusic/plugins/extensions/moeKoe-taskbar-lyrics")
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:${PROJECT_NAME}>
+            "${PLUGIN_DIR}/MoeKoeTaskbarLyrics.exe"
+        COMMENT "Copying EXE to MoeKoeMusic plugin directory")
 endif()

@@ -114,6 +114,14 @@ void TrayIcon::RebuildMenu() {
 
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_RECONNECT, L"重新连接");
 
+    // 设置
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_SETTINGS, L"设置...");
+
+    // 解除绑定（仅绑定模式显示）
+    if (boundMode_) {
+        ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_UNBIND, L"解除绑定");
+    }
+
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_EXIT, L"退出");

@@ -1,4 +1,4 @@
-# Build artifacts
+# ===== Build artifacts =====
 build/
 out/
 cmake-build-*/
@@ -17,17 +17,17 @@ cmake-build-*/
 *.dll
 *.pch
 
-# IDE
+# ===== IDE =====
 .vs/
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# vcpkg
+# ===== vcpkg =====
 vcpkg_installed/
 
-# CMake
+# ===== CMake =====
 CMakeCache.txt
 CMakeFiles/
 CMakeScripts/
@@ -39,10 +39,20 @@ compile_commands.json
 CTestTestfile.cmake
 _deps
 
-# Logs
+# ===== Logs =====
 *.log
 logs/
+debug.log
 
-# Misc
+# ===== Personal notes (not for public repo) =====
+计划书.md
+问题推测.md
+项目状态文档.md
+
+# ===== Mac / Windows =====
 Thumbs.db
 .DS_Store
+Desktop.ini
+
+# ===== Native messaging (host registration) =====
+native_host/
