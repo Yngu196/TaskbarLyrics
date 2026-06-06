@@ -1,0 +1,48 @@
+# Build artifacts
+build/
+out/
+cmake-build-*/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.cachefile
+*.vcxproj.user
+*.pdb
+*.obj
+*.ilk
+*.exp
+*.lib
+*.exe
+*.dll
+*.pch
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# vcpkg
+vcpkg_installed/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps
+
+# Logs
+*.log
+logs/
+
+# Misc
+Thumbs.db
+.DS_Store

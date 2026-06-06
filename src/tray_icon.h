@@ -1,0 +1,83 @@
+// SPDX-License-Identifier: GPL-2.0
+// tray_icon.h - 系统托盘图标
+//
+// 职责:
+//   - 注册 Shell_NotifyIconW 托盘图标
+//   - 提供右键菜单(启用/禁用、开机自启、重新连接、退出)
+//   - 更新 Tooltip / 菜单勾选状态
+//
+#pragma once
+
+#include <windows.h>
+
+#include <functional>
+#include <string>
+
+namespace moekoe {
+
+// 菜单命令 ID
+enum TrayMenuId : UINT {
+    ID_TRAY_MENU_BASE = 1000,
+    ID_MENU_ENABLE    = ID_TRAY_MENU_BASE + 1,
+    ID_MENU_AUTOSTART = ID_TRAY_MENU_BASE + 2,
+    ID_MENU_RECONNECT = ID_TRAY_MENU_BASE + 3,
+    ID_MENU_EXIT      = ID_TRAY_MENU_BASE + 4,
+};
+
+class TrayIcon {
+public:
+    using MenuCallback = std::function<void(UINT menuId)>;
+
+    TrayIcon();
+    ~TrayIcon();
+
+    TrayIcon(const TrayIcon&) = delete;
+    TrayIcon& operator=(const TrayIcon&) = delete;
+
+    // 初始化并显示托盘图标
+    bool Initialize(HINSTANCE hInstance, HWND messageWnd = nullptr,
+                    UINT callbackMsg = WM_USER + 0x200);
+
+    // 反初始化
+    void Shutdown();
+
+    // 设置右键菜单命令回调
+    void SetMenuCallback(MenuCallback cb) { menuCallback_ = std::move(cb); }
+
+    // 更新 Tooltip(显示当前歌词)
+    void SetTooltip(const std::wstring& text);
+
+    // 更新菜单勾选状态
+    void SetMenuCheckedEnable(bool checked);
+    void SetMenuCheckedAutoStart(bool checked);
+    void SetMenuLabelEnable(const std::wstring& label);
+
+    // 弹出右键菜单
+    void ShowContextMenu(HWND hwnd);
+
+    // 消息循环: 处理托盘回调(由主循环调用)
+    void OnTrayMessage(HWND hwnd, WPARAM wParam, LPARAM lParam);
+
+    // 加载图标(优先从 resources/icon.ico)
+    HICON LoadAppIcon();
+
+private:
+    void RebuildMenu();
+    void DestroyMenu();
+
+    // 状态
+    HINSTANCE    hInstance_{nullptr};
+    HWND         messageWnd_{nullptr};
+    UINT         callbackMsg_{0};
+    HMENU        hMenu_{nullptr};
+    NOTIFYICONDATAW nid_{};
+    bool         added_{false};
+
+    bool checkedEnable_{true};
+    bool checkedAutoStart_{true};
+    std::wstring labelEnable_{L"启用歌词显示"};
+
+    MenuCallback menuCallback_;
+};
+
+} // namespace moekoe
