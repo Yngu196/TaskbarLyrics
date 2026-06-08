@@ -60,10 +60,16 @@ jobs:
         run: |
           # 动态查找 NuGet 包中的实际文件路径（限定 x64 架构）
           $pkgDir = "${{ github.workspace }}\packages\Microsoft.Web.WebView2.1.0.3856.49"
-          # NuGet 包中导入库名为 WebView2Loader.dll.lib（带 .dll. 中缀）
-          # 必须限定 x64 子目录，否则 find_library 可能找到 arm64 版本
-          $x64Dir = "$pkgDir\build\native\x64"
-          $libFile = "$x64Dir\WebView2Loader.dll.lib"
+          
+          # 优先从 x64 子目录精确查找（避免 arm64 混入）
+          $x64LibPath = "$pkgDir\build\native\x64\WebView2Loader.dll.lib"
+          if (Test-Path $x64LibPath) {
+            $libFile = Get-Item $x64LibPath
+          } else {
+            # 回退：递归搜索整个包
+            Write-Host "WARNING: x64 lib not found at expected path, searching recursively..."
+            $libFile = Get-ChildItem -Recurse $pkgDir -Filter "WebView2Loader.dll.lib" | Where-Object { $_.FullName -notmatch "arm64" } | Select-Object -First 1
+          }
           $incFile = (Get-ChildItem -Recurse $pkgDir -Filter "WebView2.h" | Select-Object -First 1)
           
           if ($libFile) {
