@@ -25,9 +25,12 @@ jobs:
       - name: Install dependencies (auto-retry on network issues)
         shell: powershell
         run: |
+          # Use VS 2022's fully bootstrapped vcpkg instead of C:\vcpkg
+          $env:VCPKG_ROOT = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\vcpkg"
+          $vcpkg = "$env:VCPKG_ROOT\vcpkg.exe"
           $maxRetries = 3
           for ($i = 0; $i -lt $maxRetries; $i++) {
-              vcpkg install --classic --triplet x64-windows --x-install-root="${{ github.workspace }}\vcpkg_installed" ixwebsocket nlohmann-json zlib mbedtls
+              & $vcpkg install --classic --triplet x64-windows --vcpkg-root="$env:VCPKG_ROOT" --x-install-root="${{ github.workspace }}\vcpkg_installed" ixwebsocket nlohmann-json zlib mbedtls
               if ($LASTEXITCODE -eq 0) { break }
               Write-Host "Retry $($i+1)/$maxRetries..."
               Start-Sleep -Seconds 5
