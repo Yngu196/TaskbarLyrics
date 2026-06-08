@@ -121,13 +121,19 @@ else()
 endif()
 
 # 7. WebView2 Loader 库（运行时动态链接）
+# CI 通过 -DWEBVIEW2_LOADER_DIR 传入目录，本地回退到常见安装路径
 find_library(WEBVIEW2_LOADER_LIB WebView2Loader
     HINTS
-        "${WEBVIEW2_LOADER_LIB}"
+        "${WEBVIEW2_LOADER_DIR}"
     PATHS
         "C:/Users/19624/.nuget/packages/microsoft.web.webview2/1.0.3856.49/build/native/x64"
         "C:/Program Files (x86)/Microsoft/Edge WebView2"
     NO_DEFAULT_PATH)
+if(WEBVIEW2_LOADER_LIB)
+    message(STATUS "Found WebView2Loader.lib: ${WEBVIEW2_LOADER_LIB}")
+else()
+    message(WARNING "WebView2Loader.lib NOT found - linking will fail if SettingsWindow is used")
+endif()
 
 # 源文件
 set(SOURCES

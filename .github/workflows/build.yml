@@ -21,6 +21,20 @@ jobs:
         shell: powershell
         run: |
           nuget install Microsoft.Web.WebView2 -Version 1.0.3856.49 -OutputDirectory "${{ github.workspace }}\packages"
+          # 验证关键文件是否存在
+          $libPath = "${{ github.workspace }}\packages\Microsoft.Web.WebView2.1.0.3856.49\build\native\x64\WebView2Loader.lib"
+          $incPath = "${{ github.workspace }}\packages\Microsoft.Web.WebView2.1.0.3856.49\build\native\include\WebView2.h"
+          if (-not (Test-Path $libPath)) {
+            Write-Host "ERROR: WebView2Loader.lib NOT found at $libPath"
+            Write-Host "Listing NuGet package contents:"
+            Get-ChildItem -Recurse "${{ github.workspace }}\packages" | Select-Object FullName | Format-Table -AutoSize
+            exit 1
+          }
+          if (-not (Test-Path $incPath)) {
+            Write-Host "ERROR: WebView2.h NOT found at $incPath"
+            exit 1
+          }
+          Write-Host "WebView2 SDK verified OK"
 
       - name: Install dependencies (auto-retry on network issues)
         shell: powershell
@@ -51,15 +65,17 @@ jobs:
       - name: Configure CMake
         shell: powershell
         run: |
+          # 只传目录路径，让 CMake 的 find_library/find_path 自己搜索文件
           $webview2Dir = "${{ github.workspace }}\packages\Microsoft.Web.WebView2.1.0.3856.49"
           cmake -B build -S . `
             "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}\vcpkg_installed\x64-windows" `
             "-DWEBVIEW2_INCLUDE_DIR=$webview2Dir\build\native\include" `
-            "-DWEBVIEW2_LOADER_LIB=$webview2Dir\build\native\x64\WebView2Loader.lib" `
-            -DCMAKE_BUILD_TYPE=Release
+            "-DWEBVIEW2_LOADER_DIR=$webview2Dir\build\native\x64" `
+            -DCMAKE_BUILD_TYPE=Release `
+            --log-level=VERBOSE 2>&1 | Select-String -Pattern "WEBVIEW2|WebView2|webview2|NOTFOUND|error"
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release -- /v:minimal
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
