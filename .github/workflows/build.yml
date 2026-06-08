@@ -29,7 +29,7 @@ jobs:
       - name: Clone vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
-          git clone https://github.com/microsoft/vcpkg.git --depth=1 --branch=2025.04.23
+          git clone https://github.com/microsoft/vcpkg.git --depth=1
 
       - name: Bootstrap vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
