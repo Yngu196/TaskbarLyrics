@@ -55,7 +55,7 @@ jobs:
           cmake -B build -S . `
             "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}\vcpkg_installed\x64-windows" `
             "-DWEBVIEW2_INCLUDE_DIR=$webview2Dir\build\native\include" `
-            "-DWEBVIEW2_LOADER_LIB=$webview2Dir\build\native\x64\WebView2Loader.dll" `
+            "-DWEBVIEW2_LOADER_LIB=$webview2Dir\build\native\x64\WebView2Loader.lib" `
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
