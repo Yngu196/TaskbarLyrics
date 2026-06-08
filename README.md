@@ -18,7 +18,6 @@
 - **拖动定位**：可在任务栏范围内左右/上下拖动调整位置
 - **高 DPI 适配**：Per-Monitor V2 DPI Awareness
 - **多方向任务栏**：支持底部 / 顶部 / 左侧 / 右侧任务栏
-- **翻译歌词**：可选显示翻译行
 
 ### 配置系统
 
@@ -38,11 +37,11 @@
 - Chrome Extension Manifest V3 格式
 - popup.js 通过 `file://` 协议启动 EXE（不依赖宿主 IPC）
 - HTTP 接口（端口 6521）：ping 检测存活 / shutdown 优雅退出
-- 托盘菜单：设置 / 重连 / 解除绑定 / 退出
+- 托盘菜单：设置 / 重连 / 解除绑定 / 退出（未实现绑定模式）
 
 ### 运行模式
 
-- **绑定模式**：EXE 放在 MoeKoeMusic 目录下，随主进程启停
+- **绑定模式**：EXE 放在 MoeKoeMusic 目录下，随主进程启停（目前还未能随主进程启停）
 - **独立模式**：常驻系统托盘，手动管理生命周期
 
 ## 项目架构
@@ -59,7 +58,7 @@ MoeKoeTaskbarLyrics.exe (C++ Win32)
 │   └── 加载 resources/settings.html
 ├── HTTP Server (端口 6521)
 │   ├── GET /ping → {"status":"ok"}
-│   └── POST /shutdown → 优雅退出
+│   └── POST /shutdown → 退出
 ├── WebSocket Client (连接 :6520)
 │   └── 接收歌词数据 + 发送控制指令
 ├── Process Monitor (绑定模式)
@@ -166,6 +165,3 @@ cmake --build build --config x64-Debug
 - [ ] 歌词缓存（离线显示）
 - [ ] Windhawk / Explorer Hook 方案（真正嵌入任务栏）
 
-## 许可
-
-GPL-2.0（继承自 MoeKoeMusic）
