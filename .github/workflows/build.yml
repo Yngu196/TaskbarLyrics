@@ -1,0 +1,44 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install vcpkg dependencies
+        run: |
+          vcpkg install ixwebsocket:x64-windows nlohmann-json:x64-windows zlib:x64-windows
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -S . `
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/vcpkg_installed/x64-windows/share/vcpkg/tools.cmake" `
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: |
+          cmake --build build --config Release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MoeKoeTaskbarLyrics-v0.3.1
+          path: |
+            build/Release/MoeKoeTaskbarLyrics.exe
+            build/Release/WebView2Loader.dll
+            build/Release/z.dll
+            resources/settings.html
+            resources/icon.ico
+          if-no-files-found: error
