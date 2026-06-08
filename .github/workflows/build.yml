@@ -60,7 +60,8 @@ jobs:
         run: |
           # 动态查找 NuGet 包中的实际文件路径
           $pkgDir = "${{ github.workspace }}\packages\Microsoft.Web.WebView2.1.0.3856.49"
-          $libFile = (Get-ChildItem -Recurse $pkgDir -Filter "WebView2Loader.lib" | Select-Object -First 1)
+          # NuGet 包中导入库名为 WebView2Loader.dll.lib（带 .dll. 中缀）
+          $libFile = (Get-ChildItem -Recurse $pkgDir -Filter "WebView2Loader.dll.lib" | Select-Object -First 1)
           $incFile = (Get-ChildItem -Recurse $pkgDir -Filter "WebView2.h" | Select-Object -First 1)
           
           if ($libFile) {

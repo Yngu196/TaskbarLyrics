@@ -122,7 +122,9 @@ endif()
 
 # 7. WebView2 Loader 库（运行时动态链接）
 # CI 通过 -DWEBVIEW2_LOADER_DIR 传入目录，本地回退到常见安装路径
-find_library(WEBVIEW2_LOADER_LIB WebView2Loader
+# 注意：NuGet 包中的导入库名为 WebView2Loader.dll.lib（非 WebView2Loader.lib）
+find_library(WEBVIEW2_LOADER_LIB
+    NAMES WebView2Loader.dll.lib WebView2Loader
     HINTS
         "${WEBVIEW2_LOADER_DIR}"
     PATHS
