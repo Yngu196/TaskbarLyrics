@@ -29,19 +29,14 @@ jobs:
           $vcpkgRoot = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\vcpkg"
           $vcpkg = "$vcpkgRoot\vcpkg.exe"
           
-          # Get the vcpkg commit hash for the builtin-baseline
-          $baseline = (git -C $vcpkgRoot rev-parse HEAD).Trim()
-          Write-Host "vcpkg baseline: $baseline"
-          
-          # Generate vcpkg.json with the correct baseline
+          # Create vcpkg-configuration.json with builtin registry (no baseline needed)
           @"
           {
-            "name": "moekoetaskbarlyrics",
-            "version": "0.3.1",
-            "builtin-baseline": "$baseline",
-            "dependencies": ["ixwebsocket", "nlohmann-json", "zlib", "mbedtls"]
+            "default-registry": {
+              "kind": "builtin"
+            }
           }
-          "@ | Out-File -FilePath "${{ github.workspace }}\vcpkg.json" -Encoding utf8
+          "@ | Out-File -FilePath "${{ github.workspace }}\vcpkg-configuration.json" -Encoding utf8
           
           $maxRetries = 3
           for ($i = 0; $i -lt $maxRetries; $i++) {
