@@ -313,7 +313,7 @@ LRESULT CALLBACK SettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPA
     return ::DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-bool SettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& currentConfig) {
+bool SettingsWindow::Show(HINSTANCE hInstance, HWND /*parent*/, const Config& currentConfig) {
     if (hwnd_) {
         ::SetForegroundWindow(hwnd_);
         return true;

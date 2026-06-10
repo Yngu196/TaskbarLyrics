@@ -68,7 +68,7 @@ std::string ExtractHeader(const char* request, size_t len, const char* headerNam
 
 // 严格校验本地鉴权 token（shared-secret），防止其他本地进程伪造控制命令。
 // 返回 true 表示校验通过；失败时会直接向客户端返回 403，由调用方终止处理。
-bool CheckLocalAuthToken(SOCKET client, const char* request, size_t len) {
+bool CheckLocalAuthToken(SOCKET client, int port, const char* request, size_t len) {
     const std::string token = ExtractHeader(request, len,
                                             moekoe::constants::LOCAL_AUTH_HEADER_NAME);
     if (token == moekoe::constants::LOCAL_AUTH_TOKEN) return true;
@@ -234,7 +234,7 @@ void HttpServer::ServerLoop(int port) {
                  method.c_str(), path.c_str(), totalLen);
 
         // ── 本地鉴权：OPTIONS 预检请求跳过（浏览器不带自定义头） ──
-        if (method != "OPTIONS" && !CheckLocalAuthToken(client, buffer, static_cast<size_t>(totalLen))) {
+        if (method != "OPTIONS" && !CheckLocalAuthToken(client, port, buffer, static_cast<size_t>(totalLen))) {
             closesocket(client);
             continue;
         }

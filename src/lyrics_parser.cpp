@@ -16,8 +16,12 @@ namespace {
 
 /// 高精度本地时钟（秒），基于 QueryPerformanceCounter
 double GetWallTimeSeconds() {
-    LARGE_INTEGER freq, counter;
-    ::QueryPerformanceFrequency(&freq);
+    static const LARGE_INTEGER freq = []{
+        LARGE_INTEGER f;
+        ::QueryPerformanceFrequency(&f);
+        return f;
+    }();
+    LARGE_INTEGER counter;
     ::QueryPerformanceCounter(&counter);
     return static_cast<double>(counter.QuadPart) / static_cast<double>(freq.QuadPart);
 }
@@ -75,9 +79,8 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     out.isPlaying   = state_.isPlaying;
-    out.currentTime = state_.currentTime;
 
-    // ── 本地时钟死推算：播放状态下用本地时间插值 currentTime ──
+    // ── 本地时钟推算：播放状态下用本地时间插值 currentTime ──
     // 目的：即使 playerState 消息频率低（如每秒一次），progress 也能每帧平滑推进
     // 原理：estimatedTime = lastReceivedTime + (localNow - localThen)
     double effectiveTime = state_.currentTime;
@@ -88,6 +91,7 @@ RenderState LyricsParser::GetCurrentRenderState() const {
             effectiveTime = state_.currentTime + elapsed;
         }
     }
+    out.currentTime = effectiveTime;
 
     if (!lyrics_.valid || lyrics_.lines.empty()) {
         out.hasLyrics = false;

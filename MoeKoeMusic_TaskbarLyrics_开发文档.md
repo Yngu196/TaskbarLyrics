@@ -1,7 +1,7 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
 > **版本：** v0.5（草案）\
-> **插件版本：** v0.3.6\
+> **插件版本：** v0.3.7\
 > **目标平台：** Windows 10/11（x64）\
 > **开发语言：** C++17\
 > **构建系统：** CMake + MSVC\
@@ -84,7 +84,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── icons/
 │       └── icon256.png         # 插件中心图标（raw GitHub URL 可直接访问）
 ├── moeKoe-taskbar-lyrics/      # Chrome Extension 插件目录
-│   ├── manifest.json           # v0.3.6（icons 256px，字段顺序对齐 moekoe-helper）
+│   ├── manifest.json           # v0.3.7（icons 256px，字段顺序对齐 moekoe-helper）
 │   ├── background.js           # Service Worker（消息路由，含 onMessage 兜底处理）
 │   ├── popup.js / popup.html   # 弹出界面（含 Token 鉴权头、响应体校验）
 │   ├── icons/

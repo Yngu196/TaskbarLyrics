@@ -1,6 +1,6 @@
 # MoeKoeMusic Taskbar Lyrics
 
-> Windows 任务栏的歌词显示插件（v0.3.6）
+> Windows 任务栏的歌词显示插件（v0.3.7）
 
 ## 项目简介
 
@@ -127,7 +127,7 @@ cmake --build --preset x64-Release
 
 在 MoeKoeMusic 的插件页面点击"打开插件目录"，打开`moeKoe-taskbar-lyrics`文件夹，双击`MoeKoeTaskbarLyrics.exe`启动。
 
-## 安全说明 (v0.3.6)
+## 安全说明 (v0.3.7)
 
 本版本进行了多项安全加固：
 
@@ -145,6 +145,13 @@ cmake --build --preset x64-Release
 - **端口可配置**：HTTP 监听端口可通过 `config.json` 的 `advanced.http_server_port` 自定义（默认 6523），CORS `Allow-Origin` 自动使用实际监听端口
 - **onMessage 兜底处理**：Chrome Extension 的消息监听器所有分支均显式调用 sendResponse，default 路径返回 false 避免告警
 - **发布包清理**：`.gitignore` 排除 `*.WebView2/` 目录，防止开发者环境路径泄露到发布包
+
+### v0.3.7 变更
+
+- **卡拉OK平滑插值**：新增基于 QueryPerformanceCounter 的本地高精度时钟插值，播放状态下用 `effectiveTime = currentTime + wallElapsed` 推算当前进度，使逐字高亮在 playerState 低频更新时仍能每帧平滑推进（10 秒上限防异常）
+- **QPF 缓存优化**：`QueryPerformanceFrequency` 缓存为 `static const` 局部变量，避免每帧冗余系统调用
+- **RenderState 时间一致性**：`out.currentTime` 改为输出插值后的 `effectiveTime`，与实际渲染所用时间同步
+- **编译修复**：修复 `CheckLocalAuthToken` 未声明 `port` 参数的 C2065 错误；消除 `settings_window.cpp` 未引用参数 C4100 警告
 
 ## 开发文档
 

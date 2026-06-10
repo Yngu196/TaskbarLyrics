@@ -1,1 +1,1 @@
-{"name": "moekoetaskbarlyrics", "version": "0.3.1", "dependencies": ["ixwebsocket", "nlohmann-json", "zlib", "mbedtls"]}
+{"name": "moekoetaskbarlyrics", "version": "0.3.7", "dependencies": ["ixwebsocket", "nlohmann-json", "zlib", "mbedtls"]}
