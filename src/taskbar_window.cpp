@@ -127,11 +127,47 @@ void TaskbarWindow::DetectTaskbarInfo() {
 
     // DPI
     info_.dpi = ::GetDpiForWindow(hTaskbar_);
+
+    // APPBAR 自动隐藏检测
+    APPBARDATA abdState{};
+    abdState.cbSize = sizeof(abdState);
+    const UINT appBarState = ::SHAppBarMessage(ABM_GETSTATE, &abdState);
+    info_.autoHide = (appBarState & ABS_AUTOHIDE) != 0;
+    taskbarAutoHide_ = info_.autoHide;
 }
 
 void TaskbarWindow::PositionLyricsInTaskbar() {
     if (!hwnd_ || !hTaskbar_) return;
     DetectTaskbarInfo();
+
+    // ── APPBAR 自动隐藏处理 ──
+    // 当任务栏开启自动隐藏时，检测任务栏当前是否可见（鼠标是否在任务栏区域）
+    // 任务栏不可见时隐藏歌词窗口，避免遮挡桌面内容
+    if (taskbarAutoHide_) {
+        POINT pt{};
+        ::GetCursorPos(&pt);
+        // 判断鼠标是否在任务栏矩形范围内
+        const bool cursorOnTaskbar = (::PtInRect(&info_.rect, pt) != FALSE);
+        const bool shouldShow = cursorOnTaskbar;
+
+        if (shouldShow && !taskbarVisible_) {
+            taskbarVisible_ = true;
+            // 继续下面的正常定位流程
+        } else if (!shouldShow && taskbarVisible_) {
+            taskbarVisible_ = false;
+            ::ShowWindow(hwnd_, SW_HIDE);
+            return;  // 隐藏后不执行定位
+        } else if (!shouldShow && !taskbarVisible_) {
+            ::ShowWindow(hwnd_, SW_HIDE);
+            return;  // 保持隐藏
+        }
+        // shouldShow == true && taskbarVisible_ == true: 正常显示
+    } else {
+        // 非自动隐藏模式：确保窗口可见
+        if (!taskbarVisible_) {
+            taskbarVisible_ = true;
+        }
+    }
 
     RECT tbRect{};
     ::GetWindowRect(hTaskbar_, &tbRect);
@@ -277,6 +313,14 @@ void TaskbarWindow::CheckResize() {
     ::GetWindowRect(hTaskbar_, &tb);
     if (!::EqualRect(&tb, &lastTaskbarRect_)) {
         PositionLyricsInTaskbar();
+    } else if (taskbarAutoHide_) {
+        // 自动隐藏模式：即使任务栏矩形未变，鼠标进出任务栏区域也需要响应
+        POINT pt{};
+        ::GetCursorPos(&pt);
+        const bool cursorOnTaskbar = (::PtInRect(&tb, pt) != FALSE);
+        if (cursorOnTaskbar != taskbarVisible_) {
+            PositionLyricsInTaskbar();
+        }
     }
 }
 
@@ -331,6 +375,9 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
     switch (msg) {
     case WM_MOUSEMOVE: {
+        // 完全锁定：跳过所有鼠标交互
+        if (self->fullyLocked_) return 0;
+
         bool changed = false;
         if (!self->isHovering_) {
             self->isHovering_ = true;
@@ -417,11 +464,16 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     case WM_LBUTTONDOWN: {
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
+
+        // 完全锁定：跳过所有鼠标交互（含按钮）
+        if (self->fullyLocked_) return 0;
+
         HoverButton btn = self->HitTestButton(x, y);
         if (btn != HoverButton::None && self->onButtonClicked_) {
+            // 按钮点击：即使位置锁定也可操作
             self->onButtonClicked_(btn);
-        } else {
-            // 非按钮区域：开始拖动
+        } else if (!self->positionLocked_) {
+            // 非按钮区域 + 未锁定位置：开始拖动
             self->isDragging_ = true;
             ::GetCursorPos(&self->dragStartPos_);
             RECT wr{};
@@ -429,7 +481,6 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             self->dragStartWinPos_.x = wr.left;
             self->dragStartWinPos_.y = wr.top;
             ::SetCapture(hwnd);
-            // 通知重绘以显示拖动边框
             if (self->onHoverChanged_) self->onHoverChanged_();
         }
         return 0;

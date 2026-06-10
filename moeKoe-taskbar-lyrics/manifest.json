@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Windows任务栏歌词插件",
   "plugin_id": "Taskbar-Lyrics",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "minversion": "0.3.0",
   "moekoe": true,
   "author": {

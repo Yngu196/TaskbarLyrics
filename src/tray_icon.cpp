@@ -102,10 +102,6 @@ void TrayIcon::RebuildMenu() {
 
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
-    // 启用/禁用歌词
-    UINT enableFlags = MF_STRING | (checkedEnable_ ? MF_CHECKED : MF_UNCHECKED);
-    ::AppendMenuW(hMenu_, enableFlags, ID_MENU_ENABLE, labelEnable_.c_str());
-
     // 开机自启
     UINT autoFlags = MF_STRING | (checkedAutoStart_ ? MF_CHECKED : MF_UNCHECKED);
     ::AppendMenuW(hMenu_, autoFlags, ID_MENU_AUTOSTART, L"开机自动启动");
@@ -116,6 +112,16 @@ void TrayIcon::RebuildMenu() {
 
     // 设置
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_SETTINGS, L"设置...");
+
+    ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
+
+    // 锁定位置
+    UINT lockPosFlags = MF_STRING | (checkedLockPos_ ? MF_CHECKED : MF_UNCHECKED);
+    ::AppendMenuW(hMenu_, lockPosFlags, ID_MENU_LOCK_POS, L"锁定位置");
+
+    // 完全锁定
+    UINT lockFullFlags = MF_STRING | (checkedLockFull_ ? MF_CHECKED : MF_UNCHECKED);
+    ::AppendMenuW(hMenu_, lockFullFlags, ID_MENU_LOCK_FULL, L"完全锁定");
 
     // 解除绑定（仅绑定模式显示）
     if (boundMode_) {
@@ -145,15 +151,21 @@ void TrayIcon::SetTooltip(const std::wstring& text) {
     ::Shell_NotifyIconW(NIM_MODIFY, &nid_);
 }
 
-void TrayIcon::SetMenuCheckedEnable(bool checked) {
-    if (checkedEnable_ == checked) return;
-    checkedEnable_ = checked;
-    if (hMenu_) RebuildMenu();
-}
-
 void TrayIcon::SetMenuCheckedAutoStart(bool checked) {
     if (checkedAutoStart_ == checked) return;
     checkedAutoStart_ = checked;
+    if (hMenu_) RebuildMenu();
+}
+
+void TrayIcon::SetMenuCheckedLockPos(bool checked) {
+    if (checkedLockPos_ == checked) return;
+    checkedLockPos_ = checked;
+    if (hMenu_) RebuildMenu();
+}
+
+void TrayIcon::SetMenuCheckedLockFull(bool checked) {
+    if (checkedLockFull_ == checked) return;
+    checkedLockFull_ = checked;
     if (hMenu_) RebuildMenu();
 }
 

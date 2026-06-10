@@ -3,6 +3,7 @@
 #include "websocket_client.h"
 #include "api_enabler.h"
 #include "constants.h"
+#include "logger.h"
 
 #include <ixwebsocket/IXWebSocket.h>
 #include <nlohmann/json.hpp>
@@ -22,9 +23,6 @@ using json = nlohmann::json;
 using namespace std::chrono_literals;
 
 namespace {
-
-// 前向声明
-void DebugLog(const std::string& msg);
 
 // 解析 KuGou krc 格式字符串为 LyricsData
 LyricsData ParseKrc(const std::string& krcText) {
@@ -176,11 +174,6 @@ int BackoffSeconds(int attempt) {
     return 15;
 }
 
-void DebugLog(const std::string& /*msg*/) {
-    // 日志已在 main.cpp 中集中处理，这里不做任何操作
-    // 避免硬编码用户特定路径
-}
-
 } // namespace
 
 WebSocketClient::WebSocketClient() = default;
@@ -249,7 +242,7 @@ void WebSocketClient::RequestReconnect() {
 
 void WebSocketClient::ReconnectLoop() {
     int attempt = 0;
-    DebugLog("ReconnectLoop started");
+    Log("ReconnectLoop started");
     while (!stopRequested_.load()) {
         // 如果已连接,持续监控（短间隔以快速响应 stopRequested_）
         if (connected_.load() && client_) {
@@ -259,7 +252,7 @@ void WebSocketClient::ReconnectLoop() {
 
         // 等待退避
         const int waitSec = BackoffSeconds(attempt++);
-        DebugLog("Reconnect: waiting " + std::to_string(waitSec) + "s (attempt " + std::to_string(attempt-1) + ")");
+        Log("Reconnect: waiting " + std::to_string(waitSec) + "s (attempt " + std::to_string(attempt-1) + ")");
         for (int i = 0; i < waitSec * 10 && !stopRequested_.load() && !reconnectNow_.load(); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(constants::RECONNECT_WAIT_GRANULARITY_MS));
         }
@@ -273,14 +266,14 @@ void WebSocketClient::ReconnectLoop() {
             std::lock_guard<std::mutex> lock(stateMutex_);
             urlCopy = url_;
         }
-        DebugLog("Reconnect: connecting to " + urlCopy);
+        Log("Reconnect: connecting to " + urlCopy);
 
         // 配置客户端
         try {
             client_ = std::make_unique<ix::WebSocket>();
             client_->setUrl(urlCopy);
         } catch (...) {
-            DebugLog("Reconnect: exception creating WebSocket");
+            Log("Reconnect: exception creating WebSocket");
             continue;
         }
 
@@ -289,11 +282,11 @@ void WebSocketClient::ReconnectLoop() {
         client_->setOnMessageCallback(
             [self](const ix::WebSocketMessagePtr& msg) {
                 if (msg->type == ix::WebSocketMessageType::Open) {
-                    DebugLog("WS: opened");
+                    Log("WS: opened");
                     self->connected_.store(true);
                     if (self->onStatus_) self->onStatus_(true);
                 } else if (msg->type == ix::WebSocketMessageType::Close) {
-                    DebugLog("WS: closed");
+                    Log("WS: closed");
                     self->connected_.store(false);
                     if (self->onStatus_) self->onStatus_(false);
                 } else if (msg->type == ix::WebSocketMessageType::Message) {
@@ -301,13 +294,13 @@ void WebSocketClient::ReconnectLoop() {
                         try {
                             self->DispatchWsMessage(msg->str);
                         } catch (const std::exception& e) {
-                            DebugLog("WS: Dispatch exception: " + std::string(e.what()));
+                            Log("WS: Dispatch exception: " + std::string(e.what()));
                         } catch (...) {
-                            DebugLog("WS: Dispatch unknown exception");
+                            Log("WS: Dispatch unknown exception");
                         }
                     }
                 } else if (msg->type == ix::WebSocketMessageType::Error) {
-                    DebugLog("WS: ERROR - " + msg->errorInfo.reason);
+                    Log("WS: ERROR - " + msg->errorInfo.reason);
                     self->connected_.store(false);
                     if (self->onStatus_) self->onStatus_(false);
                 }
@@ -324,7 +317,7 @@ void WebSocketClient::ReconnectLoop() {
         if (stopRequested_.load()) break;
 
         if (!connected_.load()) {
-            DebugLog("Reconnect: connection failed after 5s");
+            Log("Reconnect: connection failed after 5s");
             // 启动失败,等待下个循环重连
             try { client_->stop(); } catch (...) {}
             client_.reset();
@@ -332,21 +325,21 @@ void WebSocketClient::ReconnectLoop() {
             // 连续多次失败后，尝试检测并自动开启 MoeKoeMusic 的 API 模式
             // 仅在 attempt == 2（即第3次失败，约已等待 1+2=3 秒）时触发一次
             if (attempt == 2) {
-                DebugLog("Reconnect: triggering API auto-enable check...");
+                Log("Reconnect: triggering API auto-enable check...");
                 auto result = ApiEnabler::TryEnableApi();
-                DebugLog("Reconnect: API auto-enable result = " + ApiEnabler::ResultToString(result));
+                Log("Reconnect: API auto-enable result = " + ApiEnabler::ResultToString(result));
             }
         } else {
-            DebugLog("Reconnect: connected successfully");
+            Log("Reconnect: connected successfully");
         }
     }
-    DebugLog("ReconnectLoop ended");
+    Log("ReconnectLoop ended");
 }
 
 void WebSocketClient::DispatchWsMessage(const std::string& raw) {
     // 安全检查：拒绝过大的消息，防止内存耗尽
     if (raw.size() > constants::MAX_WS_MESSAGE_SIZE) {
-        DebugLog("[WS] Message too large: " + std::to_string(raw.size()) + " bytes (max: " + std::to_string(constants::MAX_WS_MESSAGE_SIZE) + "), discarded");
+        Log("[WS] Message too large: " + std::to_string(raw.size()) + " bytes (max: " + std::to_string(constants::MAX_WS_MESSAGE_SIZE) + "), discarded");
         return;
     }
 
@@ -354,12 +347,12 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
     try {
         j = json::parse(raw);
     } catch (...) {
-        DebugLog("Dispatch: JSON parse failed");
+        Log("Dispatch: JSON parse failed");
         return;
     }
 
     if (!j.contains("type")) {
-        DebugLog("Dispatch: no type field in message");
+        Log("Dispatch: no type field in message");
         return;
     }
     const std::string type = j.value("type", "");
@@ -381,7 +374,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 data = ParseKrc(ldStr);
                 hasLD = data.valid;
             } else {
-                DebugLog("Dispatch: lyricsData unexpected type=" + std::to_string(static_cast<int>(ld.type())));
+                Log("Dispatch: lyricsData unexpected type=" + std::to_string(static_cast<int>(ld.type())));
             }
         }
 
@@ -438,7 +431,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             }
         }
         data.valid = !data.lines.empty();
-        try { if (onLyrics_) onLyrics_(data); } catch (...) { DebugLog("Dispatch: onLyrics_ exception"); }
+        try { if (onLyrics_) onLyrics_(data); } catch (...) { Log("Dispatch: onLyrics_ exception"); }
     } else if (type == "playerState") {
         PlayerState st;
         if (j.contains("data") && j["data"].is_object()) {
@@ -447,7 +440,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             st.currentTime = d.value("currentTime", 0.0);
             st.songTitle   = d.value("songTitle",   "");
         }
-        try { if (onState_) onState_(st); } catch (...) { DebugLog("Dispatch: onState_ exception"); }
+        try { if (onState_) onState_(st); } catch (...) { Log("Dispatch: onState_ exception"); }
     } else if (type == "welcome") {
         // 服务器欢迎消息,忽略
     } else {

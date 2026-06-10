@@ -26,6 +26,8 @@ enum TrayMenuId : UINT {
     ID_MENU_EXIT      = ID_TRAY_MENU_BASE + 4,
     ID_MENU_SETTINGS  = ID_TRAY_MENU_BASE + 5,
     ID_MENU_UNBIND    = ID_TRAY_MENU_BASE + 6,
+    ID_MENU_LOCK_POS  = ID_TRAY_MENU_BASE + 7,
+    ID_MENU_LOCK_FULL = ID_TRAY_MENU_BASE + 8,
 };
 
 class TrayIcon {
@@ -52,8 +54,9 @@ public:
     void SetTooltip(const std::wstring& text);
 
     // 更新菜单勾选状态
-    void SetMenuCheckedEnable(bool checked);
     void SetMenuCheckedAutoStart(bool checked);
+    void SetMenuCheckedLockPos(bool checked);
+    void SetMenuCheckedLockFull(bool checked);
     void SetMenuLabelEnable(const std::wstring& label);
 
     // 显示气泡通知（用于自启状态变更等反馈）
@@ -83,8 +86,9 @@ private:
     NOTIFYICONDATAW nid_{};
     bool         added_{false};
 
-    bool checkedEnable_{true};
     bool checkedAutoStart_{true};
+    bool checkedLockPos_{false};
+    bool checkedLockFull_{false};
     bool boundMode_{false};
     std::wstring labelEnable_{L"启用歌词显示"};
     std::wstring lastTooltip_;  // 缓存上一次 tooltip，避免每帧 NIM_MODIFY 导致闪烁
