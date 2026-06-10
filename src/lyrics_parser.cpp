@@ -135,8 +135,13 @@ RenderState LyricsParser::GetCurrentRenderState() const {
         if (charIdx < 0) {
             out.progress = 0.0;
         } else if (static_cast<size_t>(charIdx) >= chars.size() - 1) {
-            // 最后一个字符: 进度 = (已唱字符数) / 总字符数
-            out.progress = static_cast<double>(chars.size()) /
+            // 最后一个字符: 与其他字符一样的平滑插值
+            const auto& cur = chars[chars.size() - 1];
+            const int64_t dur = std::max<int64_t>(1, cur.endTime - cur.startTime);
+            const double inside = std::clamp(
+                static_cast<double>(tMs - cur.startTime) / static_cast<double>(dur),
+                0.0, 1.0);
+            out.progress = (static_cast<double>(chars.size() - 1) + inside) /
                            static_cast<double>(chars.size());
         } else {
             // 进度 = (已唱完整字符数 + 当前字符内进度) / 总字符数
