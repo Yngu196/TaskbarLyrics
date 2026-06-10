@@ -7,7 +7,22 @@
 #include <regex>
 #include <sstream>
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 namespace moekoe {
+
+namespace {
+
+/// 高精度本地时钟（秒），基于 QueryPerformanceCounter
+double GetWallTimeSeconds() {
+    LARGE_INTEGER freq, counter;
+    ::QueryPerformanceFrequency(&freq);
+    ::QueryPerformanceCounter(&counter);
+    return static_cast<double>(counter.QuadPart) / static_cast<double>(freq.QuadPart);
+}
+
+} // namespace
 
 void LyricsParser::UpdateLyrics(const LyricsData& data) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -17,6 +32,8 @@ void LyricsParser::UpdateLyrics(const LyricsData& data) {
 void LyricsParser::UpdatePlayerState(const PlayerState& state) {
     std::lock_guard<std::mutex> lock(mutex_);
     state_ = state;
+    // 记录本地高精度时钟，用于 GetCurrentRenderState() 中推算时间
+    lastUpdateWallTime_ = GetWallTimeSeconds();
 }
 
 bool LyricsParser::HasLyrics() const {
@@ -60,13 +77,25 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     out.isPlaying   = state_.isPlaying;
     out.currentTime = state_.currentTime;
 
+    // ── 本地时钟死推算：播放状态下用本地时间插值 currentTime ──
+    // 目的：即使 playerState 消息频率低（如每秒一次），progress 也能每帧平滑推进
+    // 原理：estimatedTime = lastReceivedTime + (localNow - localThen)
+    double effectiveTime = state_.currentTime;
+    if (state_.isPlaying && lastUpdateWallTime_ > 0.0) {
+        const double elapsed = GetWallTimeSeconds() - lastUpdateWallTime_;
+        // 限定最大插值 10 秒，防止异常（睡眠恢复、debug 断点等）导致时间狂奔
+        if (elapsed > 0.0 && elapsed < 10.0) {
+            effectiveTime = state_.currentTime + elapsed;
+        }
+    }
+
     if (!lyrics_.valid || lyrics_.lines.empty()) {
         out.hasLyrics = false;
         return out;
     }
     out.hasLyrics = true;
 
-    const int idx = FindLineIndex(state_.currentTime);
+    const int idx = FindLineIndex(effectiveTime);
     if (idx < 0) {
         // 进度在第一行之前,显示空状态
         return out;
@@ -79,7 +108,7 @@ RenderState LyricsParser::GetCurrentRenderState() const {
 
     // 在该行内计算字符级进度
     if (!line.characters.empty()) {
-        const int64_t tMs = static_cast<int64_t>(state_.currentTime * 1000.0);
+        const int64_t tMs = static_cast<int64_t>(effectiveTime * 1000.0);
         const auto& chars = line.characters;
         // 找到 tMs 落入哪个字符
         int charIdx = -1;
