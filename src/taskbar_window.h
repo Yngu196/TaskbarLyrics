@@ -32,6 +32,7 @@ struct TaskbarInfo {
     RECT             rect{0, 0, 0, 0};
     TaskbarPosition  position{TaskbarPosition::UNKNOWN};
     UINT             dpi{96};
+    bool             autoHide{false};    // 任务栏是否开启自动隐藏
 };
 
 class TaskbarWindow {
@@ -65,9 +66,17 @@ public:
     // 静态:查找任务栏窗口
     static HWND FindTaskbarHandle();
 
-    // 鼠标悬停状态
+    // 悬停状态
     bool IsHovering() const { return isHovering_; }
     bool IsDragging() const { return isDragging_; }
+
+    // 位置锁定：禁止拖动调整位置
+    bool IsPositionLocked() const { return positionLocked_; }
+    void SetPositionLocked(bool locked) { positionLocked_ = locked; }
+
+    // 完全锁定：禁止拖动 + 禁止悬停按钮交互
+    bool IsFullyLocked() const { return fullyLocked_; }
+    void SetFullyLocked(bool locked) { fullyLocked_ = locked; }
 
     // 拖动偏移（用户手动拖动调整的位置）
     int GetDragOffsetX() const { return dragOffsetX_; }
@@ -107,6 +116,10 @@ private:
     bool          isHovering_{false};
     bool          trackingMouse_{false};
     bool          isDragging_{false};
+    bool          positionLocked_{false};   // 位置锁定：禁止拖动
+    bool          fullyLocked_{false};     // 完全锁定：禁止拖动+按钮交互
+    bool          taskbarAutoHide_{false}; // 任务栏自动隐藏状态
+    bool          taskbarVisible_{true};   // 自动隐藏模式下任务栏当前是否可见
     POINT         dragStartPos_{0, 0};     // 拖动开始时鼠标屏幕坐标
     POINT         dragStartWinPos_{0, 0};  // 拖动开始时窗口屏幕坐标
     int           dragOffsetX_{0};         // 用户拖动产生的累积偏移

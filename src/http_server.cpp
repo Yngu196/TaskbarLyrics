@@ -2,6 +2,7 @@
 // http_server.cpp - 极简 HTTP 服务器实现
 #include "http_server.h"
 #include "constants.h"
+#include "logger.h"
 
 #include <cstdio>
 #include <cstring>
@@ -15,9 +16,6 @@
 namespace moekoe {
 
 namespace {
-void DebugLog(const char* /*fmt*/, ...) {
-    // 日志已在 main.cpp 中集中处理
-}
 
 // 发送 HTTP 响应（CORS 仅允许 localhost，端口使用实际监听端口）
 void SendResponse(SOCKET client, int port, int statusCode, const char* statusText,
@@ -149,13 +147,13 @@ void HttpServer::ServerLoop(int port) {
     // 初始化 Winsock
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        DebugLog("[HTTP] WSAStartup failed\n");
+        Log("[HTTP] WSAStartup failed\n");
         return;
     }
 
     SOCKET listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listenSock == INVALID_SOCKET) {
-        DebugLog("[HTTP] socket failed: %d\n", WSAGetLastError());
+        Log("[HTTP] socket failed: %d\n", WSAGetLastError());
         WSACleanup();
         return;
     }
@@ -170,21 +168,21 @@ void HttpServer::ServerLoop(int port) {
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     if (bind(listenSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        DebugLog("[HTTP] bind failed on port %d: %d\n", port, WSAGetLastError());
+        Log("[HTTP] bind failed on port %d: %d\n", port, WSAGetLastError());
         closesocket(listenSock);
         WSACleanup();
         return;
     }
 
     if (listen(listenSock, SOMAXCONN) == SOCKET_ERROR) {
-        DebugLog("[HTTP] listen failed: %d\n", WSAGetLastError());
+        Log("[HTTP] listen failed: %d\n", WSAGetLastError());
         closesocket(listenSock);
         WSACleanup();
         return;
     }
 
     running_.store(true);
-    DebugLog("[HTTP] Server started on port %d\n", port);
+    Log("[HTTP] Server started on port %d\n", port);
 
     while (!stopRequested_.load()) {
         fd_set readSet;
@@ -199,7 +197,7 @@ void HttpServer::ServerLoop(int port) {
         SOCKET client = accept(listenSock, nullptr, nullptr);
         if (client == INVALID_SOCKET) {
             if (!stopRequested_.load()) {
-                DebugLog("[HTTP] accept error: %d\n", WSAGetLastError());
+                Log("[HTTP] accept error: %d\n", WSAGetLastError());
             }
             continue;
         }
@@ -230,7 +228,7 @@ void HttpServer::ServerLoop(int port) {
             path = ExtractPath(buffer, static_cast<size_t>(totalLen));
         }
 
-        DebugLog("[HTTP] Request: %s %s (%d bytes)\n",
+        Log("[HTTP] Request: %s %s (%d bytes)\n",
                  method.c_str(), path.c_str(), totalLen);
 
         // ── 本地鉴权：OPTIONS 预检请求跳过（浏览器不带自定义头） ──
@@ -253,7 +251,7 @@ void HttpServer::ServerLoop(int port) {
 
                 // 严格验证命令（白名单匹配，非子字符串）
                 if (IsValidShutdownCommand(bodyStr)) {
-                    DebugLog("[HTTP] Received valid shutdown command\n");
+                    Log("[HTTP] Received valid shutdown command\n");
                     SendResponse(client, port, 200, "OK", "application/json",
                                  "{\"status\":\"shutting_down\"}");
 
@@ -281,7 +279,7 @@ void HttpServer::ServerLoop(int port) {
 
     closesocket(listenSock);
     running_.store(false);
-    DebugLog("[HTTP] Server stopped\n");
+    Log("[HTTP] Server stopped\n");
     WSACleanup();
 }
 

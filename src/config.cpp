@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // config.cpp - 配置管理实现
 #include "config.h"
+#include "logger.h"
 
 #include <nlohmann/json.hpp>
 
@@ -27,23 +28,6 @@ static std::string WideToUtf8(const std::wstring& ws) {
 
 namespace {
 
-void ConfigDebugLog(const char* fmt, ...) {
-    char modulePath[MAX_PATH] = {};
-    GetModuleFileNameA(nullptr, modulePath, MAX_PATH);
-    char* lastSlash = strrchr(modulePath, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    std::string logPath = std::string(modulePath) + "\\debug.log";
-    FILE* f = fopen(logPath.c_str(), "a");
-    if (!f) return;
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-    fclose(f);
-}
-
-} // namespace
-
 // ── 验证路径安全性：防止命令注入 ──
 // 检查路径中是否包含可能被 shell 解释的危险字符
 static bool IsPathSafe(const std::wstring& path) {
@@ -53,14 +37,14 @@ static bool IsPathSafe(const std::wstring& path) {
     static const wchar_t dangerousChars[] = L"&|;`$(){}<>!\n\r\"";
     for (const wchar_t* p = dangerousChars; *p != L'\0'; ++p) {
         if (path.find(*p) != std::wstring::npos) {
-            ConfigDebugLog("[AUTOSTART] Path contains dangerous char: 0x%04X\n", (unsigned int)*p);
+            moekoe::Log("[AUTOSTART] Path contains dangerous char: 0x%04X\n", (unsigned int)*p);
             return false;
         }
     }
 
     // 路径必须指向实际存在的文件
     if (::GetFileAttributesW(path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        ConfigDebugLog("[AUTOSTART] Path does not exist: %s\n", WideToUtf8(path).c_str());
+        moekoe::Log("[AUTOSTART] Path does not exist: %s\n", WideToUtf8(path).c_str());
         return false;
     }
 
@@ -101,6 +85,8 @@ static std::wstring ResolveAutoStartExePath() {
     return cur;
 }
 
+} // namespace
+
 using json = nlohmann::json;
 
 Config::Config() = default;
@@ -122,11 +108,11 @@ std::string Config::GetAutoStartRegistryKey() {
 
 bool Config::Load() {
     const std::string path = GetConfigPath();
-    ConfigDebugLog("[CONFIG] Load() path=%s\n", path.c_str());
+    moekoe::Log("[CONFIG] Load() path=%s\n", path.c_str());
 
     std::ifstream in(path);
     if (!in.is_open()) {
-        ConfigDebugLog("[CONFIG] File not found, saving defaults\n");
+        moekoe::Log("[CONFIG] File not found, saving defaults\n");
         return Save();
     }
 
@@ -163,8 +149,10 @@ bool Config::Load() {
 
         if (j.contains("position")) {
             const auto& p = j["position"];
-            position_.offsetX = p.value("offset_x", position_.offsetX);
-            position_.offsetY = p.value("offset_y", position_.offsetY);
+            position_.offsetX      = p.value("offset_x",       position_.offsetX);
+            position_.offsetY      = p.value("offset_y",       position_.offsetY);
+            position_.lockPosition = p.value("lock_position",  position_.lockPosition);
+            position_.lockFully    = p.value("lock_fully",     position_.lockFully);
         }
 
         // 范围验证：将异常值 clamp 到合理区间
@@ -178,15 +166,25 @@ bool Config::Load() {
         advanced_.refreshRateHz   = std::clamp(advanced_.refreshRateHz, 1, 120);
 
         // 打印加载结果
-        ConfigDebugLog("[CONFIG] Loaded: hl=%s nl=%s font=%s size=%d opacity=%.2f karaoke=%d trans=%d\n",
+        moekoe::Log("[CONFIG] Loaded: hl=%s nl=%s font=%s size=%d opacity=%.2f karaoke=%d trans=%d\n",
             appearance_.highlightColor.c_str(), appearance_.normalColor.c_str(),
             appearance_.fontFamily.c_str(), appearance_.fontSize, appearance_.normalOpacity,
             (int)appearance_.enableKaraoke, (int)appearance_.enableTranslation);
 
     } catch (const std::exception& e) {
-        ConfigDebugLog("[CONFIG] JSON parse error: %s, saving defaults\n", e.what());
+        moekoe::Log("[CONFIG] JSON parse error: %s, saving defaults\n", e.what());
         return Save();
     }
+
+    // 配置校验日志：确认关键字段值正确
+    moekoe::Log("[CONFIG] Validate: enabled=%d autoStart=%d "
+               "marqueeSpeed=%.1f marqueeDelay=%d marqueePause=%d "
+               "lockPos=%d lockFull=%d debugLog=%d\n",
+        (int)enabled_, (int)autoStart_,
+        appearance_.marqueeSpeedPxPerSec, appearance_.marqueeDelayMs, appearance_.marqueePauseMs,
+        (int)position_.lockPosition, (int)position_.lockFully,
+        (int)advanced_.debugLog);
+
     return true;
 }
 
@@ -222,8 +220,10 @@ bool Config::Save() const {
     };
 
     j["position"] = {
-        {"offset_x", position_.offsetX},
-        {"offset_y", position_.offsetY},
+        {"offset_x",      position_.offsetX},
+        {"offset_y",      position_.offsetY},
+        {"lock_position", position_.lockPosition},
+        {"lock_fully",    position_.lockFully},
     };
 
     out << j.dump(2);
@@ -241,7 +241,7 @@ bool Config::SetAutoStart(bool v) {
     bool startupOk = SetAutoStartStartupFolder(v);
 
     const bool anyOk = regOk || taskOk || startupOk;
-    ConfigDebugLog("[AUTOSTART] SetAutoStart(%s) changed=%d, reg=%s task=%s startup=%s -> overall=%s\n",
+    moekoe::Log("[AUTOSTART] SetAutoStart(%s) changed=%d, reg=%s task=%s startup=%s -> overall=%s\n",
         v ? "true" : "false", (int)changed,
         regOk ? "ok" : "FAIL",
         taskOk ? "ok" : "FAIL",
@@ -259,7 +259,7 @@ bool Config::SetAutoStartRegistry(bool enable) {
         KEY_SET_VALUE | KEY_QUERY_VALUE,
         &hKey);
     if (result != ERROR_SUCCESS) {
-        ConfigDebugLog("[AUTOSTART] RegOpenKeyExW failed: %ld\n", result);
+        moekoe::Log("[AUTOSTART] RegOpenKeyExW failed: %ld\n", result);
         return false;
     }
 
@@ -272,14 +272,14 @@ bool Config::SetAutoStartRegistry(bool enable) {
         wcsncpy_s(exePath, resolvedPath.c_str(), MAX_PATH - 1);
 
         if (resolvedPath.empty() || wcslen(exePath) == 0) {
-            ConfigDebugLog("[AUTOSTART] GetModuleFileNameW failed: %lu\n", GetLastError());
+            moekoe::Log("[AUTOSTART] GetModuleFileNameW failed: %lu\n", GetLastError());
             RegCloseKey(hKey);
             return false;
         }
 
         // 验证路径安全性
         if (!IsPathSafe(resolvedPath)) {
-            ConfigDebugLog("[AUTOSTART] Registry: path failed safety check\n");
+            moekoe::Log("[AUTOSTART] Registry: path failed safety check\n");
             RegCloseKey(hKey);
             return false;
         }
@@ -301,10 +301,10 @@ bool Config::SetAutoStartRegistry(bool enable) {
             reinterpret_cast<const BYTE*>(quotedPath.c_str()),
             byteCount);
         if (result != ERROR_SUCCESS) {
-            ConfigDebugLog("[AUTOSTART] RegSetValueExW failed: %ld\n", result);
+            moekoe::Log("[AUTOSTART] RegSetValueExW failed: %ld\n", result);
             ok = false;
         } else {
-            ConfigDebugLog("[AUTOSTART] Registry SET ok: key='%s' value='%s'\n",
+            moekoe::Log("[AUTOSTART] Registry SET ok: key='%s' value='%s'\n",
                 nameKey.c_str(), WideToUtf8(quotedPath).c_str());
         }
     } else {
@@ -312,10 +312,10 @@ bool Config::SetAutoStartRegistry(bool enable) {
         const std::wstring nameW(nameKey.begin(), nameKey.end());
         result = RegDeleteValueW(hKey, nameW.c_str());
         if (result != ERROR_SUCCESS && result != ERROR_FILE_NOT_FOUND) {
-            ConfigDebugLog("[AUTOSTART] RegDeleteValueW failed: %ld\n", result);
+            moekoe::Log("[AUTOSTART] RegDeleteValueW failed: %ld\n", result);
             ok = false;
         } else {
-            ConfigDebugLog("[AUTOSTART] Registry DELETE ok: key='%s' (ret=%ld)\n",
+            moekoe::Log("[AUTOSTART] Registry DELETE ok: key='%s' (ret=%ld)\n",
                 nameKey.c_str(), result);
         }
     }
@@ -337,13 +337,13 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
     wchar_t exePath[MAX_PATH] = {0};
     wcsncpy_s(exePath, resolvedPath.c_str(), MAX_PATH - 1);
     if (resolvedPath.empty() || wcslen(exePath) == 0) {
-        ConfigDebugLog("[AUTOSTART] TaskScheduler: path empty\n");
+        moekoe::Log("[AUTOSTART] TaskScheduler: path empty\n");
         return false;
     }
 
     // 验证路径安全性，防止命令注入
     if (!IsPathSafe(resolvedPath)) {
-        ConfigDebugLog("[AUTOSTART] TaskScheduler: path failed safety check\n");
+        moekoe::Log("[AUTOSTART] TaskScheduler: path failed safety check\n");
         return false;
     }
 
@@ -364,7 +364,7 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
     if (!enable) {
         // 关闭自启：只要成功删除了"任务"就算成功（如果原本就不存在也算 ok）
         // 简化处理：直接返回 true
-        ConfigDebugLog("[AUTOSTART] TaskScheduler: task deleted (or never existed)\n");
+        moekoe::Log("[AUTOSTART] TaskScheduler: task deleted (or never existed)\n");
         return true;
     }
 
@@ -377,7 +377,7 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
         + L"\" /TR " + quotedExe
         + L" /SC ONLOGON /RL LIMITED /F";
 
-    ConfigDebugLog("[AUTOSTART] TaskScheduler cmd: %s\n",
+    moekoe::Log("[AUTOSTART] TaskScheduler cmd: %s\n",
         WideToUtf8(createCmd).c_str());
 
     STARTUPINFOW si{}; si.cb = sizeof(si);
@@ -385,7 +385,7 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
     std::wstring cmdLine = createCmd;
     if (!::CreateProcessW(nullptr, cmdLine.data(), nullptr, nullptr,
                           FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
-        ConfigDebugLog("[AUTOSTART] TaskScheduler CreateProcessW failed: %lu\n", GetLastError());
+        moekoe::Log("[AUTOSTART] TaskScheduler CreateProcessW failed: %lu\n", GetLastError());
         return false;
     }
     ::WaitForSingleObject(pi.hProcess, 10000);
@@ -395,11 +395,11 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
     ::CloseHandle(pi.hThread);
 
     if (exitCode != 0) {
-        ConfigDebugLog("[AUTOSTART] TaskScheduler schtasks exited with code %lu\n", exitCode);
+        moekoe::Log("[AUTOSTART] TaskScheduler schtasks exited with code %lu\n", exitCode);
         return false;
     }
 
-    ConfigDebugLog("[AUTOSTART] TaskScheduler: task created successfully\n");
+    moekoe::Log("[AUTOSTART] TaskScheduler: task created successfully\n");
     return true;
 }
 
@@ -418,14 +418,14 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 
     // 验证路径安全性
     if (!IsPathSafe(resolvedPath)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: path failed safety check\n");
+        moekoe::Log("[AUTOSTART] StartupFolder: path failed safety check\n");
         return false;
     }
 
     // Startup 目录
     wchar_t startupDir[MAX_PATH] = {0};
     if (FAILED(::SHGetFolderPathW(nullptr, CSIDL_STARTUP, nullptr, 0, startupDir))) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: SHGetFolderPathW failed\n");
+        moekoe::Log("[AUTOSTART] StartupFolder: SHGetFolderPathW failed\n");
         return false;
     }
 
@@ -433,7 +433,7 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 
     if (!enable) {
         if (::DeleteFileW(lnkPath.c_str())) {
-            ConfigDebugLog("[AUTOSTART] StartupFolder: lnk deleted\n");
+            moekoe::Log("[AUTOSTART] StartupFolder: lnk deleted\n");
         }
         return true;  // 不存在也视为成功
     }
@@ -445,14 +445,14 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
     hr = ::CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
                             IID_IShellLinkW, reinterpret_cast<void**>(&psl));
     if (FAILED(hr)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: CoCreateInstance failed: 0x%08lx\n", hr);
+        moekoe::Log("[AUTOSTART] StartupFolder: CoCreateInstance failed: 0x%08lx\n", hr);
         return false;
     }
 
     // 设置快捷方式目标路径
     hr = psl->SetPath(exePath);
     if (FAILED(hr)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: SetPath failed: 0x%08lx\n", hr);
+        moekoe::Log("[AUTOSTART] StartupFolder: SetPath failed: 0x%08lx\n", hr);
         psl->Release();
         return false;
     }
@@ -464,7 +464,7 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
     if (lastSlash) *lastSlash = L'\0';
     hr = psl->SetWorkingDirectory(workDir);
     if (FAILED(hr)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: SetWorkingDirectory failed: 0x%08lx\n", hr);
+        moekoe::Log("[AUTOSTART] StartupFolder: SetWorkingDirectory failed: 0x%08lx\n", hr);
         psl->Release();
         return false;
     }
@@ -476,14 +476,14 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
     IPersistFile* ppf = nullptr;
     hr = psl->QueryInterface(IID_IPersistFile, reinterpret_cast<void**>(&ppf));
     if (FAILED(hr)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: QueryInterface failed: 0x%08lx\n", hr);
+        moekoe::Log("[AUTOSTART] StartupFolder: QueryInterface failed: 0x%08lx\n", hr);
         psl->Release();
         return false;
     }
 
     hr = ppf->Save(lnkPath.c_str(), TRUE);
     if (FAILED(hr)) {
-        ConfigDebugLog("[AUTOSTART] StartupFolder: Save failed: 0x%08lx\n", hr);
+        moekoe::Log("[AUTOSTART] StartupFolder: Save failed: 0x%08lx\n", hr);
         ppf->Release();
         psl->Release();
         return false;
@@ -492,7 +492,7 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
     ppf->Release();
     psl->Release();
 
-    ConfigDebugLog("[AUTOSTART] StartupFolder: shortcut created successfully\n");
+    moekoe::Log("[AUTOSTART] StartupFolder: shortcut created successfully\n");
     return true;
 }
 

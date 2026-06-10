@@ -406,10 +406,6 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
 <div class="section">
     <div class="section-title">通用</div>
     <div class="row">
-        <label>启用歌词显示</label>
-        <label class="switch"><input type="checkbox" id="enabledChk" checked><span class="slider"></span></label>
-    </div>
-    <div class="row">
         <label>开机自动启动</label>
         <label class="switch"><input type="checkbox" id="autoStartChk" checked><span class="slider"></span></label>
     </div>
@@ -441,7 +437,7 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
     </div>
 </div>
 
-<div class="footer">MoeKoe Taskbar Lyrics v0.3.7</div>
+<div class="footer">MoeKoe Taskbar Lyrics v0.3.8</div>
 
 <script>
 // ---- 与 C++ 宿主通信 ----
@@ -526,7 +522,6 @@ function applyConfigToUI(cfg) {
     const pos = cfg.position || {};
 
     // 通用
-    document.getElementById('enabledChk').checked = cfg.enabled !== false;
     document.getElementById('autoStartChk').checked = cfg.auto_start !== false;
 
     // 外观
@@ -563,7 +558,6 @@ function applyConfigToUI(cfg) {
 // ---- 从 UI 收集配置 ----
 function collectConfig() {
     return {
-        enabled: document.getElementById('enabledChk').checked,
         auto_start: document.getElementById('autoStartChk').checked,
         appearance: {
             highlight_color: document.getElementById('highlightColor').value,

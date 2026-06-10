@@ -38,8 +38,10 @@ struct AdvancedConfig {
 
 // 歌词窗口位置偏移（用户可拖动调整）
 struct PositionConfig {
-    int offsetX{0};   // 水平偏移像素
-    int offsetY{0};   // 垂直偏移像素
+    int  offsetX{0};   // 水平偏移像素
+    int  offsetY{0};   // 垂直偏移像素
+    bool lockPosition{false};   // 锁定位置（禁止拖动）
+    bool lockFully{false};      // 完全锁定（禁止拖动+按钮交互）
 };
 
 class Config {

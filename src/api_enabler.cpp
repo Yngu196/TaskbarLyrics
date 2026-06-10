@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // api_enabler.cpp - MoeKoeMusic API 模式自动检测与开启实现
 #include "api_enabler.h"
+#include "logger.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -17,14 +18,6 @@ using json = nlohmann::json;
 
 namespace {
 
-void DebugLog(const std::string& msg) {
-    const char* logPath = "D:\\MoeKoeMusic-plugin\\MoeKoeMusic-TaskbarLyrics\\debug.log";
-    if (FILE* f = fopen(logPath, "a")) {
-        fprintf(f, "[%llu] [API-ENABLER] %s\n", GetTickCount64() % 100000, msg.c_str());
-        fclose(f);
-    }
-}
-
 // 防重复标记：本次运行周期内只尝试一次自动开启
 static bool s_attempted = false;
 
@@ -40,18 +33,18 @@ ApiEnableResult ApiEnabler::TryEnableApi() {
         return ApiEnableResult::AlreadyAttempted;
     }
 
-    DebugLog("TryEnableApi: starting check");
+    Log("TryEnableApi: starting check");
 
     // 1. 检测 MoeKoeMusic 进程
     if (!IsMoeKoeMusicRunning()) {
-        DebugLog("TryEnableApi: MoeKoeMusic process not found");
+        Log("TryEnableApi: MoeKoeMusic process not found");
         return ApiEnableResult::ProcessNotFound;
     }
 
     // 2. 获取配置文件路径
     const std::string configPath = GetConfigPath();
     if (configPath.empty()) {
-        DebugLog("TryEnableApi: cannot determine config path");
+        Log("TryEnableApi: cannot determine config path");
         return ApiEnableResult::ConfigNotFound;
     }
 
@@ -59,7 +52,7 @@ ApiEnableResult ApiEnabler::TryEnableApi() {
     {
         DWORD attrs = GetFileAttributesA(configPath.c_str());
         if (attrs == INVALID_FILE_ATTRIBUTES || (attrs & FILE_ATTRIBUTE_DIRECTORY)) {
-            DebugLog("TryEnableApi: config file not found at " + configPath);
+            Log("TryEnableApi: config file not found at " + configPath);
             return ApiEnableResult::ConfigNotFound;
         }
     }
@@ -67,34 +60,34 @@ ApiEnableResult ApiEnabler::TryEnableApi() {
     // 3. 读取当前 API 模式状态
     const std::string currentMode = ReadApiMode(configPath);
     if (currentMode.empty()) {
-        DebugLog("TryEnableApi: failed to read apiMode from config");
+        Log("TryEnableApi: failed to read apiMode from config");
         return ApiEnableResult::ConfigReadError;
     }
 
     if (currentMode == "on") {
-        DebugLog("TryEnableApi: API mode is already ON");
+        Log("TryEnableApi: API mode is already ON");
         return ApiEnableResult::AlreadyOn;
     }
 
     // 4. 当前为 off → 尝试修改为 on
-    DebugLog("TryEnableApi: API mode is OFF, attempting to enable...");
+    Log("TryEnableApi: API mode is OFF, attempting to enable...");
     s_attempted = true;  // 标记已尝试
 
     if (!WriteApiMode(configPath)) {
-        DebugLog("TryEnableApi: failed to write config file");
+        Log("TryEnableApi: failed to write config file");
         return ApiEnableResult::ConfigWriteError;
     }
 
-    DebugLog("TryEnableApi: successfully set apiMode to 'on' in config");
+    Log("TryEnableApi: successfully set apiMode to 'on' in config");
 
     // 5. 尝试重启 MoeKoeMusic 使配置立即生效
     bool restarted = RestartMoeKoeMusic();
     if (restarted) {
-        DebugLog("TryEnableApi: MoeKoeMusic restart triggered");
+        Log("TryEnableApi: MoeKoeMusic restart triggered");
         return ApiEnableResult::EnabledAndRestarted;
     }
 
-    DebugLog("TryEnableApi: enabled but could not restart (user needs manual restart)");
+    Log("TryEnableApi: enabled but could not restart (user needs manual restart)");
     return ApiEnableResult::Enabled;
 }
 
@@ -141,7 +134,7 @@ bool ApiEnabler::IsMoeKoeMusicRunning() {
     // 可能的 exe 名: moekoemusic.exe, MoeKoe Music.exe 等
     if (exePath.find("moekoemusic") != std::string::npos ||
         exePath.find("moejue") != std::string::npos) {
-        DebugLog("IsMoeKoeMusicRunning: found process PID=" + std::to_string(pid) + " path=" + path);
+        Log("IsMoeKoeMusicRunning: found process PID=" + std::to_string(pid) + " path=" + path);
         return true;
     }
 
@@ -168,7 +161,7 @@ bool ApiEnabler::IsMoeKoeMusicRunning() {
     CloseHandle(snap);
 
     if (found) {
-        DebugLog("IsMoeKoeMusicRunning: found via snapshot");
+        Log("IsMoeKoeMusicRunning: found via snapshot");
     }
     return found;
 }
@@ -199,7 +192,7 @@ std::string ApiEnabler::ReadApiMode(const std::string& configPath) {
         }
         return "";  // 字段不存在
     } catch (const std::exception& e) {
-        DebugLog("ReadApiMode exception: " + std::string(e.what()));
+        Log("ReadApiMode exception: " + std::string(e.what()));
         return "";
     } catch (...) {
         return "";
@@ -246,7 +239,7 @@ bool ApiEnabler::WriteApiMode(const std::string& configPath) {
 
         return true;
     } catch (const std::exception& e) {
-        DebugLog("WriteApiMode exception: " + std::string(e.what()));
+        Log("WriteApiMode exception: " + std::string(e.what()));
         return false;
     } catch (...) {
         return false;
@@ -288,11 +281,11 @@ bool ApiEnabler::RestartMoeKoeMusic() {
     CloseHandle(snap);
 
     if (exePath.empty()) {
-        DebugLog("RestartMoeKoeMusic: could not find executable path");
+        Log("RestartMoeKoeMusic: could not find executable path");
         return false;
     }
 
-    DebugLog("RestartMoeKoeMusic: found executable, attempting restart");
+    Log("RestartMoeKoeMusic: found executable, attempting restart");
 
     // 使用 ShellExecuteW 启动新实例（会自动处理 UAC 等问题）
     HINSTANCE result = ShellExecuteW(
@@ -301,11 +294,11 @@ bool ApiEnabler::RestartMoeKoeMusic() {
 
     // reinterpret_cast<HINSTANCE>(intptr_t(32)) 表示成功 (>32)
     if (reinterpret_cast<intptr_t>(result) > 32) {
-        DebugLog("RestartMoeKoeMusic: launched new instance successfully");
+        Log("RestartMoeKoeMusic: launched new instance successfully");
         return true;
     }
 
-    DebugLog("RestartMoeKoeMusic: ShellExecute failed");
+    Log("RestartMoeKoeMusic: ShellExecute failed");
     return false;
 }
 

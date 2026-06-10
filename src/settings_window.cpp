@@ -4,6 +4,7 @@
 // 使用 WebView2 SDK（Windows 10/11 自带或 Edge Runtime）
 // 通过 PostWebMessageAsJson 与 JS 双向通信
 #include "settings_window.h"
+#include "logger.h"
 
 #include <shlobj.h>
 #include <windows.h>
@@ -28,22 +29,6 @@ using Microsoft::WRL::ComPtr;
 constexpr UINT WM_PICK_FONT = WM_USER + 100;
 
 namespace {
-
-void DebugLog(const char* fmt, ...) {
-    // 获取 exe 所在目录，日志写入同目录下（可移植）
-    char modulePath[MAX_PATH] = {};
-    GetModuleFileNameA(nullptr, modulePath, MAX_PATH);
-    char* lastSlash = strrchr(modulePath, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    std::string logPath = std::string(modulePath) + "\\debug.log";
-    FILE* f = fopen(logPath.c_str(), "a");
-    if (!f) return;
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-    fclose(f);
-}
 
 std::wstring Utf8ToWide(const std::string& s) {
     if (s.empty()) return {};
@@ -96,7 +81,7 @@ public:
 
     // ICoreWebView2CreateEnvironmentCompletedHandler
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* env) override {
-        DebugLog("[SETTINGS] Env created, hr=0x%08lX\n", result);
+        moekoe::Log("[SETTINGS] Env created, hr=0x%08lX\n", result);
         if (SUCCEEDED(result) && owner_ && env) {
             owner_->OnEnvironmentReady(env);
         }
@@ -132,7 +117,7 @@ public:
 
     // ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
-        DebugLog("[SETTINGS] Controller created, hr=0x%08lX\n", result);
+        moekoe::Log("[SETTINGS] Controller created, hr=0x%08lX\n", result);
         if (SUCCEEDED(result) && owner_ && controller) {
             owner_->OnControllerReady(controller);
         }
@@ -219,11 +204,11 @@ public:
         args->get_IsSuccess(&isSuccess);
         args->get_WebErrorStatus(&webErrorStatus);
 
-        DebugLog("[SETTINGS] NavigationCompleted: success=%d, error=%d\n",
+        moekoe::Log("[SETTINGS] NavigationCompleted: success=%d, error=%d\n",
                  static_cast<int>(isSuccess), static_cast<int>(webErrorStatus));
 
         if (!isSuccess) {
-            DebugLog("[SETTINGS] Navigation FAILED! Error code: %d\n", webErrorStatus);
+            moekoe::Log("[SETTINGS] Navigation FAILED! Error code: %d\n", webErrorStatus);
             // 标记 WebView 初始化失败，让调用方知道需要回退
             if (owner_) {
                 owner_->SetWebViewInitFailed();
@@ -232,7 +217,7 @@ public:
                     L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONWARNING);
             }
         } else {
-            DebugLog("[SETTINGS] Navigation OK - settings.html loaded successfully\n");
+            moekoe::Log("[SETTINGS] Navigation OK - settings.html loaded successfully\n");
             // 发送初始配置到 WebView
             if (owner_) {
                 owner_->SendConfigToWebView(owner_->GetCurrentConfig());
@@ -371,7 +356,7 @@ bool SettingsWindow::Show(HINSTANCE hInstance, HWND /*parent*/, const Config& cu
     settingsUrl_ = std::wstring(L"file:///") + exeDir + L"\\resources\\settings.html";
     for (auto& c : settingsUrl_) { if (c == L'\\') c = L'/'; }
 
-    DebugLog("[SETTINGS] URL=%ls\n", settingsUrl_.c_str());
+    moekoe::Log("[SETTINGS] URL=%ls\n", settingsUrl_.c_str());
 
     // 创建 WebView2 环境
     auto* envHandler = new EnvironmentCompletedHandler(this);
@@ -380,7 +365,7 @@ bool SettingsWindow::Show(HINSTANCE hInstance, HWND /*parent*/, const Config& cu
     envHandler->Release();
 
     if (FAILED(hr)) {
-        DebugLog("[SETTINGS] CreateCoreWebView2EnvironmentWithOptions failed: 0x%08lX\n", hr);
+        moekoe::Log("[SETTINGS] CreateCoreWebView2EnvironmentWithOptions failed: 0x%08lX\n", hr);
         webViewInitFailed_ = true;
         MessageBoxW(hwnd_,
             L"无法创建 WebView2 环境。\n请确保已安装 Microsoft Edge WebView2 Runtime。\n将回退到基础设置界面。",
@@ -408,7 +393,7 @@ void SettingsWindow::OnEnvironmentReady(void* env) {
     ctrlHandler->Release();
 
     if (FAILED(hr)) {
-        DebugLog("[SETTINGS] CreateCoreWebView2Controller failed: 0x%08lX\n", hr);
+        moekoe::Log("[SETTINGS] CreateCoreWebView2Controller failed: 0x%08lX\n", hr);
     }
 }
 
@@ -438,10 +423,10 @@ void SettingsWindow::OnControllerReady(void* controller) {
 
         DWORD attr = GetFileAttributesW(htmlPath);
         bool htmlExists = (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
-        DebugLog("[SETTINGS] HTML path=%ls exists=%d\n", htmlPath, (int)htmlExists);
+        moekoe::Log("[SETTINGS] HTML path=%ls exists=%d\n", htmlPath, (int)htmlExists);
 
         if (!htmlExists) {
-            DebugLog("[SETTINGS] ERROR: settings.html NOT FOUND!\n");
+            moekoe::Log("[SETTINGS] ERROR: settings.html NOT FOUND!\n");
             SetWebViewInitFailed();
             MessageBoxW(hwnd_,
                 L"设置页面文件不存在。\n请确保 resources\\settings.html 在 exe 同级目录。\n将回退到基础设置界面。",
@@ -464,7 +449,7 @@ void SettingsWindow::OnControllerReady(void* controller) {
         wv->add_WebMessageReceived(msgHandler, &msgToken);
         msgHandler->Release();
 
-        DebugLog("[SETTINGS] WebView2 ready, navigating to settings.html...\n");
+        moekoe::Log("[SETTINGS] WebView2 ready, navigating to settings.html...\n");
     }
 }
 
@@ -473,7 +458,7 @@ void SettingsWindow::OnWebMessageReceived(const std::string& jsonStr) {
         json msg = json::parse(jsonStr);
         std::string type = msg.value("type", "");
 
-        DebugLog("[SETTINGS] recv: type=%s\n", type.c_str());
+        moekoe::Log("[SETTINGS] recv: type=%s\n", type.c_str());
 
         if (type == "getConfig") {
         SendConfigToWebView(currentConfig_);
@@ -490,7 +475,7 @@ void SettingsWindow::OnWebMessageReceived(const std::string& jsonStr) {
         Close();
     }
     } catch (const std::exception& e) {
-        DebugLog("[SETTINGS] OnWebMessage error: %s\n", e.what());
+        moekoe::Log("[SETTINGS] OnWebMessage error: %s\n", e.what());
     }
 }
 
@@ -556,6 +541,8 @@ void SettingsWindow::ApplyConfigFromJson(void* jsonPtr) {
         const auto& p = c["position"];
         currentConfig_.MutablePosition().offsetX = p.value("offset_x", 0);
         currentConfig_.MutablePosition().offsetY = p.value("offset_y", 0);
+        currentConfig_.MutablePosition().lockPosition = p.value("lock_position", false);
+        currentConfig_.MutablePosition().lockFully = p.value("lock_fully", false);
     }
     if (c.contains("advanced")) {
         const auto& a = c["advanced"];
@@ -600,6 +587,8 @@ void SettingsWindow::SendConfigToWebView(const Config& cfg) {
         {"position", {
             {"offset_x", cfg.Position().offsetX},
             {"offset_y", cfg.Position().offsetY},
+            {"lock_position", cfg.Position().lockPosition},
+            {"lock_fully", cfg.Position().lockFully},
         }},
         {"advanced", {
             {"websocket_port", cfg.Advanced().websocketPort},
@@ -611,7 +600,7 @@ void SettingsWindow::SendConfigToWebView(const Config& cfg) {
     std::string jsonStr = j.dump();
     std::wstring wStr = Utf8ToWide(jsonStr);
     static_cast<ICoreWebView2*>(webView2_)->PostWebMessageAsJson(wStr.c_str());
-    DebugLog("[SETTINGS] sent initConfig\n");
+    moekoe::Log("[SETTINGS] sent initConfig\n");
 }
 
 } // namespace moekoe

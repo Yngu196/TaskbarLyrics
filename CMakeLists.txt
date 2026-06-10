@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 0.3.7
+    VERSION 0.3.8
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 
@@ -216,6 +216,7 @@ endif()
 # 源文件
 set(SOURCES
     src/main.cpp
+    src/logger.cpp
     src/websocket_client.cpp
     src/http_server.cpp
     src/settings_window.cpp
@@ -232,6 +233,7 @@ set(SOURCES
 
 # 头文件目录
 set(HEADERS
+    src/logger.h
     src/lyrics_data.h
     src/websocket_client.h
     src/http_server.h

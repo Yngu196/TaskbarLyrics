@@ -5,6 +5,7 @@
 #include "config_dialog.h"
 #include "constants.h"
 #include "http_server.h"
+#include "logger.h"
 #include "settings_window.h"
 #include "lyrics_data.h"
 #include "lyrics_parser.h"
@@ -22,37 +23,8 @@
 
 namespace {
 
-// 日志文件路径（EXE 所在目录 / debug.log）
-std::string g_logPath;
-
-void DebugLog(const char* fmt, ...) {
-    if (g_logPath.empty()) return;
-    FILE* f = fopen(g_logPath.c_str(), "a");
-    if (!f) return;
-    va_list args;
-    va_start(args, fmt);
-    vfprintf(f, fmt, args);
-    va_end(args);
-    fclose(f);
-}
-
-// 初始化日志路径
-void InitLogPath() {
-    wchar_t exePath[MAX_PATH] = {0};
-    ::GetModuleFileNameW(nullptr, exePath, MAX_PATH);
-    wchar_t* slash = wcsrchr(exePath, L'\\');
-    if (slash) *slash = L'\0';
-    std::wstring dir(exePath);
-    // UTF-16 -> UTF-8
-    int len = ::WideCharToMultiByte(CP_UTF8, 0, dir.c_str(),
-                                    static_cast<int>(dir.size()), nullptr, 0, nullptr, nullptr);
-    if (len > 0) {
-        std::string dirUtf8(static_cast<size_t>(len), '\0');
-        ::WideCharToMultiByte(CP_UTF8, 0, dir.c_str(),
-                              static_cast<int>(dir.size()), &dirUtf8[0], len, nullptr, nullptr);
-        g_logPath = dirUtf8 + "\\debug.log";
-    }
-}
+// 日志快捷方式（使用统一日志系统）
+using moekoe::Log;
 
 // 全局应用上下文
 struct AppContext {
@@ -103,7 +75,7 @@ void ApplyRendererSettings(AppContext& app) {
     rs.marqueePauseMs    = app.config->Appearance().marqueePauseMs;
     rs.marqueeSpeedPxPerSec = app.config->Appearance().marqueeSpeedPxPerSec;
 
-    DebugLog("[CONFIG] ApplyRenderer: hl=%s nl=%s font=%s size=%d opacity=%.2f\n",
+    Log("[CONFIG] ApplyRenderer: hl=%s nl=%s font=%s size=%d opacity=%.2f\n",
         rs.highlightColor.c_str(), rs.normalColor.c_str(),
         rs.fontFamily.c_str(), rs.fontSize, rs.normalOpacity);
 
@@ -114,25 +86,6 @@ void ApplyRendererSettings(AppContext& app) {
 void OnTrayCommand(AppContext& app, UINT menuId) {
     using namespace moekoe;
     switch (menuId) {
-    case ID_MENU_ENABLE: {
-        const bool newState = !app.config->IsEnabled();
-        app.config->SetEnabled(newState);
-        // 注意：启用歌词不应强制改变开机自启状态，由用户在设置中独立控制
-        app.config->Save();
-
-        if (app.tray) {
-            app.tray->SetMenuCheckedEnable(newState);
-            app.tray->SetMenuCheckedAutoStart(app.config->IsAutoStart());
-        }
-        // 同步设置窗口 UI（如果已打开）
-        if (app.settingsWindow && app.settingsWindow->IsWebViewReady()) {
-            app.settingsWindow->SendConfigToWebView(*app.config);
-        }
-        if (!newState) {
-            ::PostMessageW(app.hwnd, WM_CLOSE, 0, 0);
-        }
-        break;
-    }
     case ID_MENU_AUTOSTART: {
         const bool newState = !app.config->IsAutoStart();
         const bool regOk = app.config->SetAutoStart(newState);
@@ -193,10 +146,9 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 }
                 // 同步托盘菜单状态
                 if (app.tray) {
-                    app.tray->SetMenuCheckedEnable(cfg.IsEnabled());
                     app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
                 }
-                DebugLog("[SETTINGS] Config applied and saved\n");
+                Log("[SETTINGS] Config applied and saved\n");
             });
         }
 
@@ -235,6 +187,42 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         if (ret == IDYES) {
             app.running = false;
             ::PostQuitMessage(0);
+        }
+        break;
+    }
+    case ID_MENU_LOCK_POS: {
+        const bool newState = !app.config->Position().lockPosition;
+        app.config->MutablePosition().lockPosition = newState;
+        // 完全锁定隐含位置锁定，取消位置锁定时不影响完全锁定
+        if (newState) {
+            app.config->MutablePosition().lockFully = false;
+        }
+        app.config->Save();
+        if (app.taskbarWindow) {
+            app.taskbarWindow->SetPositionLocked(newState);
+            app.taskbarWindow->SetFullyLocked(false);
+        }
+        if (app.tray) {
+            app.tray->SetMenuCheckedLockPos(newState);
+            app.tray->SetMenuCheckedLockFull(false);
+        }
+        break;
+    }
+    case ID_MENU_LOCK_FULL: {
+        const bool newState = !app.config->Position().lockFully;
+        app.config->MutablePosition().lockFully = newState;
+        // 完全锁定隐含位置锁定
+        if (newState) {
+            app.config->MutablePosition().lockPosition = true;
+        }
+        app.config->Save();
+        if (app.taskbarWindow) {
+            app.taskbarWindow->SetFullyLocked(newState);
+            app.taskbarWindow->SetPositionLocked(newState);
+        }
+        if (app.tray) {
+            app.tray->SetMenuCheckedLockFull(newState);
+            app.tray->SetMenuCheckedLockPos(newState);
         }
         break;
     }
@@ -300,22 +288,22 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 }
             }
         } catch (const std::exception& e) {
-            DebugLog("[CRASH] WM_TIMER exception: %s\n", e.what());
+            Log("[CRASH] WM_TIMER exception: %s\n", e.what());
             // 恢复策略：尝试重置渲染器状态
             if (app->renderer) {
                 try {
                     app->renderer->Shutdown();
                     if (app->taskbarWindow)
                         app->renderer->Initialize(app->taskbarWindow->GetHandle());
-                    DebugLog("[RECOVER] Renderer reset succeeded\n");
+                    Log("[RECOVER] Renderer reset succeeded\n");
                 } catch (...) {
-                    DebugLog("[FATAL] Renderer recovery failed, shutting down\n");
+                    Log("[FATAL] Renderer recovery failed, shutting down\n");
                     app->running = false;
                     ::PostQuitMessage(0);
                 }
             }
         } catch (...) {
-            DebugLog("[CRASH] WM_TIMER unknown exception, shutting down\n");
+            Log("[CRASH] WM_TIMER unknown exception, shutting down\n");
             app->running = false;
             ::PostQuitMessage(0);
         }
@@ -336,7 +324,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     // 绑定模式：MoeKoeMusic 进程退出时自动退出
     case WM_PROCESS_EXITED: {
-        DebugLog("[BOUND] MoeKoeMusic exited, shutting down\n");
+        Log("[BOUND] MoeKoeMusic exited, shutting down\n");
         app->running = false;
         ::PostQuitMessage(0);
         return 0;
@@ -362,7 +350,7 @@ bool RegisterMessageClass(HINSTANCE hInst) {
 
 // 全局异常过滤器
 static LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
-    DebugLog("[CRASH] Unhandled exception code=0x%08lX at address=%p\n",
+    Log("[CRASH] Unhandled exception code=0x%08lX at address=%p\n",
             ep->ExceptionRecord->ExceptionCode,
             ep->ExceptionRecord->ExceptionAddress);
     return EXCEPTION_CONTINUE_SEARCH;
@@ -371,7 +359,7 @@ static LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nShow*/) {
     // ═══════ 第 1 阶段：系统初始化 ═══════
     // 目的：为应用提供运行时基础（COM、异常处理、日志、单实例保护）
-    InitLogPath();
+    moekoe::InitLogger();
     ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // WIC/Direct2D 需要 COM
     ::SetUnhandledExceptionFilter(GlobalExceptionHandler);
 
@@ -381,12 +369,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 0;
     }
 
-    DebugLog("[STARTUP] WinMain entered\n");
+    Log("[STARTUP] WinMain entered\n");
 
     // Winsock 初始化（ixwebsocket 依赖）
     WSADATA wsaData;
     int wsRet = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    DebugLog("[STARTUP] WSAStartup ret=%d\n", wsRet);
+    Log("[STARTUP] WSAStartup ret=%d\n", wsRet);
 
     // DPI 感知：Per-Monitor V2，支持多显示器不同缩放
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -395,9 +383,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 目的：加载配置、创建消息窗口和托盘图标
     moekoe::Config config;
     config.Load();
-    DebugLog("[STARTUP] Config loaded\n");
+    moekoe::SetLogEnabled(config.Advanced().debugLog);
+    Log("[STARTUP] Config loaded\n");
     config.SetAutoStart(config.IsAutoStart());  // 同步开机自启注册表
-    DebugLog("[STARTUP] AutoStart=%s\n", config.IsAutoStart() ? "ON" : "OFF");
+    Log("[STARTUP] AutoStart=%s\n", config.IsAutoStart() ? "ON" : "OFF");
 
     if (!RegisterMessageClass(hInstance)) {
         std::fprintf(stderr, "[Error] RegisterClassExW failed\n");
@@ -414,7 +403,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     }
 
     bool boundMode = moekoe::ProcessMonitor::IsBoundMode();
-    DebugLog("[STARTUP] Bound mode: %s\n", boundMode ? "YES" : "NO");
+    Log("[STARTUP] Bound mode: %s\n", boundMode ? "YES" : "NO");
 
     AppContext app;
     app.config = &config;
@@ -429,25 +418,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     moekoe::TrayIcon tray;
     app.tray = &tray;
     tray.Initialize(hInstance, hMsgWnd);
-    tray.SetMenuCheckedEnable(config.IsEnabled());
     tray.SetMenuCheckedAutoStart(config.IsAutoStart());
     tray.SetBoundMode(boundMode);
 
-    // 6) 如果用户禁用了插件, 仅保留托盘等待重新启用
-    if (!config.IsEnabled()) {
-        MSG msg{};
-        while (::GetMessageW(&msg, nullptr, 0, 0)) {
-            ::TranslateMessage(&msg);
-            ::DispatchMessageW(&msg);
-        }
-        tray.Shutdown();
-        ::DestroyWindow(hMsgWnd);
-        return 0;
-    }
-
     // 7) 查找任务栏
     HWND hTaskbar = moekoe::TaskbarWindow::FindTaskbarHandle();
-    DebugLog("[STARTUP] FindTaskbar hTaskbar=%p\n", hTaskbar);
+    Log("[STARTUP] FindTaskbar hTaskbar=%p\n", hTaskbar);
     if (!hTaskbar) {
         ::MessageBoxW(nullptr,
                       L"未找到 Windows 任务栏，请确认系统正常运行。",
@@ -471,6 +447,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);
+
+    // 应用配置中的锁定状态
+    taskbarWindow.SetPositionLocked(config.Position().lockPosition);
+    taskbarWindow.SetFullyLocked(config.Position().lockFully);
+    tray.SetMenuCheckedLockPos(config.Position().lockPosition);
+    tray.SetMenuCheckedLockFull(config.Position().lockFully);
 
     // 拖动结束时保存位置偏移到配置
     taskbarWindow.OnHoverChanged([&]() {
@@ -557,9 +539,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     moekoe::HttpServer httpServer;
     app.httpServer = &httpServer;
     httpServer.OnCommand([&](const std::string& command) {
-        DebugLog("[HTTP] Command received: %s\n", command.c_str());
+        Log("[HTTP] Command received: %s\n", command.c_str());
         if (command == "shutdown") {
-            DebugLog("[HTTP] Shutdown via HTTP, exiting...\n");
+            Log("[HTTP] Shutdown via HTTP, exiting...\n");
             app.running = false;
             ::PostQuitMessage(0);
         }
@@ -569,9 +551,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                              ? config.Advanced().httpServerPort
                              : static_cast<int>(moekoe::constants::HTTP_SERVER_PORT);
     if (httpServer.Start(httpPort)) {
-        DebugLog("[STARTUP] HTTP server started on port %d\n", httpPort);
+        Log("[STARTUP] HTTP server started on port %d\n", httpPort);
     } else {
-        DebugLog("[STARTUP] HTTP server failed to start on port %d (non-fatal)\n", httpPort);
+        Log("[STARTUP] HTTP server failed to start on port %d (non-fatal)\n", httpPort);
     }
 
     // 11) 绑定模式：启动进程监控
@@ -583,7 +565,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             /*onExited*/ [hMsgWnd]() {
                 ::PostMessageW(hMsgWnd, WM_PROCESS_EXITED, 0, 0);
             });
-        DebugLog("[STARTUP] Process monitor started (bound mode)\n");
+        Log("[STARTUP] Process monitor started (bound mode)\n");
     }
 
     // 启动帧定时器
@@ -597,7 +579,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         ::TranslateMessage(&msg);
         ::DispatchMessageW(&msg);
     }
-    DebugLog("[SHUTDOWN] Message loop ended\n");
+    Log("[SHUTDOWN] Message loop ended\n");
 
     // ═══════ 第 5 阶段：清理和退出 ═══════
     // 目的：释放所有资源，进行优雅关闭
@@ -611,6 +593,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     tray.Shutdown();
     ::DestroyWindow(hMsgWnd);
 
-    DebugLog("[SHUTDOWN] Complete\n");
+    Log("[SHUTDOWN] Complete\n");
     return 0;
 }
