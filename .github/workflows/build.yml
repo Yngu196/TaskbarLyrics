@@ -29,13 +29,12 @@ jobs:
           Write-Host "=== Searching for WebView2.h ==="
           Get-ChildItem -Recurse "${{ github.workspace }}\packages" -Filter "WebView2.h" | Select-Object FullName
 
-      - name: Install dependencies (vcpkg)
-        uses: microsoft/vcpkg-action@v4
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: '75672db6bd812b060482b0f00b5a16b18a0c0f07'
-          vcpkgDirectory: '${{ github.workspace }}/.vcpkg-root'
-          vcpkgInstalledDirectory: '${{ github.workspace }}/vcpkg_installed'
-          args: '--triplet x64-windows'
+          vcpkgJsonGlob: 'vcpkg.json'
+          runVcpkgInstall: true
 
       - name: Configure CMake
         shell: powershell
@@ -65,7 +64,7 @@ jobs:
           } else { Write-Host "WARNING: WebView2.h not found in package"; $incDir = "" }
           
           cmake -B build -S . `
-            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed/x64-windows" `
+            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg/installed/x64-windows" `
             "-DWEBVIEW2_INCLUDE_DIR=$incDir" `
             "-DWEBVIEW2_LOADER_DIR=$libDir" `
             -DCMAKE_BUILD_TYPE=Release
