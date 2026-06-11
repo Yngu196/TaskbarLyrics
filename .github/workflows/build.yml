@@ -29,31 +29,13 @@ jobs:
           Write-Host "=== Searching for WebView2.h ==="
           Get-ChildItem -Recurse "${{ github.workspace }}\packages" -Filter "WebView2.h" | Select-Object FullName
 
-      - name: Install dependencies (auto-retry on network issues)
-        shell: powershell
-        run: |
-          # Use VS 2022's fully bootstrapped vcpkg
-          $vcpkgRoot = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\vcpkg"
-          $vcpkg = "$vcpkgRoot\vcpkg.exe"
-          
-          # Create vcpkg-configuration.json with builtin registry and baseline commit SHA
-          @"
-          {
-            "default-registry": {
-              "kind": "builtin",
-              "baseline": "75672db6bd812b060482b0f00b5a16b18a0c0f07"
-            }
-          }
-          "@ | Out-File -FilePath "${{ github.workspace }}\vcpkg-configuration.json" -Encoding utf8
-          
-          $maxRetries = 3
-          for ($i = 0; $i -lt $maxRetries; $i++) {
-              & $vcpkg install --triplet x64-windows --vcpkg-root="$vcpkgRoot" --x-install-root="${{ github.workspace }}\vcpkg_installed"
-              if ($LASTEXITCODE -eq 0) { break }
-              Write-Host "Retry $($i+1)/$maxRetries..."
-              Start-Sleep -Seconds 5
-          }
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Install dependencies (vcpkg)
+        uses: microsoft/vcpkg-action@v4
+        with:
+          vcpkgGitCommitId: '75672db6bd812b060482b0f00b5a16b18a0c0f07'
+          vcpkgDirectory: '${{ github.workspace }}/.vcpkg-root'
+          vcpkgInstalledDirectory: '${{ github.workspace }}/vcpkg_installed'
+          args: '--triplet x64-windows'
 
       - name: Configure CMake
         shell: powershell
@@ -83,7 +65,7 @@ jobs:
           } else { Write-Host "WARNING: WebView2.h not found in package"; $incDir = "" }
           
           cmake -B build -S . `
-            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}\vcpkg_installed\x64-windows" `
+            "-DVCPKG_INSTALLED_DIR=${{ github.workspace }}/vcpkg_installed/x64-windows" `
             "-DWEBVIEW2_INCLUDE_DIR=$incDir" `
             "-DWEBVIEW2_LOADER_DIR=$libDir" `
             -DCMAKE_BUILD_TYPE=Release
