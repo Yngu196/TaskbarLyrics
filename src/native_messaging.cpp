@@ -1,113 +1,90 @@
 // SPDX-License-Identifier: GPL-2.0
-// native_messaging.cpp - Chrome Native Messaging Host 实现
+// native_messaging.cpp - MoeKoeMusic Native Host 实现（JSON Lines 协议）
+//
+// 与旧版 Chrome Native Messaging 的区别:
+//   - 旧: [4字节 uint32 LE 长度前缀][JSON]  (二进制模式)
+//   - 新: {JSON}\n                       (纯文本 UTF-8 行模式)
+//   - 旧: stdin EOF → Chrome 断开连接
+//   - 新: {"type":"shutdown"} → MoeKoeMusic 要求退出
+//   - 独立运行时 stdin 无写入者，读到 EOF 不退出（非托管模式）
 #include "native_messaging.h"
+#include "logger.h"
 
 #include <iostream>
-#include <vector>
-#include <cstdint>
-
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#include <fcntl.h>
-// Windows 下需要设置 stdin/stdout 为二进制模式
-static void SetBinaryMode() {
-    _setmode(_fileno(stdin), _O_BINARY);
-    _setmode(_fileno(stdout), _O_BINARY);
-}
-#else
-static void SetBinaryMode() {}
-#endif
+#include <string>
+#include <thread>
+#include <mutex>
 
 namespace moekoe {
 
-NativeMessagingHost::NativeMessagingHost() {
-    SetBinaryMode();
-}
+NativeMessagingHost::NativeMessagingHost() = default;
 
 NativeMessagingHost::~NativeMessagingHost() = default;
 
-void NativeMessagingHost::SetCommandHandler(CommandHandler handler) {
+void NativeMessagingHost::SetMessageHandler(MessageHandler handler) {
     handler_ = std::move(handler);
 }
 
-bool NativeMessagingHost::ReadMessage(NativeMessage& msg) {
-    // Chrome Native Messaging 协议:
-    // 前 4 字节是消息长度（little-endian uint32）
-    // 后面是 JSON 字符串
-
-    uint32_t length = 0;
-    
-    // 读取长度前缀
-    if (std::cin.read(reinterpret_cast<char*>(&length), 4).gcount() != 4) {
-        // EOF 或读取失败 → 端断开连接
-        return false;
-    }
-
-    if (length == 0 || length > 1024 * 1024) {  // 限制最大 1MB
-        return false;
-    }
-
-    // 读取 JSON 内容
-    std::vector<char> buffer(length);
-    if (std::cin.read(buffer.data(), length).gcount() != static_cast<std::streamsize>(length)) {
-        return false;
-    }
-
-    std::string jsonStr(buffer.data(), length);
-
-    try {
-        auto j = nlohmann::json::parse(jsonStr);
-        msg.command = j.value("command", "");
-        msg.params = j.value("params", nlohmann::json::object());
-        return true;
-    } catch (const nlohmann::json::parse_error&) {
-        return false;
-    }
-}
-
-void NativeMessagingHost::SendResponse(const NativeResponse& response) {
-    nlohmann::json j;
-    j["success"] = response.success;
-    j["message"] = response.message;
-    if (!response.data.is_null()) {
-        j["data"] = response.data;
-    }
-
-    std::string jsonStr = j.dump();
-
-    // 写入长度前缀（4字节 little-endian uint32）
-    uint32_t length = static_cast<uint32_t>(jsonStr.size());
-    std::cout.write(reinterpret_cast<char*>(&length), 4);
-    
-    // 写入 JSON 内容
-    std::cout.write(jsonStr.data(), length);
-    std::cout.flush();
-}
-
 bool NativeMessagingHost::Run() {
-    while (running_) {
-        NativeMessage msg;
-        if (!ReadMessage(msg)) {
-            // stdin 关闭 → Chrome 断开连接
-            running_ = false;
-            return false;
-        }
+    // JSON Lines 循环：逐行读取 stdin
+    std::string line;
+    while (running_ && std::getline(std::cin, line)) {
+        // 跳过空行
+        if (line.empty()) continue;
 
-        if (msg.command == "shutdown" || msg.command == "stop") {
-            SendResponse({true, "shutting down"});
-            running_ = false;
-            return false;
-        }
+        try {
+            auto j = nlohmann::json::parse(line);
 
-        if (handler_) {
-            NativeResponse resp = handler_(msg);
-            SendResponse(resp);
-        } else {
-            SendResponse({false, "no handler registered"});
+            NativeHostMessage msg;
+            msg.type = j.value("type", "");
+            msg.payload = j.value("payload", nlohmann::json::object());
+
+            if (msg.type == "shutdown") {
+                Log("[NATIVE-HOST] Received shutdown command\n");
+                running_ = false;
+
+                // 回复 shutdown 确认（让主程序知道我们收到了）
+                nlohmann::json ack;
+                ack["type"] = "message";
+                ack["payload"] = { {"event", "shutdown_ack"} };
+                std::cout << ack.dump() << '\n' << std::flush;
+
+                return false;
+            }
+
+            if (handler_) {
+                handler_(msg);
+            }
+        } catch (const nlohmann::json::parse_error& e) {
+            Log("[NATIVE-HOST] JSON parse error: %s\n", e.what());
+            // 单行解析失败不终止循环，跳过继续
+            continue;
         }
     }
-    return running_;
+
+    // stdin EOF（管道关闭或无数据）
+    // 独立运行模式下这是正常的（没有托管者写 stdin），不应退出
+    if (std::cin.eof()) {
+        Log("[NATIVE-HOST] stdin EOF (standalone mode or pipe closed)\n");
+        return true;  // 返回 true 表示「不是 shutdown」，调用者决定是否退出
+    }
+
+    // 其他读取错误
+    Log("[NATIVE-HOST] stdin read error\n");
+    running_ = false;
+    return false;
+}
+
+void NativeMessagingHost::SendEvent(const NativeHostEvent& event) {
+    nlohmann::json j;
+    j["type"] = "message";
+    j["payload"] = event.payload;
+
+    std::cout << j.dump() << '\n' << std::flush;
+}
+
+void NativeMessagingHost::SendPayloadEvent(const nlohmann::json& payload) {
+    SendEvent({ payload });
 }
 
 } // namespace moekoe

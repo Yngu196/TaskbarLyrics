@@ -228,6 +228,7 @@ set(SOURCES
     src/process_monitor.cpp
     src/config_dialog.cpp
     src/api_enabler.cpp
+    src/native_messaging.cpp
     src/app_icon.rc
 )
 

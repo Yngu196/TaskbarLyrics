@@ -3,22 +3,99 @@
 // 职责:
 //   - 通过 WebSocket 连接 MoeKoeMusic 的 apiService (ws://127.0.0.1:6520)
 //   - 将歌词和播放状态转发给 popup
-//   - 通过 IPC 与 MoeKoeMusic 主进程通信，管理 C++ EXE 生命周期
-//
-// 注意:
-//   - WS_PORT 默认为 6520；若用户在 EXE 侧 config.json 中修改了
-//     advanced.websocket_port，需要在此处同步修改（或由宿主页面通过
-//     electronAPI 注入）。
-//   - 与本机 HTTP 控制端口（默认 6523）的交互统一放在 popup.js 中，
-//     background.js 只负责 WS 数据通道与 popup 转发。
+//   - 通过 Native Host Bridge 与 MoeKoeMusic 主进程通信，管理 C++ EXE 生命周期
 
 const WS_PORT = 6520;
 const RECONNECT_INTERVAL = 3000;
 const CONNECT_TIMEOUT = 5000; // 5 秒连接超时
-const EXTENSION_DIR = 'moeKoe-taskbar-lyrics';
+const HOST_ID = 'taskbar-lyrics-host';
 
 let ws = null;
 let connected = false;
+
+// ---- Native Host Bridge 管理 ----
+
+let bridgePort = null;
+let requestId = 0;
+const pending = new Map();
+
+// 监听 bridge 页面连接（native-bridge.html 由 Main Process 隐藏打开）
+chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== 'moekoe-native-host-bridge') {
+        return;
+    }
+
+    bridgePort = port;
+    console.log('[TaskbarLyrics] Native Host Bridge 已连接');
+
+    port.onMessage.addListener((message) => {
+        if (!message) return;
+
+        // bridge 转发的响应消息
+        if (message.type === 'native-host:response') {
+            const resolve = pending.get(message.requestId);
+            if (resolve) {
+                pending.delete(message.requestId);
+                resolve(message.result);
+            }
+            return;
+        }
+
+        // bridge 转发的 EXE 上报事件 → 广播给 popup
+        if (message.type === 'native-host:event') {
+            broadcastToPopup({
+                type: 'nativeEvent',
+                data: message.payload
+            });
+            return;
+        }
+    });
+
+    port.onDisconnect.addListener(() => {
+        bridgePort = null;
+        console.log('[TaskbarLyrics] Native Host Bridge 已断开');
+    });
+});
+
+// 通过 bridge 发送请求到 EXE（Promise 封装）
+function sendBridgeRequest(type, payload) {
+    return new Promise((resolve, reject) => {
+        if (!bridgePort) {
+            reject(new Error('本地程序尚未授权或桥接页未连接'));
+            return;
+        }
+
+        const id = ++requestId;
+        bridgePort.postMessage({ type, payload, requestId: id });
+        pending.set(id, resolve);
+
+        // 10 秒超时
+        setTimeout(() => {
+            if (pending.has(id)) {
+                pending.delete(id);
+                reject(new Error('Native Host 请求超时'));
+            }
+        }, 10000);
+    });
+}
+
+// 查询 EXE 状态（供 popup 调用）
+async function getHostStatus() {
+    try {
+        return await sendBridgeRequest('native-host:status');
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+}
+
+// 向 EXE 发送业务消息（供 popup 调用）
+async function sendToHost(payload) {
+    try {
+        return await sendBridgeRequest('native-host:send', payload);
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+}
 
 // ---- WebSocket 连接管理 ----
 
@@ -142,6 +219,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             sendResponse({ success: true });
             return true;
 
+        // Native Host 相关消息类型
+        case 'getHostStatus':
+            getHostStatus().then(result => sendResponse(result));
+            return true;
+
+        case 'sendToHost':
+            sendToHost(message.payload).then(result => sendResponse(result));
+            return true;
+
         default:
             // 对未识别类型的消息显式返回 false，告知 Chrome "我不会响应"
             sendResponse({ error: 'unknown message type' });
@@ -152,4 +238,4 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ---- 启动 ----
 
 connectWebSocket();
-console.log('[TaskbarLyrics] 插件已加载');
+console.log('[TaskbarLyrics] 插件已加载 (v0.4.0 Native Host 模式)');

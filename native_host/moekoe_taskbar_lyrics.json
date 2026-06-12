@@ -1,9 +1,0 @@
-{
-    "name": "moekoe_taskbar_lyrics",
-    "description": "MoeKoe Music Taskbar Lyrics Native Host",
-    "path": "MoeKoeTaskbarLyrics.exe",
-    "type": "stdio",
-    "allowed_origins": [
-        "chrome-extension://EXTENSION_ID_PLACEHOLDER/"
-    ]
-}

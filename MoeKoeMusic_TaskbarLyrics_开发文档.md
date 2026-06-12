@@ -1,7 +1,7 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
 > **版本：** v0.5（草案）\
-> **插件版本：** v0.3.8\
+> **插件版本：** v0.4.0\
 > **目标平台：** Windows 10/11（x64）\
 > **开发语言：** C++17\
 > **构建系统：** CMake + MSVC\
@@ -61,7 +61,8 @@ MoeKoeMusic-TaskbarLyrics/
 ├── README.md                   # 插件说明
 ├── src/
 │   ├── constants.h             # 全局命名常量（端口、尺寸、消息号、UI参数、跑马灯参数、鉴权Token）
-│   ├── main.cpp                # 程序入口（WinMain，5阶段初始化）
+│   ├── main.cpp                # 程序入口（WinMain，含 NativeMessagingHost 后台线程）
+│   ├── native_messaging.h/cpp  # Native Host JSON Lines 协议层（v0.4.0 新增）
 │   ├── websocket_client.cpp/h  # WebSocket 数据接收（ixwebsocket）+ API 自动开启集成
 │   ├── http_server.cpp/h       # HTTP 服务器（端口可配置，默认6523，含本地Token鉴权）
 │   ├── lyrics_parser.cpp/h     # 歌词 JSON 解析 & LRC/KRC 同步
@@ -69,7 +70,6 @@ MoeKoeMusic-TaskbarLyrics/
 │   ├── renderer.cpp/h          # Direct2D 渲染引擎 + 跑马灯状态机
 │   ├── config.cpp/h            # 配置管理（JSON + 注册表自启，含httpServerPort）
 │   ├── api_enabler.cpp/h       # MoeKoeMusic API 模式自动检测与开启（v0.3.1 新增）
-│   ├── process_monitor.cpp/h   # 进程监控（绑定模式，代码已完成待接入）
 │   ├── tray_icon.cpp/h         # 系统托盘图标+菜单（含锁定位置/完全锁定）
 │   ├── logger.cpp/h            # 统一日志系统（v0.3.8 新增，替代 6 处分散 DebugLog）
 │   ├── settings_window.cpp/h   # WebView2 设置窗口（含 COM 回调）
@@ -85,19 +85,20 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── icons/
 │       └── icon256.png         # 插件中心图标（raw GitHub URL 可直接访问）
 ├── moeKoe-taskbar-lyrics/      # Chrome Extension 插件目录
-│   ├── manifest.json           # v0.3.8（icons 256px，字段顺序对齐 moekoe-helper）
-│   ├── background.js           # Service Worker（消息路由，含 onMessage 兜底处理）
-│   ├── popup.js / popup.html   # 弹出界面（含 Token 鉴权头、响应体校验）
-│   ├── icons/
-│   │   └── icon256.png         # Extension 内部图标引用
-│   └── native_host/            # Native Messaging Host 配置
+│   ├── manifest.json           # v0.4.0（moekoe_native_hosts 声明，minversion: "1.6.6"）
+│   ├── background.js           # Service Worker（消息路由 + Native Host Bridge Port 管理）
+│   ├── popup.js / popup.html   # 弹出界面（Native Host 状态查询 / WebSocket 连接状态）
+│   ├── native-bridge.html      # 隐藏桥接页壳（v0.4.0 新增）
+│   ├── native-bridge.js        # Bridge 逻辑：chrome.runtime.Port ↔ electronAPI.nativeHost（v0.4.0 新增）
+│   └── icons/
+│       └── icon256.png         # Extension 内部图标引用
 ```
 
 ***
 
 ## 2. 技术架构
 
-### 2.1 整体架构图
+### 2.1 整体架构图（v0.4.0 Native Host 托管模式）
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -113,18 +114,24 @@ MoeKoeMusic-TaskbarLyrics/
 │  │  推送: {type:"lyrics", data:[...]}                   │     │
 │  │  推送: {type:"playerState", data:{...}}              │     │
 │  └──────────────────────┬───────────────────────────────┘     │
-└─────────────────────────┼─────────────────────────────────────┘
-                          │  WebSocket 连接
-                          ▼
+│                           │                                   │
+│  ┌────────────────────────────────────────────────────┐      │
+│  │         Native Host Manager (nativeHostManager.js)   │      │
+│  │  spawn EXE / stdin(stdout JSON Lines) / shutdown     │      │
+│  │  auto_start / authorization / treeKill               │      │
+│  └────────────────────────┬───────────────────────────┘      │
+└───────────────────────────┼─────────────────────────────────────┘
+          stdin/stdout (JSON Lines)    chrome-extension:// Bridge
+          ▼                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                任务栏歌词插件 (独立 EXE)                      │
+│                任务栏歌词插件 (MoeKoeTaskbarLyrics.exe)       │
 │                                                             │
-│  ┌─────────────────┐    ┌──────────────────┐               │
-│  │ WebSocket Client │───▶│ 歌词解析器        │               │
-│  │ (连接 :6520)     │    │ (JSON→时间轴)    │               │
-│  └─────────────────┘    └────────┬─────────┘               │
-│                                  │ 当前歌词 + 进度          │
-│                                  ▼                          │
+│  ┌─────────────────────┐    ┌──────────────────┐            │
+│  │ NativeMessagingHost │◀──▶│ 歌词解析器        │            │
+│  │ (stdin/stdout JSON   │    │ (JSON→时间轴)    │            │
+│  │  Lines 协议层)       │    └────────┬─────────┘            │
+│  └─────────────────────┘             │ 当前歌词 + 进度      │
+│                                     ▼                        │
 │  ┌──────────────────────────────────────────────────┐      │
 │  │              Direct2D 渲染引擎                     │      │
 │  │   逐帧绘制文字 → WIC Bitmap → UpdateLayeredWindow  │      │
@@ -133,13 +140,6 @@ MoeKoeMusic-TaskbarLyrics/
 │                         ▼                                   │
 │  ┌──────────────────────────────────────────────────┐      │
 │  │     浮动歌词窗口 (WS_EX_TOPMOST + WS_EX_LAYERED)    │      │
-│  │  ┌────────────────────────────────────────────┐    │      │
-│  │  │  Windows 任务栏 (Shell_TrayWnd)              │    │      │
-│  │  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌────────────┐ │    │      │
-│  │  │  │ 开始 │ │搜索栏│ │ 任务 │ │ 🎵歌词窗口 │ │    │      │
-│  │  │  │     │ │      │ │ 按钮 │ │(浮动覆盖)  │ │    │      │
-│  │  │  └──────┘ └──────┘ └──────┘ └────────────┘ │    │      │
-│  │  └────────────────────────────────────────────┘    │      │
 │  └──────────────────────────────────────────────────┘      │
 │                                                             │
 │  ┌──────────────────────┐                                   │
@@ -147,15 +147,20 @@ MoeKoeMusic-TaskbarLyrics/
 │  └──────────────────────┘                                   │
 │                                                             │
 │  ┌────────────────────────────────────────┐                │
-│  │ HTTP Server (:6523)                     │ ← Chrome Ext │
-│  │ native_host ↔ popup.js 通信             │                │
+│  │ HTTP Server (:6523)                     │ ← 独立模式回退 │
+│  │ WebSocket Client (:6520)                │ ← 歌词数据获取  │
 │  └────────────────────────────────────────┘                │
 │                                                             │
 │  ┌────────────────────────────────────────┐                │
 │  │ WebView2 Settings Window                │                │
-│  │ settings.html (颜色/字体/滑块/GUI)      │                │
 │  └────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
+
+插件通信链路（v0.4.0）:
+popup.js → background.js → chrome.runtime.Port → native-bridge.js
+    → electronAPI.nativeHost → Electron Main Process → EXE stdin (JSON Lines)
+EXE stdout (JSON Lines) → Electron Main Process → native-host-message IPC
+    → native-bridge.js → Port → background.js → popup.js
 ```
 
 ### 2.2 核心技术栈
@@ -166,9 +171,11 @@ MoeKoeMusic-TaskbarLyrics/
 | 图形渲染    | **Direct2D** + **DirectWrite** | GPU 加速的文字渲染（WIC BitmapRenderTarget） |
 | 内嵌浏览器   | **WebView2** (Edge Chromium)   | GUI 设置界面（可回退 Win32 对话框）             |
 | 通信协议    | **WebSocket**（RFC 6455）        | 从 MoeKoeMusic 获取实时数据                |
-| 扩展通信    | **HTTP** (:6523)               | Chrome Extension popup.js 通信        |
+| 托管通信    | **JSON Lines** (stdin/stdout)     | Native Host 与 MoeKoeMusic 主进程通信（v0.4.0） |
+| 回退通信    | **HTTP** (:6523)               | 独立模式下 Chrome Extension popup.js 通信        |
+| Bridge 通信  | **chrome.runtime.Port**          | background.js ↔ native-bridge.js 双向长连接（v0.4.0）|
 | 网络库     | **ixwebsocket**                | 轻量 C++ WebSocket 客户端库               |
-| JSON 解析 | **nlohmann/json**              | 配置文件 / WS 消息解析                      |
+| JSON 解析 | **nlohmann/json**              | 配置文件 / WS 消息解析 / Native Host 协议       |
 | 配置持久化   | JSON 文件 + Windows 注册表          | 用户首选项 + 开机自启                        |
 | 系统托盘    | Win32 Shell API                | 托盘图标 + 右键菜单                         |
 | 常量管理    | **constants.h**                | 集中管理所有魔数                            |
@@ -506,7 +513,7 @@ CreateWindowEx → WM_NCCREATE(return TRUE)
 
 **文件：** `src/main.cpp`
 
-#### WinMain 5 阶段初始化
+#### WinMain 初始化（v0.4.0）
 
 ```
 阶段1: 系统初始化
@@ -526,7 +533,8 @@ CreateWindowEx → WM_NCCREATE(return TRUE)
   ├── app.renderer = &renderer  ← 必须在 ApplySettings 之前！
   ├── ApplyRendererSettings(app)
   ├── WebSocketClient.Connect()
-  └── 回调绑定（歌词/状态/连接/悬停/按钮/配置变更）
+  ├── 回调绑定（歌词/状态/连接/悬停/按钮/配置变更）
+  └── NativeMessagingHost 启动（v0.4.0 新增，后台线程读取 stdin JSON Lines）
 
 阶段4: 消息循环
   ├── GetMessage / TranslateMessage / DispatchMessage
@@ -537,6 +545,7 @@ CreateWindowEx → WM_NCCREATE(return TRUE)
   └── WM_TRAY_CALLBACK → 托盘菜单处理
 
 阶段5: 清理退出
+  ├── nativeHost_.Stop()  ← join() 协作式退出（v0.4.0 新增）
   ├── wsClient.Disconnect()  ← join() 协作式退出
   ├── renderer.Shutdown()
   └── taskbarWindow 销毁
@@ -549,7 +558,6 @@ CreateWindowEx → WM_NCCREATE(return TRUE)
 | `WM_TIMER`                   | 带异常恢复的渲染循环                      |
 | `WM_RENDER_UPDATE` (0x0700)  | 悬停状态变化立即重绘                      |
 | `WM_TRAY_CALLBACK` (0x0600)  | 托盘菜单命令分发                        |
-| `WM_PROCESS_EXITED` (0x0800) | 绑定模式下目标进程退出                     |
 | `WM_PICK_FONT`               | ChooseFontW 字体选择（防重入）           |
 | `WM_DPICHANGED`              | 重新计算 DPI 并调整窗口                  |
 | `WM_SETTINGCHANGE`           | 任务栏可能变化，重新定位                    |
@@ -787,7 +795,13 @@ Token 值定义于 `constants.h` 的 `moekoe::constants::LOCAL_AUTH_TOKEN`。OPT
 
 ### 5.2 部署流程
 
-**当前唯一模式：独立模式**
+**推荐模式：托管模式（v0.4.0）**
+
+1. 将 `moeKoe-taskbar-lyrics` 目录复制到 MoeKoeMusic 的 `plugins/extensions/` 下
+2. 在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」
+3. 授权后，EXE 将随 MoeKoeMusic 自动启动/关闭
+
+**独立模式（回退）**
 
 1. 将 `MoeKoeTaskbarLyrics.exe` 放置到任意目录
 2. 双击运行，插件以独立模式启动
@@ -806,8 +820,8 @@ Token 值定义于 `constants.h` 的 `moekoe::constants::LOCAL_AUTH_TOKEN`。OPT
 #   public/
 #     manifest.json
 #     background.js / popup.js / popup.html
+#     native-bridge.html / native-bridge.js    ← v0.4.0 新增
 #     icons/icon256.png
-#     native_host/
 #     MoeKoeTaskbarLyrics.exe (+ DLLs)
 ```
 

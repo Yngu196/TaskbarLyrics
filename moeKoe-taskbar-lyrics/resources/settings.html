@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=440, initial-scale=1.0">
+<title>任务栏歌词 - 设置</title>
+<style>
+:root {
+    --bg: #ffffff;
+    --surface: #f5f7fa;
+    --border: #e0e4e8;
+    --text: #1a1a2e;
+    --text-secondary: #6b7280;
+    --accent: #4CC2FF;
+    --accent-hover: #3ab8f5;
+    --danger: #ff4d4f;
+    --radius: 8px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #1a1a2e;
+        --surface: #252542;
+        --border: #3a3a5c;
+        --text: #e8e8f0;
+        --text-secondary: #9ca3af;
+        --accent: #4CC2FF;
+        --accent-hover: #6bcfff;
+        --danger: #ff7875;
+    }
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    width: 420px;
+    min-height: 100vh;
+    padding: 20px;
+}
+
+h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+h1::before {
+    content: "";
+    display: inline-block;
+    width: 4px; height: 18px;
+    background: var(--accent);
+    border-radius: 2px;
+}
+
+.section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 14px;
+    overflow: hidden;
+}
+
+.section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    padding: 10px 14px 6px;
+    font-weight: 600;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    gap: 10px;
+}
+.row label {
+    color: var(--text);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* 输入控件 */
+input[type=text], input[type=number], select {
+    width: 140px;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 12px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+input[type=text]:focus, input[type=number]:focus, select:focus {
+    border-color: var(--accent);
+}
+
+/* 颜色选择器 */
+.color-input-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 140px;
+}
+input[type=color] {
+    width: 28px; height: 28px;
+    border: 2px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 0;
+    background: none;
+}
+input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
+input.hex-input {
+    width: 80px;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+/* 滑块 */
+.slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 160px;
+}
+input[type=range] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid var(--bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.slider-value {
+    min-width: 32px;
+    text-align: right;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* 开关 */
+.switch {
+    position: relative;
+    width: 36px; height: 20px;
+    flex-shrink: 0;
+}
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: 0.25s;
+}
+.switch .slider::before {
+    content: "";
+    position: absolute;
+    height: 16px; width: 16px;
+    left: 2px; bottom: 2px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.25s;
+}
+.switch input:checked + .slider { background: var(--accent); }
+.switch input:checked + .slider::before { transform: translateX(16px); }
+
+/* 按钮 */
+.btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 14px;
+    border-top: 1px solid var(--border);
+}
+button {
+    padding: 6px 18px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+button:hover { border-color: var(--accent); color: var(--accent); }
+button.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+button.primary:hover { background: var(--accent-hover); }
+button.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* 预设主题 */
+.theme-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 4px 14px 10px;
+}
+.theme-btn {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s, border-color 0.15s;
+}
+.theme-btn:hover { transform: scale(1.15); }
+.theme-btn.active { border-color: var(--text); }
+
+/* 提示 */
+.hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding: 0 14px 8px;
+}
+
+.footer {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-secondary);
+    padding-top: 8px;
+}
+</style>
+</head>
+<body>
+
+<h1>任务栏歌词 设置</h1>
+
+<!-- 外观 -->
+<div class="section">
+    <div class="section-title">外观</div>
+
+    <div class="row">
+        <label>字体</label>
+        <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" id="fontFamily" style="width:118px;" readonly>
+            <button id="pickFontBtn" style="padding:5px 12px; font-size:11px;">选择</button>
+        </div>
+    </div>
+
+    <div class="row">
+        <label>字号</label>
+        <div class="slider-wrap">
+            <input type="range" id="fontSize" min="10" max="28" step="1" value="20">
+            <span class="slider-value" id="fontSizeVal">20</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <label>普通歌词颜色</label>
+        <div class="color-input-wrap">
+            <input type="color" id="normalColor" value="#333333">
+            <input type="text" class="hex-input" id="normalColorHex" maxlength="7">
+        </div>
+    </div>
+
+    <div class="row">
+        <label>高亮歌词颜色</label>
+        <div class="color-input-wrap">
+            <input type="color" id="highlightColor" value="#4CC2FF">
+            <input type="text" class="hex-input" id="highlightColorHex" maxlength="7">
+        </div>
+    </div>
+
+    <div class="row">
+        <label>不透明度</label>
+        <div class="slider-wrap">
+            <input type="range" id="opacity" min="20" max="100" step="5" value="85">
+            <span class="slider-value" id="opacityVal">85%</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <label>卡拉OK 效果</label>
+        <label class="switch"><input type="checkbox" id="karaoke" checked><span class="slider"></span></label>
+    </div>
+
+    <div class="row">
+        <label>显示翻译</label>
+        <label class="switch"><input type="checkbox" id="translation" checked><span class="slider"></span></label>
+    </div>
+
+    <div class="section-title">长歌词滚动（跑马灯）</div>
+    <div class="row">
+        <label>启用跑马灯</label>
+        <label class="switch"><input type="checkbox" id="marquee" checked><span class="slider"></span></label>
+    </div>
+    <div class="row">
+        <label>滚动模式</label>
+        <select id="marqueeMode">
+            <option value="bounce" selected>往返滚动（推荐）</option>
+            <option value="loop">循环跑马灯</option>
+            <option value="off">关闭（截断显示）</option>
+        </select>
+    </div>
+    <div class="row">
+        <label>开始延迟</label>
+        <div class="slider-wrap">
+            <input type="range" id="marqueeDelay" min="0" max="5000" step="100" value="2000">
+            <span class="slider-value" id="marqueeDelayVal">2000 ms</span>
+        </div>
+    </div>
+    <div class="row">
+        <label>端点暂停</label>
+        <div class="slider-wrap">
+            <input type="range" id="marqueePause" min="0" max="3000" step="100" value="1000">
+            <span class="slider-value" id="marqueePauseVal">1000 ms</span>
+        </div>
+    </div>
+    <div class="row">
+        <label>滚动速度</label>
+        <div class="slider-wrap">
+            <input type="range" id="marqueeSpeed" min="10" max="200" step="5" value="40">
+            <span class="slider-value" id="marqueeSpeedVal">40 px/s</span>
+        </div>
+    </div>
+
+    <div class="section-title">预设主题</div>
+    <div class="theme-presets">
+        <button class="theme-btn" data-hl="#4CC2FF" data-nl="#FFFFFF" style="background:linear-gradient(135deg,#4CC2FF,#FFF)" title="默认"></button>
+        <button class="theme-btn" data-hl="#EC4141" data-nl="#FFFFFF" style="background:linear-gradient(135deg,#EC4141,#FFF)" title="网易云红"></button>
+        <button class="theme-btn" data-hl="#31C27C" data-nl="#FFFFFF" style="background:linear-gradient(135deg,#31C27C,#FFF)" title="QQ音乐绿"></button>
+        <button class="theme-btn" data-hl="#FF9800" data-nl="#FFFFFF" style="background:linear-gradient(135deg,#FF9800,#FFF)" title="暖橙"></button>
+        <button class="theme-btn" data-hl="#E040FB" data-nl="#E0E0E0" style="background:linear-gradient(135deg,#E040FB,#E0E0E0)" title="紫罗兰"></button>
+        <button class="theme-btn" data-hl="#00E676" data-nl="#B0BEC5" style="background:linear-gradient(135deg,#00E676,#B0BEC5)" title="薄荷"></button>
+    </div>
+</div>
+
+<!-- 位置 -->
+<div class="section">
+    <div class="section-title">位置</div>
+
+    <div class="row">
+        <label>水平偏移</label>
+        <div class="slider-wrap">
+            <input type="range" id="offsetX" min="-200" max="200" step="1" value="0">
+            <span class="slider-value" id="offsetXVal">0</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <label>垂直偏移</label>
+        <div class="slider-wrap">
+            <input type="range" id="offsetY" min="-30" max="30" step="1" value="0">
+            <span class="slider-value" id="offsetYVal">0</span>
+        </div>
+    </div>
+    <div class="hint">拖动歌词窗口也可直接调整位置</div>
+
+    <div class="row">
+        <label>重置位置</label>
+        <button id="resetPos" class="danger">重置</button>
+    </div>
+</div>
+
+<!-- 高级 -->
+<div class="section">
+    <div class="section-title">高级</div>
+
+    <div class="row">
+        <label>WebSocket 端口</label>
+        <input type="number" id="wsPort" value="6520" min="1024" max="65535">
+    </div>
+
+    <div class="row">
+        <label>刷新率</label>
+        <div class="slider-wrap">
+            <input type="range" id="refreshRate" min="15" max="120" step="5" value="60">
+            <span class="slider-value" id="refreshRateVal">60 FPS</span>
+        </div>
+    </div>
+
+    <div class="row">
+        <label>调试日志</label>
+        <label class="switch"><input type="checkbox" id="debugLog"><span class="slider"></span></label>
+    </div>
+</div>
+
+<!-- 通用 -->
+<div class="section">
+    <div class="section-title">通用</div>
+    <div class="row">
+        <label>开机自动启动</label>
+        <label class="switch"><input type="checkbox" id="autoStartChk" checked><span class="slider"></span></label>
+    </div>
+</div>
+
+<!-- 操作按钮 -->
+<div class="section">
+    <div class="btn-row">
+        <button id="applyBtn" class="primary">应用并保存</button>
+        <button id="cancelBtn">取消</button>
+    </div>
+</div>
+
+<!-- 使用教程 -->
+<div class="section">
+    <div class="section-title">使用教程</div>
+    <div style="padding:8px 14px 12px; font-size:12px; line-height:1.6;">
+        <p><strong>在插件市场安装此插件后授予权限即可，其余操作无需额外配置，本插件会自动配置。</strong></p>
+    </div>
+</div>
+
+<div class="footer">MoeKoe Taskbar Lyrics v0.4.0</div>
+
+<script>
+// ---- 与 C++ 宿主通信 ----
+function sendToHost(msg) {
+    try {
+        window.chrome.webview.postMessage(JSON.stringify(msg));
+    } catch(e) {
+        console.error('sendToHost error:', e);
+    }
+}
+
+// 接收 C++ 发来的消息（初始化配置）
+window.chrome.webview.addEventListener('message', (event) => {
+    let msg;
+    if (typeof event.data === 'string') {
+        try {
+            msg = JSON.parse(event.data);
+        } catch (e) {
+            console.error('Failed to parse message as JSON:', e, 'data:', event.data);
+            return;
+        }
+    } else {
+        // 如果不是字符串，直接用对象（可能是某些版本的 WebView2 行为）
+        msg = event.data;
+    }
+    if (msg.type === 'initConfig') {
+        applyConfigToUI(msg.config);
+    } else if (msg.type === 'fontSelected') {
+        document.getElementById('fontFamily').value = msg.fontFamily;
+    }
+});
+
+// ---- 同步颜色选择器和 hex 输入 ----
+function syncColor(colorPicker, hexInput) {
+    colorPicker.addEventListener('input', () => {
+        hexInput.value = colorPicker.value.toUpperCase();
+    });
+    hexInput.addEventListener('change', () => {
+        let v = hexInput.value.trim();
+        if (!v.startsWith('#')) v = '#' + v;
+        if (/^#[0-9A-Fa-f]{6}$/.test(v)) {
+            colorPicker.value = v;
+        }
+    });
+}
+syncColor(document.getElementById('normalColor'), document.getElementById('normalColorHex'));
+syncColor(document.getElementById('highlightColor'), document.getElementById('highlightColorHex'));
+
+// ---- 同步滑块和数值显示 ----
+function syncSlider(slider, valEl, suffix = '') {
+    function update() { valEl.textContent = slider.value + suffix; }
+    slider.addEventListener('input', update);
+    update();
+}
+syncSlider(document.getElementById('fontSize'), document.getElementById('fontSizeVal'));
+syncSlider(document.getElementById('opacity'), document.getElementById('opacityVal'), '%');
+syncSlider(document.getElementById('offsetX'), document.getElementById('offsetXVal'));
+syncSlider(document.getElementById('offsetY'), document.getElementById('offsetYVal'));
+syncSlider(document.getElementById('refreshRate'), document.getElementById('refreshRateVal'), ' FPS');
+syncSlider(document.getElementById('marqueeDelay'), document.getElementById('marqueeDelayVal'), ' ms');
+syncSlider(document.getElementById('marqueePause'), document.getElementById('marqueePauseVal'), ' ms');
+syncSlider(document.getElementById('marqueeSpeed'), document.getElementById('marqueeSpeedVal'), ' px/s');
+
+// ---- 预设主题 ----
+document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('highlightColor').value = btn.dataset.hl;
+        document.getElementById('highlightColorHex').value = btn.dataset.hl.toUpperCase();
+        document.getElementById('normalColor').value = btn.dataset.nl;
+        document.getElementById('normalColorHex').value = btn.dataset.nl.toUpperCase();
+    });
+});
+
+// ---- 将配置写入 UI ----
+function applyConfigToUI(cfg) {
+    if (!cfg) return;
+
+    const a = cfg.appearance || {};
+    const adv = cfg.advanced || {};
+    const pos = cfg.position || {};
+
+    // 通用
+    document.getElementById('autoStartChk').checked = cfg.auto_start !== false;
+
+    // 外观
+    document.getElementById('fontFamily').value = a.font_family || '华文细黑';
+    document.getElementById('fontSize').value = a.font_size || 20;
+    document.getElementById('normalColor').value = a.normal_color || '#333333';
+    document.getElementById('normalColorHex').value = (a.normal_color || '#333333').toUpperCase();
+    document.getElementById('highlightColor').value = a.highlight_color || '#4CC2FF';
+    document.getElementById('highlightColorHex').value = (a.highlight_color || '#4CC2FF').toUpperCase();
+    document.getElementById('opacity').value = Math.round((a.normal_opacity || 0.85) * 100);
+    document.getElementById('karaoke').checked = a.enable_karaoke !== false;
+    document.getElementById('translation').checked = a.enable_translation !== false;
+
+    // 跑马灯
+    document.getElementById('marquee').checked = a.enable_marquee !== false;
+    document.getElementById('marqueeMode').value = a.marquee_mode || 'bounce';
+    document.getElementById('marqueeDelay').value = a.marquee_delay_ms || 2000;
+    document.getElementById('marqueePause').value = a.marquee_pause_ms || 1000;
+    document.getElementById('marqueeSpeed').value = a.marquee_speed_px_per_sec || 40;
+
+    // 位置
+    document.getElementById('offsetX').value = pos.offset_x || 0;
+    document.getElementById('offsetY').value = pos.offset_y || 0;
+
+    // 高级
+    document.getElementById('wsPort').value = adv.websocket_port || 6520;
+    document.getElementById('refreshRate').value = adv.refresh_rate_hz || 60;
+    document.getElementById('debugLog').checked = !!adv.debug_log;
+
+    // 触发所有滑块同步
+    document.querySelectorAll('input[type=range]').forEach(s => s.dispatchEvent(new Event('input')));
+}
+
+// ---- 从 UI 收集配置 ----
+function collectConfig() {
+    return {
+        auto_start: document.getElementById('autoStartChk').checked,
+        appearance: {
+            highlight_color: document.getElementById('highlightColor').value,
+            normal_color: document.getElementById('normalColor').value,
+            normal_opacity: parseInt(document.getElementById('opacity').value) / 100,
+            font_family: document.getElementById('fontFamily').value,
+            font_size: parseInt(document.getElementById('fontSize').value),
+            enable_karaoke: document.getElementById('karaoke').checked,
+            enable_translation: document.getElementById('translation').checked,
+            enable_marquee: document.getElementById('marquee').checked,
+            marquee_mode: document.getElementById('marqueeMode').value,
+            marquee_delay_ms: parseInt(document.getElementById('marqueeDelay').value),
+            marquee_pause_ms: parseInt(document.getElementById('marqueePause').value),
+            marquee_speed_px_per_sec: parseFloat(document.getElementById('marqueeSpeed').value),
+        },
+        position: {
+            offset_x: parseInt(document.getElementById('offsetX').value),
+            offset_y: parseInt(document.getElementById('offsetY').value),
+        },
+        advanced: {
+            websocket_port: parseInt(document.getElementById('wsPort').value),
+            refresh_rate_hz: parseInt(document.getElementById('refreshRate').value),
+            debug_log: document.getElementById('debugLog').checked,
+        },
+    };
+}
+
+// ---- 按钮事件 ----
+
+document.getElementById('applyBtn').addEventListener('click', () => {
+    const config = collectConfig();
+    sendToHost({ type: 'saveConfig', config: config });
+});
+
+document.getElementById('cancelBtn').addEventListener('click', () => {
+    sendToHost({ type: 'close' });
+});
+
+document.getElementById('resetPos').addEventListener('click', () => {
+    document.getElementById('offsetX').value = 0;
+    document.getElementById('offsetY').value = 0;
+    document.getElementById('offsetX').dispatchEvent(new Event('input'));
+    document.getElementById('offsetY').dispatchEvent(new Event('input'));
+});
+
+document.getElementById('pickFontBtn').addEventListener('click', () => {
+    sendToHost({ type: 'pickFont' });
+});
+
+// 初始化：请求配置
+sendToHost({ type: 'getConfig' });
+</script>
+</body>
+</html>

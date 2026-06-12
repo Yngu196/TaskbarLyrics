@@ -12,12 +12,10 @@
 #         |-- background.js
 #         |-- popup.js
 #         |-- popup.html
+#         |-- native-bridge.html      (Native Host 桥接页)
+#         |-- native-bridge.js        (Native Host 桥接逻辑)
 #         |-- icons/
 #         |   `-- icon256.png
-#         |-- native_host/
-#         |   |-- install_host.bat
-#         |   |-- moekoe_taskbar_lyrics.json
-#         |   `-- uninstall_host.bat
 #         `-- MoeKoeTaskbarLyrics.exe
 #
 #  Usage:
@@ -66,10 +64,10 @@ try {
     $PublicDir = Join-Path $TempDir "public"
     New-Item -ItemType Directory -Force -Path $PublicDir | Out-Null
     New-Item -ItemType Directory -Force (Join-Path $PublicDir "icons") | Out-Null
-    New-Item -ItemType Directory -Force (Join-Path $PublicDir "native_host") | Out-Null
 
     # Copy plugin source files
-    $pluginFiles = @("manifest.json", "background.js", "popup.js", "popup.html")
+    $pluginFiles = @("manifest.json", "background.js", "popup.js", "popup.html",
+                      "native-bridge.html", "native-bridge.js")
     foreach ($f in $pluginFiles) {
         $src = Join-Path $PluginDir $f
         if (Test-Path $src) {
@@ -87,15 +85,6 @@ try {
         Write-Host "  [OK] icons/"
     } else {
         Write-Host "  [WARN] Missing: icons/" -ForegroundColor Yellow
-    }
-
-    # Copy native_host
-    $nhSrc = Join-Path $PluginDir "native_host"
-    if (Test-Path $nhSrc) {
-        Copy-Item -Recurse -Force $nhSrc (Join-Path $PublicDir "native_host")
-        Write-Host "  [OK] native_host/"
-    } else {
-        Write-Host "  [WARN] Missing: native_host/" -ForegroundColor Yellow
     }
 
     # Copy compiled exe

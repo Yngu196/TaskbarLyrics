@@ -9,6 +9,7 @@
 #include "settings_window.h"
 #include "lyrics_data.h"
 #include "lyrics_parser.h"
+#include "native_messaging.h"
 #include "process_monitor.h"
 #include "renderer.h"
 #include "taskbar_window.h"
@@ -37,10 +38,10 @@ struct AppContext {
     moekoe::ProcessMonitor*  processMonitor{nullptr};
     moekoe::HttpServer*      httpServer{nullptr};
     moekoe::SettingsWindow*   settingsWindow{nullptr};
+    moekoe::NativeMessagingHost* nativeHost{nullptr};
     HINSTANCE                hInstance{nullptr};
     HWND                     hwnd{nullptr}; // 隐式消息窗口
     bool                     running{true};
-    bool                     boundMode{false};
 };
 
 using namespace moekoe::constants;
@@ -163,9 +164,9 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
             }
         }
 
-        // 回退: 使用旧的 Win32 配置对话框
+        // 回退: 使用旧的 Win32 配置对话框（始终以独立模式显示）
         if (moekoe::ConfigDialog::Show(app.hInstance, app.hwnd, *app.config,
-                                       app.boundMode,
+                                       /*boundMode*/ false,
                                        [&app]() {
                                            app.running = false;
                                            ::PostQuitMessage(0);
@@ -180,10 +181,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         break;
     }
     case ID_MENU_UNBIND: {
-        // 解除绑定：退出程序
+        // 保留兼容：退出程序
         int ret = ::MessageBoxW(app.hwnd,
-            L"解除绑定后将退出本程序。\n\n下次启动请以独立模式运行（不放在 MoeKoeMusic 目录下）。\n\n确定要解除绑定吗？",
-            L"解除绑定", MB_YESNO | MB_ICONQUESTION);
+            L"确定要退出吗？",
+            L"退出", MB_YESNO | MB_ICONQUESTION);
         if (ret == IDYES) {
             app.running = false;
             ::PostQuitMessage(0);
@@ -328,14 +329,6 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
-    // 绑定模式：MoeKoeMusic 进程退出时自动退出
-    case WM_PROCESS_EXITED: {
-        Log("[BOUND] MoeKoeMusic exited, shutting down\n");
-        app->running = false;
-        ::PostQuitMessage(0);
-        return 0;
-    }
-
     default:
         break;
     }
@@ -408,14 +401,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 1;
     }
 
-    bool boundMode = moekoe::ProcessMonitor::IsBoundMode();
-    Log("[STARTUP] Bound mode: %s\n", boundMode ? "YES" : "NO");
-
     AppContext app;
     app.config = &config;
     app.hwnd   = hMsgWnd;
     app.hInstance = hInstance;
-    app.boundMode = boundMode;
     ::SetWindowLongPtrW(hMsgWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&app));
 
     // ═══════ 第 3 阶段：业务模块初始化 ═══════
@@ -425,7 +414,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     app.tray = &tray;
     tray.Initialize(hInstance, hMsgWnd);
     tray.SetMenuCheckedAutoStart(config.IsAutoStart());
-    tray.SetBoundMode(boundMode);
 
     // 7) 查找任务栏
     HWND hTaskbar = moekoe::TaskbarWindow::FindTaskbarHandle();
@@ -562,17 +550,36 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         Log("[STARTUP] HTTP server failed to start on port %d (non-fatal)\n", httpPort);
     }
 
-    // 11) 绑定模式：启动进程监控
-    moekoe::ProcessMonitor processMonitor;
-    app.processMonitor = &processMonitor;
-    if (boundMode) {
-        processMonitor.Start(L"MoeKoeMusic.exe",
-            /*onStarted*/ []() {},
-            /*onExited*/ [hMsgWnd]() {
-                ::PostMessageW(hMsgWnd, WM_PROCESS_EXITED, 0, 0);
-            });
-        Log("[STARTUP] Process monitor started (bound mode)\n");
-    }
+    // 11) 启动 Native Host stdin 读取（MoeKoeMusic 托管模式下的生命周期管理）
+    // 在后台线程中读取 stdin JSON Lines，收到 shutdown 时通知主线程退出
+    moekoe::NativeMessagingHost nativeHost;
+    app.nativeHost = &nativeHost;
+    nativeHost.SetMessageHandler([&app](const moekoe::NativeHostMessage& msg) {
+        Log("[NATIVE-HOST] Received message: type=%s\n", msg.type.c_str());
+        // 业务消息处理：可根据 payload 中的 action 执行对应操作
+        if (msg.payload.contains("action")) {
+            std::string action = msg.payload["action"].get<std::string>();
+            Log("[NATIVE-HOST] Action: %s\n", action.c_str());
+            // 未来可扩展: set-config, get-status 等
+        }
+    });
+    // 在独立线程中运行 stdin 循环（阻塞式 getline）
+    std::thread stdinThread([&nativeHost, &app]() {
+        Log("[NATIVE-HOST] Stdin reader thread started (managed=%d)\n",
+            !nativeHost.IsShutdown());
+        bool result = nativeHost.Run();
+        if (!result) {
+            // 收到 shutdown 指令或读取错误 → 通知主线程退出
+            Log("[NATIVE-HOST] Run() returned false, requesting shutdown\n");
+            app.running = false;
+            ::PostQuitMessage(0);
+        } else {
+            // stdin EOF（独立运行模式，无托管者）→ 继续运行
+            Log("[NATIVE-HOST] Run() returned true (standalone mode, continuing)\n");
+        }
+    });
+    stdinThread.detach();
+    Log("[STARTUP] Native Host stdin reader started\n");
 
     // 启动帧定时器
     const int intervalMs = std::max(MIN_FRAME_INTERVAL_MS, 1000 / std::max(1, config.Advanced().refreshRateHz));
@@ -592,7 +599,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 注意：顺序与初始化相反（后创建的先销毁）
     ::KillTimer(hMsgWnd, 1);
     httpServer.Stop();
-    processMonitor.Stop();
     wsClient.Disconnect();
     renderer.Shutdown();
     taskbarWindow.Destroy();
