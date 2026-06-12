@@ -41,7 +41,7 @@ jobs:
             & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
           }
 
-          & "$vcpkgRoot\vcpkg.exe" install --triplet x64-windows --x-install-root="$installDir"
+          & "$vcpkgRoot\vcpkg.exe" install --triplet x64-windows --x-install-root="$installDir" --manifest
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Configure CMake
