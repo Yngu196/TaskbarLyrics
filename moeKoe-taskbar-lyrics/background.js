@@ -53,6 +53,9 @@ async function loadPortConfig() {
     try {
         const cfg = await chrome.storage.local.get(['wsPort', 'httpPort']);
         wsPort = cfg.wsPort || DEFAULT_WS_PORT;
+        // httpPort 暂未在本文件使用（popup.js 的 HTTP 回退接口独立读取），
+        // 但统一读取以保持配置一致性
+        // httpPort = cfg.httpPort || DEFAULT_HTTP_PORT;
     } catch (e) {
         wsPort = DEFAULT_WS_PORT;
     }
