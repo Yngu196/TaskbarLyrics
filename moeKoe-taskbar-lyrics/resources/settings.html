@@ -265,6 +265,15 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
         </select>
     </div>
 
+    <!-- ═════ 共享设置（卡拉OK/卡片模式均可见） ═════ -->
+    <div class="row">
+        <label>字体</label>
+        <div style="display:flex; gap:6px; align-items:center;">
+            <input type="text" id="fontFamily" style="width:118px;" readonly>
+            <button id="pickFontBtn" style="padding:5px 12px; font-size:11px;">选择</button>
+        </div>
+    </div>
+
     <!-- ═════ 卡拉OK模式选项（仅 karaoke 时显示） ═════ -->
     <div id="karaokeSection">
 
@@ -272,15 +281,7 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
         <label>字号</label>
         <div class="slider-wrap">
             <input type="range" id="fontSize" min="10" max="28" step="1" value="20">
-            <span class="slider-value" id="fontSizeVal">20</span>
-        </div>
-    </div>
-
-    <div class="row">
-        <label>字体</label>
-        <div style="display:flex; gap:6px; align-items:center;">
-            <input type="text" id="fontFamily" style="width:118px;" readonly>
-            <button id="pickFontBtn" style="padding:5px 12px; font-size:11px;">选择</button>
+            <span class="slider-value" id="fontSizeVal">20"></span>
         </div>
     </div>
 

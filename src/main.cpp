@@ -289,7 +289,8 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     state.isDragging = app->taskbarWindow->IsDragging();
                 }
 
-                // 4. 执行渲染（Direct2D 绘制）
+                // 4. 同步任务栏方向（运行时位置变化适配）+ 执行渲染
+                app->renderer->SetVerticalTaskbar(app->taskbarWindow->IsVerticalTaskbar());
                 app->renderer->Render(state);
 
                 // 5. 更新托盘提示文本（实时显示当前歌词）
@@ -486,6 +487,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 1;
     }
     app.renderer = &renderer;
+
+    // 同步任务栏方向到渲染器（纵向屏幕/垂直任务栏适配）
+    renderer.SetVerticalTaskbar(taskbarWindow.IsVerticalTaskbar());
 
     // 10) 启动 WebSocket 客户端 + 歌词解析
     moekoe::LyricsParser parser;

@@ -292,7 +292,8 @@ void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, 
 void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       double progress,
                                                       bool enableKaraoke,
-                                                      float scrollOffset) {
+                                                      float scrollOffset,
+                                                      const float* overridePaddingX) {
     if (!renderTarget_ || !textFormat_ || text.empty() ||
         !highlightBrush_ || !normalBrush_) {
         return;
@@ -300,8 +301,8 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
 
-    // 水平偏移量（像素）
-    const float paddingX = constants::TEXT_PADDING_X;
+    // 水平偏移量（像素）：支持垂直模式下的自定义内边距
+    const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
     const float availableWidth = static_cast<FLOAT>(width_) - paddingX * 2.0f;
 
     // 布局区域（用于文本度量）
@@ -380,11 +381,11 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     }
 }
 
-void TaskbarRenderer::DrawTranslatedText(const std::wstring& text) {
+void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* overridePaddingX) {
     if (!translationFormat_ || !translationBrush_ || text.empty()) return;
-    
-    // 水平偏移量（像素）
-    const float paddingX = constants::TEXT_PADDING_X;
+
+    // 水平偏移量（像素）：支持垂直模式下的自定义内边距
+    const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
     
     D2D1_RECT_F layout = D2D1::RectF(
         paddingX, static_cast<FLOAT>(height_) * 0.55f,
@@ -400,52 +401,89 @@ void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
 
     const FLOAT w = static_cast<FLOAT>(width_);
     const FLOAT h = static_cast<FLOAT>(height_);
-    const FLOAT btnSize = h * 0.7f;
-    const FLOAT spacing = constants::BUTTON_SPACING;
-    const FLOAT totalBtnWidth = btnSize * 3.0f + spacing * 2.0f;
-    const FLOAT startX = (w - totalBtnWidth) / 2.0f;
-    const FLOAT btnY = (h - btnSize) / 2.0f;
 
-    // 半透明背景
-    D2D1_RECT_F bgRect = D2D1::RectF(
-        startX - constants::BUTTON_BG_PADDING_X, btnY - constants::BUTTON_BG_PADDING_Y,
-        startX + totalBtnWidth + constants::BUTTON_BG_PADDING_X, btnY + btnSize + constants::BUTTON_BG_PADDING_Y);
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
-    renderTarget_->CreateSolidColorBrush(
-        D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
-        bgBrush.GetAddressOf());
-    if (bgBrush) {
-        renderTarget_->FillRoundedRectangle(
-            D2D1::RoundedRect(bgRect, constants::BUTTON_BG_BORDER_RADIUS, constants::BUTTON_BG_BORDER_RADIUS), bgBrush.Get());
-    }
+    if (isVerticalTaskbar_) {
+        // ── 垂直任务栏：按钮垂直堆叠（窄窗口放不下水平排列）──
+        const FLOAT btnSize = std::min(w * 0.7f, 28.0f);
+        const FLOAT spacing = constants::BUTTON_SPACING;
+        const FLOAT totalBtnHeight = btnSize * 3.0f + spacing * 2.0f;
+        const FLOAT btnX = (w - btnSize) / 2.0f;
+        const FLOAT startY = (h - totalBtnHeight) / 2.0f;
 
-    // 按钮符号颜色
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> iconBrush;
-    renderTarget_->CreateSolidColorBrush(
-        D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.9f),
-        iconBrush.GetAddressOf());
-    if (!iconBrush) return;
+        // 半透明背景（竖条）
+        D2D1_RECT_F bgRect = D2D1::RectF(
+            btnX - constants::BUTTON_BG_PADDING_X, startY - constants::BUTTON_BG_PADDING_Y,
+            btnX + btnSize + constants::BUTTON_BG_PADDING_X, startY + totalBtnHeight + constants::BUTTON_BG_PADDING_Y);
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
+        renderTarget_->CreateSolidColorBrush(
+            D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
+            bgBrush.GetAddressOf());
+        if (bgBrush) {
+            renderTarget_->FillRoundedRectangle(
+                D2D1::RoundedRect(bgRect, constants::BUTTON_BG_BORDER_RADIUS, constants::BUTTON_BG_BORDER_RADIUS), bgBrush.Get());
+        }
 
-    // 使用缓存的按钮文字格式
-    if (!btnFormat_) return;
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> iconBrush;
+        renderTarget_->CreateSolidColorBrush(
+            D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.9f),
+            iconBrush.GetAddressOf());
+        if (!iconBrush || !btnFormat_) return;
 
-    // 上一首 ⏮ (U+23EE)
-    D2D1_RECT_F prevRect = D2D1::RectF(startX, btnY, startX + btnSize, btnY + btnSize);
-    renderTarget_->DrawTextW(L"\u23EE", 1, btnFormat_.Get(), prevRect, iconBrush.Get());
+        // 上一首 ⏮ (顶部)
+        D2D1_RECT_F prevRect = D2D1::RectF(btnX, startY, btnX + btnSize, startY + btnSize);
+        renderTarget_->DrawTextW(L"\u23EE", 1, btnFormat_.Get(), prevRect, iconBrush.Get());
 
-    // 暂停/播放 ⏸ (U+23F8) / ▶ (U+25B6)
-    FLOAT ppX = startX + btnSize + spacing;
-    D2D1_RECT_F ppRect = D2D1::RectF(ppX, btnY, ppX + btnSize, btnY + btnSize);
-    if (isPlaying) {
-        renderTarget_->DrawTextW(L"\u23F8", 1, btnFormat_.Get(), ppRect, iconBrush.Get());
+        // 暂停/播放 ⏸/▶ (中间)
+        FLOAT ppY = startY + btnSize + spacing;
+        D2D1_RECT_F ppRect = D2D1::RectF(btnX, ppY, btnX + btnSize, ppY + btnSize);
+        renderTarget_->DrawTextW(isPlaying ? L"\u23F8" : L"\u25B6", 1, btnFormat_.Get(), ppRect, iconBrush.Get());
+
+        // 下一首 ⏭ (底部)
+        FLOAT nextY = startY + (btnSize + spacing) * 2.0f;
+        D2D1_RECT_F nextRect = D2D1::RectF(btnX, nextY, btnX + btnSize, nextY + btnSize);
+        renderTarget_->DrawTextW(L"\u23ED", 1, btnFormat_.Get(), nextRect, iconBrush.Get());
     } else {
-        renderTarget_->DrawTextW(L"\u25B6", 1, btnFormat_.Get(), ppRect, iconBrush.Get());
-    }
+        // ── 水平任务栏：按钮水平排列（原有逻辑）──
+        const FLOAT btnSize = h * 0.7f;
+        const FLOAT spacing = constants::BUTTON_SPACING;
+        const FLOAT totalBtnWidth = btnSize * 3.0f + spacing * 2.0f;
+        const FLOAT startX = (w - totalBtnWidth) / 2.0f;
+        const FLOAT btnY = (h - btnSize) / 2.0f;
 
-    // 下一首 ⏭ (U+23ED)
-    FLOAT nextX = startX + (btnSize + spacing) * 2.0f;
-    D2D1_RECT_F nextRect = D2D1::RectF(nextX, btnY, nextX + btnSize, btnY + btnSize);
-    renderTarget_->DrawTextW(L"\u23ED", 1, btnFormat_.Get(), nextRect, iconBrush.Get());
+        // 半透明背景
+        D2D1_RECT_F bgRect = D2D1::RectF(
+            startX - constants::BUTTON_BG_PADDING_X, btnY - constants::BUTTON_BG_PADDING_Y,
+            startX + totalBtnWidth + constants::BUTTON_BG_PADDING_X, btnY + btnSize + constants::BUTTON_BG_PADDING_Y);
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
+        renderTarget_->CreateSolidColorBrush(
+            D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
+            bgBrush.GetAddressOf());
+        if (bgBrush) {
+            renderTarget_->FillRoundedRectangle(
+                D2D1::RoundedRect(bgRect, constants::BUTTON_BG_BORDER_RADIUS, constants::BUTTON_BG_BORDER_RADIUS), bgBrush.Get());
+        }
+
+        // 按钮符号颜色
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> iconBrush;
+        renderTarget_->CreateSolidColorBrush(
+            D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.9f),
+            iconBrush.GetAddressOf());
+        if (!iconBrush || !btnFormat_) return;
+
+        // 上一首 ⏮ (U+23EE)
+        D2D1_RECT_F prevRect = D2D1::RectF(startX, btnY, startX + btnSize, btnY + btnSize);
+        renderTarget_->DrawTextW(L"\u23EE", 1, btnFormat_.Get(), prevRect, iconBrush.Get());
+
+        // 暂停/播放 ⏸ (U+23F8) / ▶ (U+25B6)
+        FLOAT ppX = startX + btnSize + spacing;
+        D2D1_RECT_F ppRect = D2D1::RectF(ppX, btnY, ppX + btnSize, btnY + btnSize);
+        renderTarget_->DrawTextW(isPlaying ? L"\u23F8" : L"\u25B6", 1, btnFormat_.Get(), ppRect, iconBrush.Get());
+
+        // 下一首 ⏭ (U+23ED)
+        FLOAT nextX = startX + (btnSize + spacing) * 2.0f;
+        D2D1_RECT_F nextRect = D2D1::RectF(nextX, btnY, nextX + btnSize, btnY + btnSize);
+        renderTarget_->DrawTextW(L"\u23ED", 1, btnFormat_.Get(), nextRect, iconBrush.Get());
+    }
 }
 
 // ═════════════════════════════════════════
@@ -528,6 +566,85 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     } else {
         // ═════ 非动画状态：正常双行绘制 ═════
         DrawCardLyrics(curW, nextW, lyricsX, 0.0f, lyricsWidth, 0.0f, 1.0f);
+    }
+}
+
+// ═══════════════════════════════════════
+// 垂直任务栏卡片模式：堆叠式布局
+// ═══════════════════════════════════════
+//
+// 窗口窄而高（~180px 宽），水平并排的封面+歌词放不下。
+// 改为垂直堆叠：
+//   ┌──────────────┐
+//   │   [封面]     │  ← 居中，缩小
+//   │              │
+//   │ 当前行歌词   │  ← 居中单行
+//   │ 下一行歌词   │  ← 居中单行（灰色小字）
+//   └──────────────┘
+
+void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float paddingX = constants::TEXT_PADDING_X * 0.5f;  // 窄窗口减小左右边距
+    const float w = static_cast<float>(width_);
+    const float h = static_cast<float>(height_);
+
+    // 封面尺寸：缩小以适应窄窗口
+    const float coverSize = std::min(
+        static_cast<float>(settings_.cardCoverSize) * dpiScale * 0.8f,
+        w - paddingX * 2.0f);
+
+    // ═════ 1. 封面（居中顶部） ═════
+    std::string fallback = state.songName.empty() ? "?" : state.songName.substr(0, 1);
+    const float coverX = (w - coverSize) / 2.0f;
+    const float coverY = paddingX;
+    DrawCoverArt(state.coverArtUrl, fallback, coverX, coverY, coverSize);
+
+    // ═════ 2. 歌词文本（封面下方，居中对齐） ═════
+    const float lyricsTop = coverY + coverSize + paddingX * 0.5f;
+    const float lyricsWidth = w - paddingX * 2.0f;
+
+    if (lyricsWidth <= 10.0f) return;
+
+    std::wstring curW = Utf8ToWide(state.currentLine);
+    std::wstring nextW = Utf8ToWide(state.nextLine);
+
+    // 动画处理：垂直模式下仅使用淡入淡出（不做位移，避免在窄窗口中跳动）
+    if (cardAnimState_ == CardAnimState::Animating && cardAnimProgress_ > 0.001f
+        && cardAnimProgress_ < 1.0f) {
+
+        const float t = cardAnimProgress_;
+        const float fadeOutAlpha = std::max(0.0f, 1.0f - EaseInOutQuad(t));
+        const float fadeInAlpha = EaseOutCubic(std::min(t / 0.85f, 1.0f));
+
+        std::wstring oldCurW = Utf8ToWide(cardPrevCurrentLine_);
+        std::wstring oldNextW = Utf8ToWide(cardPrevNextLine_);
+
+        D2D1_RECT_F clipRect = D2D1::RectF(paddingX, lyricsTop, w - paddingX, h);
+        renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+        // 旧内容淡出（仅保留旧下一行）
+        if (!oldNextW.empty()) {
+            DrawCardLyricsSingle(oldNextW, paddingX, lyricsTop, lyricsWidth,
+                                 0.0f, fadeOutAlpha,
+                                 /*isCurrent=*/false);
+        }
+
+        // 新内容淡入
+        if (!curW.empty()) {
+            DrawCardLyricsSingle(curW, paddingX, lyricsTop, lyricsWidth,
+                                 0.0f, fadeInAlpha,
+                                 /*isCurrent=*/true);
+        }
+        if (!nextW.empty()) {
+            DrawCardLyricsSingle(nextW, paddingX, lyricsTop, lyricsWidth,
+                                 0.0f, fadeInAlpha,
+                                 /*isCurrent=*/false);
+        }
+
+        renderTarget_->PopAxisAlignedClip();
+    } else {
+        // 非动画状态：正常绘制
+        DrawCardLyrics(curW, nextW, paddingX, lyricsTop, lyricsWidth, 0.0f, 1.0f);
     }
 }
 
@@ -806,19 +923,30 @@ void TaskbarRenderer::Render(const RenderState& state) {
     if (settings_.displayMode == "card") {
         // ═════ 卡片样式渲染路径 ═════
         if (state.hasLyrics && !state.currentLine.empty()) {
-            RenderCardStyle(state);
+            if (isVerticalTaskbar_) {
+                RenderCardStyleVertical(state);
+            } else {
+                RenderCardStyle(state);
+            }
         } else if (state.isPlaying) {
             DrawCentered(L"...", normalBrush_.Get(), 0.0f);
         }
     } else {
-        // ═════ 现有卡拉OK渲染路径（不变） ═════
+        // ═════ 卡拉OK渲染路径 ═════
+        // 垂直任务栏时减小内边距以适应窄窗口
+        const float vertPaddingX = isVerticalTaskbar_
+            ? constants::TEXT_PADDING_X * 0.4f
+            : constants::TEXT_PADDING_X;
+
         if (state.hasLyrics && !state.currentLine.empty()) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
-            DrawHighlightedTextPerCharacter(lineW, state.progress, settings_.enableKaraoke, scrollOffset);
+            DrawHighlightedTextPerCharacter(lineW, state.progress, settings_.enableKaraoke,
+                                           scrollOffset,
+                                           isVerticalTaskbar_ ? &vertPaddingX : nullptr);
 
             if (settings_.enableTranslation && !state.currentTranslated.empty()) {
                 const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                DrawTranslatedText(trW);
+                DrawTranslatedText(trW, isVerticalTaskbar_ ? &vertPaddingX : nullptr);
             }
         } else {
             if (state.isPlaying) {

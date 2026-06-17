@@ -138,7 +138,19 @@ void TaskbarWindow::DetectTaskbarInfo() {
 
 void TaskbarWindow::PositionLyricsInTaskbar() {
     if (!hwnd_ || !hTaskbar_) return;
+
+    // 记录旧方位，用于检测方向变化
+    const TaskbarPosition oldPosition = info_.position;
     DetectTaskbarInfo();
+
+    // 方位发生变化（如横屏→竖屏、底部→左侧）：
+    // 旧的 dragOffset 是基于前一个方向计算的，直接复用会导致窗口坐标飞出屏幕。
+    // 重置偏移量让窗口回到自动定位的默认位置。
+    if (oldPosition != TaskbarPosition::UNKNOWN && oldPosition != info_.position) {
+        dragOffsetX_ = 0;
+        dragOffsetY_ = 0;
+        ::OutputDebugStringW(L"[TaskbarLyrics] 任务栏方位变化，重置拖动偏移\n");
+    }
 
     // ── APPBAR 自动隐藏处理 ──
     // 通过任务栏实际矩形高度判断其是否处于"滑出"状态：
@@ -147,20 +159,35 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
     if (taskbarAutoHide_) {
         RECT tbCurrent{};
         ::GetWindowRect(hTaskbar_, &tbCurrent);
-        const int tbH = tbCurrent.bottom - tbCurrent.top;
+        // 垂直任务栏时用宽度判断，水平任务栏时用高度判断
+        const int tbSize = (info_.position == TaskbarPosition::LEFT ||
+                            info_.position == TaskbarPosition::RIGHT)
+                               ? (tbCurrent.right - tbCurrent.left)
+                               : (tbCurrent.bottom - tbCurrent.top);
         constexpr int kAutoHideThreshold = 10;  // 低于此值认为任务栏已收起
-        const bool tbIsVisible = (tbH >= kAutoHideThreshold);
+        const bool tbIsVisible = (tbSize >= kAutoHideThreshold);
 
         if (tbIsVisible && !taskbarVisible_) {
             taskbarVisible_ = true;
             // 继续下面的正常定位流程
         } else if (!tbIsVisible && taskbarVisible_) {
             taskbarVisible_ = false;
-            ::ShowWindow(hwnd_, SW_HIDE);
-            return;  // 隐藏后不执行定位
+            // 任务栏收起时，将歌词窗口缩小到边缘 1px 条
+            // 而非完全隐藏，这样任务栏滑出时窗口能立即恢复
+            ::SetWindowPos(hwnd_, HWND_TOPMOST,
+                           tbCurrent.left, tbCurrent.top,
+                           tbCurrent.right - tbCurrent.left,
+                           tbCurrent.bottom - tbCurrent.top,
+                           SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+            return;
         } else if (!tbIsVisible && !taskbarVisible_) {
-            ::ShowWindow(hwnd_, SW_HIDE);
-            return;  // 保持隐藏
+            // 保持边缘 1px 条可见
+            ::SetWindowPos(hwnd_, HWND_TOPMOST,
+                           tbCurrent.left, tbCurrent.top,
+                           tbCurrent.right - tbCurrent.left,
+                           tbCurrent.bottom - tbCurrent.top,
+                           SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
+            return;
         }
         // tbIsVisible == true && taskbarVisible_ == true: 正常显示
     } else {
@@ -278,15 +305,41 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
     case TaskbarPosition::LEFT: {
         w = ::MulDiv(constants::VERTICAL_TASKBAR_LYRIC_WIDTH_BASE_DP, info_.dpi, 96);
         x = tbRect.right - w;
-        y = tbRect.top;
-        h = tbHeight;
+
+        // 垂直任务栏：考虑托盘区域（通常在底部），限制最大高度
+        int availableBottom = tbRect.bottom;
+        if (foundTray) {
+            availableBottom = trayRect.top;  // 不覆盖托盘区域
+        }
+
+        // 最大高度约束：避免在纵向屏幕上窗口过高
+        const int maxLyricHeight = ::MulDiv(
+            isCardMode ? constants::CARD_HEIGHT_BASE_DP * 4 : constants::LYRIC_HEIGHT_BASE_DP * 6,
+            info_.dpi, 96);
+        int availableH = availableBottom - tbRect.top;
+        h = std::min(maxLyricHeight, std::max(availableH, lyricH));
+
+        // 垂直居中于可用空间
+        y = tbRect.top + (availableH - h) / 2 + dragOffsetY_;
         break;
     }
     case TaskbarPosition::RIGHT: {
         w = ::MulDiv(constants::VERTICAL_TASKBAR_LYRIC_WIDTH_BASE_DP, info_.dpi, 96);
         x = tbRect.left;
-        y = tbRect.top;
-        h = tbHeight;
+
+        // 垂直任务栏：考虑托盘区域（通常在底部），限制最大高度
+        int availableBottom = tbRect.bottom;
+        if (foundTray) {
+            availableBottom = trayRect.top;
+        }
+
+        const int maxLyricHeight = ::MulDiv(
+            isCardMode ? constants::CARD_HEIGHT_BASE_DP * 4 : constants::LYRIC_HEIGHT_BASE_DP * 6,
+            info_.dpi, 96);
+        int availableH = availableBottom - tbRect.top;
+        h = std::min(maxLyricHeight, std::max(availableH, lyricH));
+
+        y = tbRect.top + (availableH - h) / 2 + dragOffsetY_;
         break;
     }
     default:
@@ -296,6 +349,30 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
 
     w = std::max(w, constants::MIN_WINDOW_WIDTH);
     h = std::max(h, lyricH);
+
+    // 防御性检查：确保窗口坐标在任务栏范围内
+    // 如果 x/y 超出任务栏矩形，强制拉回
+    if (info_.position == TaskbarPosition::LEFT ||
+        info_.position == TaskbarPosition::RIGHT) {
+        // 垂直任务栏：确保 y 在任务栏垂直范围内
+        if (y < tbRect.top) y = tbRect.top;
+        if (y + h > tbRect.bottom) y = tbRect.bottom - h;
+        if (y < tbRect.top) y = tbRect.top;  // h > tbHeight 时的兜底
+    } else {
+        // 水平任务栏：确保 x 在任务栏水平范围内
+        if (x < tbRect.left) x = tbRect.left;
+        if (x + w > tbRect.right) x = tbRect.right - w;
+        if (x < tbRect.left) x = tbRect.left;  // w > tbWidth 时的兜底
+    }
+
+    // 调试日志：输出最终定位坐标
+    {
+        wchar_t dbg[256];
+        swprintf_s(dbg, L"[TaskbarLyrics] Pos: pos=%d x=%d y=%d w=%d h=%d tbRect=(%d,%d,%d,%d)\n",
+                   static_cast<int>(info_.position), x, y, w, h,
+                   tbRect.left, tbRect.top, tbRect.right, tbRect.bottom);
+        ::OutputDebugStringW(dbg);
+    }
 
     // 使用屏幕坐标定位独立窗口
     ::SetWindowPos(
@@ -345,7 +422,34 @@ HoverButton TaskbarWindow::HitTestButton(int x, int y) const {
     const int w = rc.right - rc.left;
     const int h = rc.bottom - rc.top;
 
-    // 按钮区域: 居中排列，三个按钮水平排列
+    const bool isVert = IsVerticalTaskbar();
+
+    if (isVert) {
+        // 垂直任务栏：按钮垂直堆叠
+        const int btnSize = std::min(static_cast<int>(w * 0.7), 28);
+        const int spacing = 2;
+        const int totalBtnHeight = btnSize * 3 + spacing * 2;
+        const int btnX = (w - btnSize) / 2;
+        const int startY = (h - totalBtnHeight) / 2;
+
+        // 检查 x 是否在按钮区域内
+        if (x < btnX || x > btnX + btnSize) return HoverButton::None;
+
+        // Next 按钮 (最底部)
+        int nextY = startY + (btnSize + spacing) * 2;
+        if (y >= nextY && y <= nextY + btnSize) return HoverButton::Next;
+
+        // PlayPause 按钮 (中间)
+        int ppY = startY + btnSize + spacing;
+        if (y >= ppY && y <= ppY + btnSize) return HoverButton::PlayPause;
+
+        // Prev 按钮 (最顶部)
+        if (y >= startY && y <= startY + btnSize) return HoverButton::Prev;
+
+        return HoverButton::None;
+    }
+
+    // 水平任务栏：按钮水平排列（原有逻辑）
     const int btnSize = static_cast<int>(h * 0.7);
     const int btnY = (h - btnSize) / 2;
     const int spacing = 2;
@@ -713,16 +817,27 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_DPICHANGED: {
+        // DPI 变化：旧偏移量基于旧 DPI 的像素值，直接复用会导致窗口飞出屏幕
+        self->dragOffsetX_ = 0;
+        self->dragOffsetY_ = 0;
         self->PositionLyricsInTaskbar();
         return 0;
     }
     case WM_SETTINGCHANGE: {
-        if (wParam == SPI_SETWORKAREA) {
+        // SPI_SETWORKAREA: 分辨率/缩放/多显示器变更
+        // SPI_SETNONCLIENTMETRICS: 系统字体/边框大小变更
+        // 其他 SPI_* 不影响布局，不重置偏移
+        if (wParam == SPI_SETWORKAREA || wParam == SPI_SETNONCLIENTMETRICS) {
+            self->dragOffsetX_ = 0;
+            self->dragOffsetY_ = 0;
             self->PositionLyricsInTaskbar();
         }
         return 0;
     }
     case WM_DISPLAYCHANGE: {
+        // 分辨率变化：重置偏移并重新定位
+        self->dragOffsetX_ = 0;
+        self->dragOffsetY_ = 0;
         self->PositionLyricsInTaskbar();
         return 0;
     }

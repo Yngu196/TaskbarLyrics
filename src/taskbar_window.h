@@ -90,6 +90,12 @@ public:
     std::string GetDisplayMode() const { return displayMode_; }
     void SetDisplayMode(const std::string& mode) { displayMode_ = mode; }
 
+    // 是否处于垂直任务栏模式（LEFT / RIGHT）
+    bool IsVerticalTaskbar() const {
+        return info_.position == TaskbarPosition::LEFT ||
+               info_.position == TaskbarPosition::RIGHT;
+    }
+
     // 按钮点击回调
     using ButtonCallback = std::function<void(HoverButton)>;
     void OnButtonClicked(ButtonCallback cb) { onButtonClicked_ = std::move(cb); }

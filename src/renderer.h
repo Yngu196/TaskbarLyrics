@@ -62,19 +62,26 @@ public:
     void Render(const RenderState& state);
     void Resize(UINT width, UINT height, UINT dpi);
 
+    // 设置/查询垂直任务栏模式（LEFT / RIGHT 方位时启用）
+    void SetVerticalTaskbar(bool vertical) { isVerticalTaskbar_ = vertical; }
+    bool IsVerticalTaskbar() const { return isVerticalTaskbar_; }
+
 private:
     void CreateRenderTarget();
     void DrawHighlightedTextPerCharacter(const std::wstring& text,
                                           double progress,
                                           bool enableKaraoke,
-                                          float scrollOffset = 0.0f);
-    void DrawTranslatedText(const std::wstring& text);
+                                          float scrollOffset = 0.0f,
+                                          const float* overridePaddingX = nullptr);
+    void DrawTranslatedText(const std::wstring& text, const float* overridePaddingX = nullptr);
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
 
     // ═════ 卡片模式渲染（无卡拉OK效果） ═════
     void RenderCardStyle(const RenderState& state);
+    /// 垂直任务栏专用：堆叠式布局（封面在上，歌词在下）
+    void RenderCardStyleVertical(const RenderState& state);
     void DrawCoverArt(const std::string& url, const std::string& fallbackChar,
                       float x, float y, float size);
     /// 绘制单行卡片模式歌词（isCurrent=true → 当前行大号亮色，false → 下一行小号灰色）
@@ -123,6 +130,7 @@ private:
     UINT height_{0};
     UINT dpi_{96};
     bool initialized_{false};
+    bool isVerticalTaskbar_{false};  // 垂直任务栏模式（LEFT/RIGHT）
 
     Microsoft::WRL::ComPtr<ID2D1Factory>              d2dFactory_;
     Microsoft::WRL::ComPtr<ID2D1RenderTarget>        renderTarget_;
