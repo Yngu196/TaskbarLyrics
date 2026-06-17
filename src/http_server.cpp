@@ -242,6 +242,25 @@ void HttpServer::ServerLoop(int port) {
             // 在响应体中携带 service 字段，popup.js 可据此确认不是被劫持的 200
             SendResponse(client, port, 200, "OK", "application/json",
                          "{\"status\":\"ok\",\"service\":\"MoeKoeTaskbarLyrics\"}");
+        } else if (method == "POST" && path == "/lyrics") {
+            // 接收外部歌词+封面数据（供 Chrome 扩展或其他程序调用）
+            const char* body = strstr(buffer, "\r\n\r\n");
+            if (body) {
+                body += 4;
+                std::string bodyStr(body);
+                if (!bodyStr.empty() && onLyrics_) {
+                    Log("[HTTP] Received lyrics data (%zu bytes)\n", bodyStr.size());
+                    onLyrics_(bodyStr);
+                    SendResponse(client, port, 200, "OK", "application/json",
+                                 "{\"status\":\"accepted\"}");
+                } else {
+                    SendResponse(client, port, 500, "Internal Server Error", "application/json",
+                                 "{\"error\":\"no handler\"}");
+                }
+            } else {
+                SendResponse(client, port, 400, "Bad Request", "application/json",
+                             "{\"error\":\"no body\"}");
+            }
         } else if (method == "POST" && (path == "/" || path == "/shutdown")) {
             // 查找 JSON body（在 \r\n\r\n 之后）
             const char* body = strstr(buffer, "\r\n\r\n");

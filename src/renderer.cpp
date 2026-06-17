@@ -215,7 +215,7 @@ void TaskbarRenderer::ApplySettings(const RendererSettings& s) {
 void TaskbarRenderer::Shutdown() {
     cardNextBrush_.Reset();
     cardCurrentBrush_.Reset();
-    coverBitmap_.Reset();
+    d2dCoverBitmap_.Reset();
     cardNextFormat_.Reset();
     cardCurrentFormat_.Reset();
     translationBrush_.Reset();
@@ -655,17 +655,19 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float radius = constants::CARD_COVER_RADIUS_DP * dpiScale;
 
-    // ═════ 异步加载封面图 ═════
-    // URL 变更时启动后台线程下载（不阻塞渲染）
-    // 注意：不在此时清空 coverBitmap_，等下载成功后再替换，
-    //       避免 URL 无效时 fallback 灰底+音符被清除导致封面区域变空白
+    // ═════ 异步下载封面图（仅下载，不做 D2D 操作） ═════
+    // URL 变更时启动后台线程下载到临时文件（不阻塞渲染）
+    // 后台线程只负责：URLDownloadToFile → 保存文件路径
+    // 渲染线程负责：WIC 解码 → D2D 位图创建（必须在 renderTarget_ 同一线程）
     if (!url.empty() && url != cachedCoverUrl_ &&
         !coverLoadInProgress_.load(std::memory_order_relaxed)) {
         cachedCoverUrl_ = url;
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
+        d2dCoverBitmap_.Reset();       // 清除旧位图，避免显示过期封面
+        pendingCoverFile_.clear();     // 清除旧的待消费文件
 
         std::string targetUrl = url;
-        std::thread([this, targetUrl, size]() {
+        std::thread([this, targetUrl]() {
             wchar_t tempPath[MAX_PATH] = {0};
             ::GetTempPathW(MAX_PATH, tempPath);
             wchar_t tempFile[MAX_PATH] = {0};
@@ -673,59 +675,109 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
 
             std::wstring wUrl(targetUrl.begin(), targetUrl.end());
             HRESULT hr = ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, nullptr);
-            Microsoft::WRL::ComPtr<IWICBitmap> result;
 
-            if (SUCCEEDED(hr) && wicFactory_) {
-                Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
-                hr = wicFactory_->CreateDecoderFromFilename(
-                    tempFile, nullptr, GENERIC_READ,
-                    WICDecodeMetadataCacheOnLoad, decoder.GetAddressOf());
+            if (SUCCEEDED(hr)) {
+                // 下载成功：存储临时文件路径供渲染线程消费
+                // （不在此处做任何 WIC/D2D 操作，避免跨线程资源域问题）
+                std::wstring ws(tempFile);
+                pendingCoverFile_ = std::string(ws.begin(), ws.end());
+            } else {
+                // 下载失败：删除空文件
+                ::DeleteFileW(tempFile);
+            }
+
+            coverLoadInProgress_.store(false, std::memory_order_release);
+            Log("[COVER] Download %s: %s, url='%s'\n",
+                SUCCEEDED(hr) ? "OK" : "FAIL",
+                SUCCEEDED(hr) ? pendingCoverFile_.c_str() : "error",
+                targetUrl.substr(0, 60).c_str());
+        }).detach();
+    }
+
+    // ═════ 消费后台下载结果：在渲染线程创建 D2D 位图 ═════
+    // 使用像素数据直接创建 D2D Bitmap（绕过 CreateBitmapFromWicBitmap，
+    // 避免 D2DERR_WRONG_RESOURCE_DOMAIN 跨域问题）
+    if (!pendingCoverFile_.empty()) {
+        Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
+        HRESULT hr = wicFactory_->CreateDecoderFromFilename(
+            std::wstring(pendingCoverFile_.begin(), pendingCoverFile_.end()).c_str(),
+            nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
+            decoder.GetAddressOf());
+
+        if (SUCCEEDED(hr)) {
+            Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
+            hr = decoder->GetFrame(0, frame.GetAddressOf());
+            if (SUCCEEDED(hr)) {
+                Microsoft::WRL::ComPtr<IWICBitmapScaler> scaler;
+                hr = wicFactory_->CreateBitmapScaler(scaler.GetAddressOf());
                 if (SUCCEEDED(hr)) {
-                    Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
-                    hr = decoder->GetFrame(0, frame.GetAddressOf());
+                    UINT targetSize = static_cast<UINT>(size + 0.5f);
+                    hr = scaler->Initialize(frame.Get(), targetSize, targetSize,
+                                            WICBitmapInterpolationModeFant);
                     if (SUCCEEDED(hr)) {
-                        Microsoft::WRL::ComPtr<IWICBitmapScaler> scaler;
-                        hr = wicFactory_->CreateBitmapScaler(scaler.GetAddressOf());
+                        // 将缩放后的图像转换为 BGRA 像素数据
+                        Microsoft::WRL::ComPtr<IWICFormatConverter> converter;
+                        hr = wicFactory_->CreateFormatConverter(converter.GetAddressOf());
                         if (SUCCEEDED(hr)) {
-                UINT origW = 0, origH = 0;
-                frame->GetSize(&origW, &origH);
-                // size 参数已由调用方按 DPI 缩放过（RenderCardStyle 中 coverSize = cardCoverSize * dpiScale），
-                // 此处直接使用，无需再次乘以 dpi_/96
-                UINT targetSize = static_cast<UINT>(size + 0.5f);
-                            hr = scaler->Initialize(frame.Get(), targetSize, targetSize,
-                                                      WICBitmapInterpolationModeFant);
+                            hr = converter->Initialize(
+                                scaler.Get(),
+                                GUID_WICPixelFormat32bppPBGRA,
+                                WICBitmapDitherTypeNone,
+                                nullptr, 0.0,
+                                WICBitmapPaletteTypeCustom);
                             if (SUCCEEDED(hr)) {
-                                wicFactory_->CreateBitmapFromSource(
-                                    scaler.Get(), WICBitmapCacheOnDemand, result.GetAddressOf());
+                                UINT w = 0, h = 0;
+                                converter->GetSize(&w, &h);
+                                const UINT stride = w * 4; // BGRA = 4 bytes/pixel
+                                const UINT bufSize = stride * h;
+
+                                std::vector<BYTE> pixels(bufSize);
+                                hr = converter->CopyPixels(nullptr, stride,
+                                                          static_cast<UINT>(pixels.size()),
+                                                          pixels.data());
+                                if (SUCCEEDED(hr)) {
+                                    // 直接用像素数据创建 D2D Bitmap（与 renderTarget_ 同域）
+                                    D2D1_BITMAP_PROPERTIES bp = {};
+                                    bp.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                                    bp.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+                                    bp.dpiX = static_cast<float>(dpi_);
+                                    bp.dpiY = static_cast<float>(dpi_);
+
+                                    hr = renderTarget_->CreateBitmap(
+                                        D2D1::SizeU(w, h),
+                                        pixels.data(),
+                                        stride,
+                                        &bp,
+                                        d2dCoverBitmap_.GetAddressOf());
+                                    Log("[COVER] D2D bitmap via pixels: hr=0x%08X, bitmap=%d size=%ux%u\n",
+                                        hr, d2dCoverBitmap_ ? 1 : 0, w, h);
+                                }
                             }
                         }
                     }
                 }
             }
+        }
 
-            ::DeleteFileW(tempFile);
-
-            // 存储结果到成员变量（线程安全：仅此写入线程 + 渲染线程读取）
-            coverBitmap_ = std::move(result);
-            coverLoadInProgress_.store(false, std::memory_order_release);
-        }).detach();
+        // 无论成功与否都清理临时文件和路径（避免重复处理）
+        if (!pendingCoverFile_.empty()) {
+            ::DeleteFileW(std::wstring(pendingCoverFile_.begin(), pendingCoverFile_.end()).c_str());
+            pendingCoverFile_.clear();
+        }
     }
 
+    // ═════ 绘制 ═════
     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
         D2D1::RectF(x, y, x + size, y + size), radius, radius);
 
-    if (coverBitmap_) {
+    if (d2dCoverBitmap_) {
         // 有封面位图：绘制圆角裁剪的图片
-        Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dBitmap;
-        renderTarget_->CreateBitmapFromWicBitmap(coverBitmap_.Get(), d2dBitmap.GetAddressOf());
-        if (d2dBitmap) {
-            Microsoft::WRL::ComPtr<ID2D1BitmapBrush> bitmapBrush;
-            renderTarget_->CreateBitmapBrush(d2dBitmap.Get(), bitmapBrush.GetAddressOf());
-            if (bitmapBrush) {
-                bitmapBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
-                bitmapBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
-                renderTarget_->FillRoundedRectangle(rr, bitmapBrush.Get());
-            }
+        Microsoft::WRL::ComPtr<ID2D1BitmapBrush> bitmapBrush;
+        renderTarget_->CreateBitmapBrush(d2dCoverBitmap_.Get(), bitmapBrush.GetAddressOf());
+        if (bitmapBrush) {
+            bitmapBrush->SetExtendModeX(D2D1_EXTEND_MODE_CLAMP);
+            bitmapBrush->SetExtendModeY(D2D1_EXTEND_MODE_CLAMP);
+            renderTarget_->FillRoundedRectangle(rr, bitmapBrush.Get());
         }
     } else {
         // 无封面：显示灰底圆角矩形 + 音乐符号
@@ -868,6 +920,16 @@ void TaskbarRenderer::PresentToLayeredWindow() {
 void TaskbarRenderer::Render(const RenderState& state) {
     if (!initialized_ || !renderTarget_) return;
 
+    static int renderEntryLogCount = 0;
+    if (++renderEntryLogCount <= 5) {
+        Log("[RENDER] entry #%d: displayMode='%s' hasLyrics=%d isPlaying=%d curLine='%s' coverUrl='%s'\n",
+            renderEntryLogCount,
+            settings_.displayMode.c_str(),
+            state.hasLyrics, state.isPlaying,
+            state.currentLine.empty() ? "(empty)" : state.currentLine.substr(0, 20).c_str(),
+            state.coverArtUrl.empty() ? "(empty)" : state.coverArtUrl.substr(0, 40).c_str());
+    }
+
     // 跑马灯状态机更新（仅 karaoke 模式）
     bool marqueeNeedsRedraw = false;
     float scrollOffset = 0.0f;
@@ -893,7 +955,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 跑马灯滚动动画期间也需要重绘
     // 卡片模式无跑马灯：无封面图时每帧重绘（确保 fallback 始终可见），
     // 有封面图后按需重绘（state 变化时才更新）
-    const bool needCardRedraw = (settings_.displayMode == "card" && !coverBitmap_);
+    const bool needCardRedraw = (settings_.displayMode == "card" && !d2dCoverBitmap_);
     if (!stateChanged && !marqueeNeedsRedraw && !needCardRedraw && !cardScrollNeedsRedraw) {
         return;
     }

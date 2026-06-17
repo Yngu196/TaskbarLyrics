@@ -24,8 +24,20 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// 解析 KuGou krc 格式字符串为 LyricsData
-LyricsData ParseKrc(const std::string& krcText) {
+// 重连退避时间
+int BackoffSeconds(int attempt) {
+    if (attempt <= 0) return 1;
+    if (attempt == 1) return 1;
+    if (attempt == 2) return 2;
+    if (attempt == 3) return 4;
+    if (attempt == 4) return 8;
+    return 15;
+}
+
+} // namespace
+
+// 解析 KuGou krc 格式字符串为 LyricsData（公共静态方法，供 HTTP API 等外部调用）
+LyricsData WebSocketClient::ParseKrcString(const std::string& krcText) {
     LyricsData data;
     if (krcText.empty()) {
         return data;
@@ -163,18 +175,6 @@ LyricsData ParseKrc(const std::string& krcText) {
     data.valid = !data.lines.empty();
     return data;
 }
-
-// 重连退避时间
-int BackoffSeconds(int attempt) {
-    if (attempt <= 0) return 1;
-    if (attempt == 1) return 1;
-    if (attempt == 2) return 2;
-    if (attempt == 3) return 4;
-    if (attempt == 4) return 8;
-    return 15;
-}
-
-} // namespace
 
 WebSocketClient::WebSocketClient() = default;
 
@@ -371,7 +371,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 hasLD = true;
             } else if (ld.is_string()) {
                 std::string ldStr = ld.get<std::string>();
-                data = ParseKrc(ldStr);
+                data = ParseKrcString(ldStr);
                 hasLD = data.valid;
             } else {
                 Log("Dispatch: lyricsData unexpected type=" + std::to_string(static_cast<int>(ld.type())));
@@ -403,6 +403,8 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                         for (const auto& key : {"pic", "cover", "albumArt", "image", "poster", "img", "album_pic"}) {
                             if (cs.contains(key) && cs[key].is_string()) {
                                 st.coverArtUrl = cs[key].get<std::string>();
+                                Log("[WS] Extracted coverArtUrl from currentSong.%s: %s\n",
+                                    key, st.coverArtUrl.substr(0, 80).c_str());
                                 break;
                             }
                         }
@@ -447,6 +449,34 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             st.isPlaying   = d.value("isPlaying",   false);
             st.currentTime = d.value("currentTime", 0.0);
             st.songTitle   = d.value("songTitle",   "");
+
+            // 提取封面 URL：支持 data 层级直接包含 coverArtUrl/pic 等字段
+            for (const auto& key : {"coverArtUrl", "pic", "cover", "albumArt", "image", "poster"}) {
+                if (d.contains(key) && d[key].is_string()) {
+                    st.coverArtUrl = d[key].get<std::string>();
+                    break;
+                }
+            }
+            // 提取歌曲名称（用于封面降级显示）
+            if (d.contains("songName") && d["songName"].is_string()) {
+                st.songName = d["songName"].get<std::string>();
+            }
+
+            // 兼容 currentSong 嵌套对象格式
+            if (d.contains("currentSong") && d["currentSong"].is_object()) {
+                const auto& cs = d["currentSong"];
+                if (st.coverArtUrl.empty()) {
+                    for (const auto& key : {"pic", "cover", "albumArt", "image", "poster", "album_pic"}) {
+                        if (cs.contains(key) && cs[key].is_string()) {
+                            st.coverArtUrl = cs[key].get<std::string>();
+                            break;
+                        }
+                    }
+                }
+                if (cs.contains("name") && cs["name"].is_string() && st.songName.empty()) {
+                    st.songName = cs["name"].get<std::string>();
+                }
+            }
         }
         try { if (onState_) onState_(st); } catch (...) { Log("Dispatch: onState_ exception"); }
     } else if (type == "welcome") {

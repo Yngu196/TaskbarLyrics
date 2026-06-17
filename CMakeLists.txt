@@ -16,6 +16,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # 启用 Windows 10/11 SDK
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /EHsc)
+    add_compile_options(/await /winrt)  # C++/WinRT 支持 (SMTC API 需要)
     add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
     set(CMAKE_WIN32_EXECUTABLE ON)
 endif()
@@ -89,51 +90,60 @@ message(STATUS "Found mbedtls: ${MBEDTLS_LIBRARY}")
 message(STATUS "Found mbedx509: ${MBEDX509_LIBRARY}")
 message(STATUS "Found mbedcrypto: ${MBEDCRYPTO_LIBRARY}")
 
-# 3. ixwebsocket —— 使用手动用 MSVC 编译的版本（绕过 vcpkg 的 MSVC 不匹配）
-if(NOT DEFINED IXWEBSOCKET_BUILD_DIR)
-    if(DEFINED ENV{IXWEBSOCKET_BUILD_DIR})
-        set(IXWEBSOCKET_BUILD_DIR "$ENV{IXWEBSOCKET_BUILD_DIR}")
-    else()
-        set(IXWEBSOCKET_BUILD_DIR "${VCPKG_INSTALLED_DIR}")
+# 3. ixwebsocket —— 使用 add_subdirectory 从源码编译（确保编译器版本一致）
+set(IXWEBSOCKET_SOURCE_DIR "D:/vcpkg/buildtrees/ixwebsocket/src/v11.4.6-fd590fbebb.clean" CACHE PATH "ixwebsocket source directory")
+if(EXISTS "${IXWEBSOCKET_SOURCE_DIR}/CMakeLists.txt")
+    message(STATUS "Building ixwebsocket from source: ${IXWEBSOCKET_SOURCE_DIR}")
+    set(IXWEBSOCKET_USE_TLS ON CACHE INTERNAL "")
+    set(IXWEBSOCKET_USE_MBED_TLS ON CACHE INTERNAL "")
+    set(IXWEBSOCKET_USE_ZLIB ON CACHE INTERNAL "")
+    set(IXWEBSOCKET_STATIC ON CACHE INTERNAL "")
+    add_subdirectory("${IXWEBSOCKET_SOURCE_DIR}" "third_party/ixwebsocket_build")
+else()
+    # Fallback: use pre-built lib
+    if(NOT DEFINED IXWEBSOCKET_BUILD_DIR)
+        if(DEFINED ENV{IXWEBSOCKET_BUILD_DIR})
+            set(IXWEBSOCKET_BUILD_DIR "$ENV{IXWEBSOCKET_BUILD_DIR}")
+        else()
+            set(IXWEBSOCKET_BUILD_DIR "${VCPKG_INSTALLED_DIR}")
+        endif()
     endif()
+
+    set(IXWEBSOCKET_RELEASE_LIB "${IXWEBSOCKET_BUILD_DIR}/Release/ixwebsocket.lib")
+    set(IXWEBSOCKET_DEBUG_LIB "${IXWEBSOCKET_BUILD_DIR}/Debug/ixwebsocket.lib")
+
+    if(EXISTS "${IXWEBSOCKET_RELEASE_LIB}")
+        message(STATUS "Using manually built ixwebsocket: ${IXWEBSOCKET_RELEASE_LIB}")
+    else()
+        find_library(IXWEBSOCKET_LIBRARY ixwebsocket PATHS "${VCPKG_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+        set(IXWEBSOCKET_RELEASE_LIB "${IXWEBSOCKET_LIBRARY}")
+    endif()
+
+    if(EXISTS "${IXWEBSOCKET_DEBUG_LIB}")
+        message(STATUS "Using manually built ixwebsocket Debug: ${IXWEBSOCKET_DEBUG_LIB}")
+    else()
+        message(WARNING "ixwebsocket Debug lib not found, forcing Release runtime")
+        set(IXWEBSOCKET_DEBUG_LIB "${IXWEBSOCKET_RELEASE_LIB}")
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
+    endif()
+
+    find_path(IXWEBSOCKET_INCLUDE_DIR ixwebsocket/IXWebSocket.h
+        PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
+    if(NOT IXWEBSOCKET_INCLUDE_DIR)
+        message(FATAL_ERROR "ixwebsocket include dir not found")
+    endif()
+
+    add_library(ixwebsocket::ixwebsocket STATIC IMPORTED)
+    set_target_properties(ixwebsocket::ixwebsocket PROPERTIES
+        IMPORTED_LOCATION_RELEASE "${IXWEBSOCKET_RELEASE_LIB}"
+        IMPORTED_LOCATION_DEBUG "${IXWEBSOCKET_DEBUG_LIB}"
+        IMPORTED_LOCATION "${IXWEBSOCKET_RELEASE_LIB}"
+        INTERFACE_INCLUDE_DIRECTORIES "${VCPKG_INSTALLED_DIR}/include"
+        INTERFACE_COMPILE_DEFINITIONS "IXWEBSOCKET_USE_TLS;IXWEBSOCKET_USE_MBED_TLS;IXWEBSOCKET_USE_ZLIB"
+        INTERFACE_LINK_LIBRARIES
+            "${MBEDTLS_LIBRARY};${MBEDX509_LIBRARY};${MBEDCRYPTO_LIBRARY};ZLIB::ZLIB;wsock32;ws2_32;shlwapi;Crypt32"
+    )
 endif()
-
-set(IXWEBSOCKET_RELEASE_LIB "${IXWEBSOCKET_BUILD_DIR}/Release/ixwebsocket.lib")
-set(IXWEBSOCKET_DEBUG_LIB "${IXWEBSOCKET_BUILD_DIR}/Debug/ixwebsocket.lib")
-
-if(EXISTS "${IXWEBSOCKET_RELEASE_LIB}")
-    message(STATUS "Using manually built ixwebsocket (MSVC 14.42): ${IXWEBSOCKET_RELEASE_LIB}")
-else()
-    find_library(IXWEBSOCKET_LIBRARY ixwebsocket PATHS "${VCPKG_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
-    set(IXWEBSOCKET_RELEASE_LIB "${IXWEBSOCKET_LIBRARY}")
-endif()
-
-if(EXISTS "${IXWEBSOCKET_DEBUG_LIB}")
-    message(STATUS "Using manually built ixwebsocket Debug: ${IXWEBSOCKET_DEBUG_LIB}")
-else()
-    message(WARNING "ixwebsocket Debug lib not found at ${IXWEBSOCKET_DEBUG_LIB}")
-    message(WARNING "  -> Forcing Release runtime (/MD) to match ixwebsocket.lib")
-    set(IXWEBSOCKET_DEBUG_LIB "${IXWEBSOCKET_RELEASE_LIB}")
-    # Debug 库不存在时，强制项目使用 Release 运行时库以匹配 ixwebsocket
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
-endif()
-
-find_path(IXWEBSOCKET_INCLUDE_DIR ixwebsocket/IXWebSocket.h
-    PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
-if(NOT IXWEBSOCKET_INCLUDE_DIR)
-    message(FATAL_ERROR "ixwebsocket include dir not found")
-endif()
-
-add_library(ixwebsocket::ixwebsocket STATIC IMPORTED)
-set_target_properties(ixwebsocket::ixwebsocket PROPERTIES
-    IMPORTED_LOCATION_RELEASE "${IXWEBSOCKET_RELEASE_LIB}"
-    IMPORTED_LOCATION_DEBUG "${IXWEBSOCKET_DEBUG_LIB}"
-    IMPORTED_LOCATION "${IXWEBSOCKET_RELEASE_LIB}"
-    INTERFACE_INCLUDE_DIRECTORIES "${VCPKG_INSTALLED_DIR}/include"
-    INTERFACE_COMPILE_DEFINITIONS "IXWEBSOCKET_USE_TLS;IXWEBSOCKET_USE_MBED_TLS;IXWEBSOCKET_USE_ZLIB"
-    INTERFACE_LINK_LIBRARIES
-        "${MBEDTLS_LIBRARY};${MBEDX509_LIBRARY};${MBEDCRYPTO_LIBRARY};ZLIB::ZLIB;wsock32;ws2_32;shlwapi;Crypt32"
-)
 
 # 5. nlohmann_json（header-only，用 find_path 直接找头文件）
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
@@ -276,6 +286,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     shlwapi
     userenv
     bcrypt
+    winhttp          # iTunes Strategy HTTP 请求
+    windowsapp        # C++/WinRT 运行时 (SMTC)
     ${WEBVIEW2_LOADER_LIB}
 )
 

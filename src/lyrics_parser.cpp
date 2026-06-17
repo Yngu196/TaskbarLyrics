@@ -51,19 +51,23 @@ bool LyricsParser::IsPlaying() const {
 }
 
 int LyricsParser::FindLineIndex(double currentTimeSec) const {
-    // characters 数组中第一个 startTime <= currentTime*1000 的行即为匹配
-    // 要求 characters 非空,且按 startTime 升序(原数据通常如此)
+    // 优先使用 characters 数组的 startTime（字符级精确同步）
+    // 若 characters 为空则回退到 line 级别的 startTime（来自 LRC 行标签）
     const int64_t tMs = static_cast<int64_t>(currentTimeSec * 1000.0);
     const int n = static_cast<int>(lyrics_.lines.size());
     int lo = 0, hi = n - 1, best = -1;
     while (lo <= hi) {
         const int mid = (lo + hi) / 2;
-        const auto& chars = lyrics_.lines[mid].characters;
-        if (chars.empty()) {
-            lo = mid + 1;
-            continue;
+        const auto& line = lyrics_.lines[mid];
+
+        // 获取该行的起始时间：优先 characters，回退到 line.startTime
+        int64_t startMs = 0;
+        if (!line.characters.empty()) {
+            startMs = line.characters.front().startTime;
+        } else {
+            startMs = line.startTime;  // LRC 行级时间戳
         }
-        const int64_t startMs = chars.front().startTime;
+
         if (startMs <= tMs) {
             best = mid;
             lo = mid + 1;
@@ -101,7 +105,13 @@ RenderState LyricsParser::GetCurrentRenderState() const {
 
     const int idx = FindLineIndex(effectiveTime);
     if (idx < 0) {
-        // 进度在第一行之前,显示空状态
+        // 进度在第一行之前 → 兜底：返回第一行（独立模式 currentTime=0 时触发）
+        if (!lyrics_.lines.empty()) {
+            const auto& line = lyrics_.lines[0];
+            out.currentLineIndex = 0;
+            out.currentLine      = line.text;
+            out.currentTranslated= line.translated;
+        }
         return out;
     }
 

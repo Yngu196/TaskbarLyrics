@@ -170,9 +170,10 @@ private:
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardCurrentFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardNextFormat_;
 
-    // 封面图缓存
-    Microsoft::WRL::ComPtr<IWICBitmap> coverBitmap_;
+    // 封面图缓存：后台线程下载到临时文件，渲染线程从文件创建 D2D 位图
+    Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
     std::string cachedCoverUrl_;
+    std::string pendingCoverFile_;       // 后台线程下载完成的临时文件路径（待渲染线程消费）
     std::atomic<bool> coverLoadInProgress_{false};
 
     // 卡片模式专用颜色画刷

@@ -16,6 +16,7 @@
 #include "tray_icon.h"
 #include "websocket_client.h"
 
+#include <nlohmann/json.hpp>
 #include <windows.h>
 
 #include <algorithm>
@@ -509,7 +510,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         }
     });
     wsClient.OnPlayerState([&](const moekoe::PlayerState& st) {
-        Log("[WS] OnPlayerState: playing=%d time=%.2f song='%s'\n", st.isPlaying, st.currentTime, st.songTitle.c_str());
+        Log("[WS] OnPlayerState: playing=%d time=%.2f song='%s' cover='%s'\n",
+            st.isPlaying, st.currentTime, st.songTitle.c_str(),
+            st.coverArtUrl.empty() ? "(empty)" : st.coverArtUrl.substr(0, 60).c_str());
         parser.UpdatePlayerState(st);
     });
     wsClient.OnConnectionStatus([&](bool connected) {
@@ -548,7 +551,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                   config.Advanced().websocketPort);
     wsClient.Connect(url);
 
-    // 10.5) 启动 HTTP 服务器（用于 popup.js 通信：ping / shutdown）
+    // 10.5) 启动 HTTP 服务器（用于 popup.js 通信：ping / shutdown / lyrics）
     moekoe::HttpServer httpServer;
     app.httpServer = &httpServer;
     httpServer.OnCommand([&](const std::string& command) {
@@ -557,6 +560,99 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             Log("[HTTP] Shutdown via HTTP, exiting...\n");
             app.running = false;
             ::PostQuitMessage(0);
+        }
+    });
+    // HTTP /lyrics 端点：接收外部歌词+封面数据
+    httpServer.OnLyrics([&](const std::string& jsonBody) {
+        try {
+            nlohmann::json j = nlohmann::json::parse(jsonBody);
+
+            // 提取并更新播放器状态（封面 URL、歌曲名等）
+            moekoe::PlayerState st;
+            if (j.contains("isPlaying") && j["isPlaying"].is_boolean()) {
+                st.isPlaying = j["is"].get<bool>();
+            }
+            if (j.contains("currentTime") && j["currentTime"].is_number()) {
+                st.currentTime = j["currentTime"].get<double>();
+            }
+
+            // 提取封面 URL（支持多种字段名）
+            for (const auto& key : {"coverArtUrl", "pic", "cover", "albumArt", "image", "poster"}) {
+                if (j.contains(key) && j[key].is_string()) {
+                    st.coverArtUrl = j[key].get<std::string>();
+                    break;
+                }
+            }
+            // 从 currentSong 嵌套对象提取封面
+            if (st.coverArtUrl.empty() && j.contains("currentSong") && j["currentSong"].is_object()) {
+                const auto& cs = j["currentSong"];
+                for (const auto& key : {"pic", "cover", "albumArt", "image", "poster"}) {
+                    if (cs.contains(key) && cs[key].is_string()) {
+                        st.coverArtUrl = cs[key].get<std::string>();
+                        break;
+                    }
+                }
+            }
+
+            // 提取歌曲名称
+            if (j.contains("songName") && j["songName"].is_string()) {
+                st.songName = j["songName"].get<std::string>();
+            } else if (j.contains("currentSong") && j["currentSong"].is_object() &&
+                       j["currentSong"].contains("name")) {
+                st.songName = j["currentSong"]["name"].get<std::string>();
+            }
+
+            parser.UpdatePlayerState(st);
+
+            // 提取歌词数据（如果存在）
+            if (j.contains("lyricsData") || j.contains("data")) {
+                moekoe::LyricsData data;
+                auto& ld = j.contains("lyricsData") ? j["lyricsData"] : j["data"];
+
+                if (ld.is_array()) {
+                    for (const auto& lineJson : ld) {
+                        if (data.lines.size() >= moekoe::constants::MAX_LYRIC_LINES) break;
+                        moekoe::LyricLine line;
+                        line.text       = lineJson.value("text", "");
+                        line.translated = lineJson.value("translated", "");
+
+                        if (lineJson.contains("characters") && lineJson["characters"].is_array()) {
+                            for (const auto& c : lineJson["characters"]) {
+                                if (line.characters.size() >= moekoe::constants::MAX_CHARS_PER_LINE) break;
+                                moekoe::CharacterTiming ct;
+                                ct.ch        = c.value("char", "");
+                                ct.startTime = c.value("startTime", static_cast<int64_t>(0));
+                                ct.endTime   = c.value("endTime",   static_cast<int64_t>(0));
+                                if (!ct.ch.empty()) {
+                                    line.characters.push_back(std::move(ct));
+                                }
+                            }
+                        }
+                        data.lines.push_back(std::move(line));
+                    }
+                } else if (ld.is_string()) {
+                    // KRC 字符串格式：使用公共解析方法
+                    data = moekoe::WebSocketClient::ParseKrcString(ld.get<std::string>());
+                }
+
+                data.valid = !data.lines.empty();
+                if (data.valid) {
+                    parser.UpdateLyrics(data);
+                    if (app.taskbarWindow) {
+                        HWND h = taskbarWindow.GetHandle();
+                        ::ShowWindow(h, SW_SHOWNA);
+                        ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                    }
+                }
+            }
+
+            Log("[HTTP] Lyrics processed: cover='%s' song='%s'\n",
+                st.coverArtUrl.c_str(), st.songName.c_str());
+        } catch (const std::exception& e) {
+            Log("[HTTP] Failed to parse lyrics JSON: %s\n", e.what());
+        } catch (...) {
+            Log("[HTTP] Failed to parse lyrics JSON: unknown error\n");
         }
     });
     // HTTP 端口从 config 读取（默认 6523）；异常时退回到 constants.h 中的默认值。

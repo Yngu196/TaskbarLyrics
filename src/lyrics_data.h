@@ -27,7 +27,8 @@ struct CharacterTiming {
 struct LyricLine {
     std::string                   text;        // 整行文本
     std::string                   translated; // 翻译（可空）
-    std::vector<CharacterTiming>  characters;  // 逐字时间轴
+    int64_t                       startTime{0}; // 行起始时间（毫秒，用于 LRC 等无字符级时间轴的格式）
+    std::vector<CharacterTiming>  characters;  // 逐字时间轴（KRC 格式）
 };
 
 // 完整歌词数据
