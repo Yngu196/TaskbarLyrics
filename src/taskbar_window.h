@@ -113,6 +113,9 @@ private:
     void PositionLyricsInTaskbar();
     HoverButton HitTestButton(int x, int y) const;
 
+    /// 拖动松开后检测是否与其他任务栏子窗口重叠，若重叠则弹到最近的空闲位置
+    void SnapToEmptySpace();
+
     // 状态
     HINSTANCE     hInstance_{nullptr};
     HWND          hwnd_{nullptr};

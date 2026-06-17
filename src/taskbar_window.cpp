@@ -369,6 +369,200 @@ HoverButton TaskbarWindow::HitTestButton(int x, int y) const {
     return HoverButton::None;
 }
 
+// ═════════════════════════════════════════
+// 拖动松开后的空闲位置检测与自动吸附
+// ═════════════════════════════════════════
+
+void TaskbarWindow::SnapToEmptySpace() {
+    if (!hwnd_ || !hTaskbar_) return;
+
+    RECT winRect{};
+    ::GetWindowRect(hwnd_, &winRect);
+    const int winW = winRect.right - winRect.left;
+    const int winH = winRect.bottom - winRect.top;
+    if (winW <= 0 || winH <= 0) return;
+
+    RECT tbRect{};
+    ::GetWindowRect(hTaskbar_, &tbRect);
+
+    // ── 采样点检测：沿歌词窗口主轴方向取多个点，用 WindowFromPoint 检测障碍物 ──
+    // Win11 任务栏中单个图标（Win按钮、运行中的应用等）不是独立子窗口，
+    // 而是绘制在容器窗口内部，子窗口枚举无法精确获取。采样点可以穿透容器
+    // 检测到任意有实际内容的区域。
+    //
+    // 关键：歌词窗口是 WS_EX_TOPMOST 覆盖在任务栏上方，直接调用 WindowFromPoint
+    // 会返回自身。因此需要先将窗口临时移到屏幕外，采样完后再恢复。
+
+    const int myStart = (info_.position == TaskbarPosition::LEFT || info_.position == TaskbarPosition::RIGHT)
+                             ? winRect.top : winRect.left;
+    const int myEnd = myStart + ((info_.position == TaskbarPosition::LEFT || info_.position == TaskbarPosition::RIGHT)
+                                      ? winH : winW);
+
+    // 采样步长：每 N 像素采一个点（兼顾精度和性能）
+    constexpr int kSampleStep = 8;
+
+    // 临时将窗口移到屏幕外（避免遮挡采样）
+    ::SetWindowPos(hwnd_, nullptr,
+                   -winW * 2, -winH * 2, winW, winH,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // 记录被占用的采样位置（用于合并成连续区间）
+    struct SamplePoint { int pos; bool occupied; };
+    std::vector<SamplePoint> samples;
+
+    const int sampleCount = (myEnd - myStart) / kSampleStep + 1;
+    for (int i = 0; i < sampleCount; ++i) {
+        int pos = std::min(myStart + i * kSampleStep, myEnd - 1);
+        POINT pt{};
+
+        switch (info_.position) {
+        case TaskbarPosition::BOTTOM:
+        case TaskbarPosition::TOP:
+            pt.x = pos;
+            pt.y = (winRect.top + winRect.bottom) / 2;  // 窗口中心 Y
+            break;
+        case TaskbarPosition::LEFT:
+        case TaskbarPosition::RIGHT:
+            pt.x = (winRect.left + winRect.right) / 2;  // 窗口中心 X
+            pt.y = pos;
+            break;
+        default:
+            continue;
+        }
+
+        HWND hHit = ::WindowFromPoint(pt);
+        bool isObstacle = false;
+
+        if (hHit && hHit != hwnd_ && hHit != hTaskbar_) {
+            // 排除歌词窗口自身和任务栏根窗口后，
+            // 任何其他窗口都视为障碍物（图标、按钮、预览等）
+            isObstacle = true;
+        } else {
+            isObstacle = false;
+        }
+
+        samples.push_back({pos, isObstacle});
+    }
+
+    // 立即恢复窗口原位（用户感知不到移动，因为发生在同一帧内鼠标松开时）
+    ::SetWindowPos(hwnd_, nullptr,
+                   winRect.left, winRect.top, winW, winH,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+
+    if (samples.empty()) return;
+
+    // 判断整体是否有重叠：任一采样点命中障碍物即认为需要弹开
+    bool hasObstacle = false;
+    for (const auto& s : samples) {
+        if (s.occupied) { hasObstacle = true; break; }
+    }
+    if (!hasObstacle) return;  // 全部采样点都空闲，保持原位
+
+    // ═════ 有障碍物 → 将采样结果合并为占用区间，寻找最近空闲间隙 ═════
+
+    struct OccupiedRange { int start; int end; };
+    std::vector<OccupiedRange> occupied;
+
+    // 从连续的 occupied 采样点生成区间
+    int rangeStart = -1;
+    for (size_t i = 0; i < samples.size(); ++i) {
+        if (samples[i].occupied && rangeStart < 0) {
+            rangeStart = samples[i].pos;
+        }
+        if (!samples[i].occupied && rangeStart >= 0) {
+            // 区间结束，扩展到下一个采样点的位置（覆盖间隙）
+            int rangeEnd = (i > 0) ? samples[i - 1].pos + kSampleStep : rangeStart + kSampleStep;
+            occupied.push_back({rangeStart, rangeEnd});
+            rangeStart = -1;
+        }
+    }
+    // 处理末尾连续的 occupied
+    if (rangeStart >= 0) {
+        occupied.push_back({rangeStart, samples.back().pos + kSampleStep});
+    }
+
+    if (occupied.empty()) return;
+
+    // 按 start 排序
+    std::sort(occupied.begin(), occupied.end(),
+              [](const OccupiedRange& a, const OccupiedRange& b) {
+                  return a.start < b.start;
+              });
+
+    // 合并重叠/相邻区间
+    std::vector<OccupiedRange> merged;
+    for (const auto& o : occupied) {
+        if (!merged.empty() && o.start <= merged.back().end + kSampleStep) {
+            merged.back().end = std::max(merged.back().end, o.end);
+        } else {
+            merged.push_back(o);
+        }
+    }
+
+    const int tbStart = (info_.position == TaskbarPosition::LEFT || info_.position == TaskbarPosition::RIGHT)
+                             ? tbRect.top : tbRect.left;
+    const int tbEnd = (info_.position == TaskbarPosition::LEFT || info_.position == TaskbarPosition::RIGHT)
+                           ? tbRect.bottom : tbRect.right;
+
+    const int neededSize = (info_.position == TaskbarPosition::LEFT || info_.position == TaskbarPosition::RIGHT)
+                                ? winH : winW;
+
+    // 遍历所有间隙，找能容纳且离当前位置最近的
+    int bestPos = -1;
+    int bestDist = INT_MAX;
+
+    auto tryGap = [&](int gapStart, int gapEnd) {
+        int gapSize = gapEnd - gapStart;
+        if (gapSize >= neededSize) {
+            int candidate = std::clamp(myStart, gapStart, gapEnd - neededSize);
+            int dist = std::abs(candidate - myStart);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestPos = candidate;
+            }
+        }
+    };
+
+    // 间隙：任务栏起始 → 第一个障碍物
+    if (!merged.empty()) {
+        tryGap(tbStart, merged.front().start);
+    }
+
+    // 间隙：相邻障碍物之间 + 最后一个 → 任务栏末尾
+    for (size_t i = 0; i < merged.size(); ++i) {
+        int gapStart = merged[i].end;
+        int gapEnd = (i + 1 < merged.size()) ? merged[i + 1].start : tbEnd;
+        tryGap(gapStart, gapEnd);
+    }
+
+    if (bestPos < 0) return;  // 找不到足够大的空位
+
+    // 应用新位置
+    int newX = winRect.left;
+    int newY = winRect.top;
+    switch (info_.position) {
+    case TaskbarPosition::BOTTOM:
+    case TaskbarPosition::TOP:
+        newX = bestPos;
+        break;
+    case TaskbarPosition::LEFT:
+    case TaskbarPosition::RIGHT:
+        newY = bestPos;
+        break;
+    default:
+        return;
+    }
+
+    // 更新拖动偏移量（使位置被持久化保存到配置）
+    int autoX = dragStartWinPos_.x - dragOffsetX_;
+    int autoY = dragStartWinPos_.y - dragOffsetY_;
+    dragOffsetX_ = newX - autoX;
+    dragOffsetY_ = newY - autoY;
+
+    ::SetWindowPos(hwnd_, nullptr, newX, newY, 0, 0,
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
 LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     TaskbarWindow* self = nullptr;
     if (msg == WM_NCCREATE) {
@@ -498,6 +692,8 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         if (self->isDragging_) {
             self->isDragging_ = false;
             ::ReleaseCapture();
+            // 检测松开位置是否与其他任务栏子窗口重叠，自动弹到最近空闲位置
+            self->SnapToEmptySpace();
             // 通知重绘以移除拖动边框
             if (self->onHoverChanged_) {
                 self->onHoverChanged_();
