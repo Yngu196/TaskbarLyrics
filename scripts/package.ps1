@@ -67,7 +67,7 @@ try {
 
     # Copy plugin source files
     $pluginFiles = @("manifest.json", "background.js", "popup.js", "popup.html",
-                      "native-bridge.html", "native-bridge.js")
+                      "native-bridge.html", "native-bridge.js", "content.js")
     foreach ($f in $pluginFiles) {
         $src = Join-Path $PluginDir $f
         if (Test-Path $src) {
