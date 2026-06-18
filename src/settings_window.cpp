@@ -473,6 +473,14 @@ void SettingsWindow::OnWebMessageReceived(const std::string& jsonStr) {
         ::PostMessage(hwnd_, WM_PICK_FONT, 0, 0);
     } else if (type == "close") {
         Close();
+    } else if (type == "switchMode") {
+        std::string mode = msg.value("mode", "");
+        moekoe::Log("[SETTINGS] switchMode: %s\n", mode.c_str());
+        // 保存模式到配置
+        currentConfig_.MutableAdvanced().settingsUiMode = mode;
+        currentConfig_.Save();
+        // 通知主程序（由主程序决定是否关闭并打开新模式窗口）
+        if (onSwitchMode_) onSwitchMode_(mode);
     }
     } catch (const std::exception& e) {
         moekoe::Log("[SETTINGS] OnWebMessage error: %s\n", e.what());

@@ -73,6 +73,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   ├── tray_icon.cpp/h         # 系统托盘图标+菜单（含锁定位置/完全锁定）
 │   ├── logger.cpp/h            # 统一日志系统（v0.3.8 新增，替代 6 处分散 DebugLog）
 │   ├── settings_window.cpp/h   # WebView2 设置窗口（含 COM 回调）
+│   ├── d2d_settings_window.cpp/h # Direct2D 自绘设置窗口（v0.5 新增，与 WebView2 可切换）
 │   ├── config_dialog.cpp/h     # Win32 回退设置对话框
 │   └── app_icon.rc             # EXE 图标资源
 ├── resources/
@@ -152,7 +153,7 @@ MoeKoeMusic-TaskbarLyrics/
 │  └────────────────────────────────────────┘                │
 │                                                             │
 │  ┌────────────────────────────────────────┐                │
-│  │ WebView2 Settings Window                │                │
+│  │ WebView2 / D2D 设置界面（可切换，记住选择）   │                │
 │  └────────────────────────────────────────┘                │
 └─────────────────────────────────────────────────────────────┘
 
@@ -409,7 +410,8 @@ WM\_TIMER 渲染循环中捕获异常后：
     "websocket_port": 6520,
     "http_server_port": 6523,
     "refresh_rate_hz": 60,
-    "debug_log": false
+    "debug_log": false,
+    "settings_ui_mode": "webview"
   },
   "position": { "offset_x": 0, "offset_y": 0, "lock_position": false, "lock_fully": false }
 }
@@ -457,13 +459,35 @@ WM\_TIMER 渲染循环中捕获异常后：
 
 回调消息号使用 `WM_TRAY_CALLBACK` (0x0600)，定义于 constants.h。
 
-### 3.8 WebView2 设置窗口模块
+### 3.8 WebView2 设置窗口模块（含 D2D 自绘切换）
 
-**文件：** `src/settings_window.cpp/h` + `resources/settings.html`
+**文件：** `src/settings_window.cpp/h` + `resources/settings.html`\
+**自绘替代：** `src/d2d_settings_window.cpp/h`（v0.5 新增）
 
-#### 功能概览
+#### 双模式设置界面
 
-完整的 WebView2 嵌入式设置界面，替代手动编辑 JSON 配置文件和原始 Win32 对话框。
+插件提供两套设置界面，可在两者之间随时切换，选择会被记住（`advanced.settings_ui_mode`）：
+
+| 模式          | 文件                           | 说明                                      |
+| ------------ | ----------------------------- | --------------------------------------- |
+| `"webview"` | settings_window + settings.html | 基于 WebView2 的 HTML 设置页面（默认），现代 UI       |
+| `"d2d"`     | d2d_settings_window           | 纯 Direct2D/DirectWrite 自绘原生设置界面，零外部依赖 |
+
+- 两种模式的功能完全一致（所有配置项均可操作）
+- 界面中提供「切换到原生设置」/「切换到 WebView2 设置」按钮
+- 切换时自动关闭当前窗口并打开新模式窗口，不丢失配置
+- 上次使用的模式保存在 `settings_ui_mode` 中，下次打开设置时自动使用
+
+#### D2D 自绘设置界面特性（v0.5 新增）
+
+- **纯 Direct2D + DirectWrite 渲染**，不使用 WebView2 Runtime，零外部依赖
+- **自绘控件体系**：LabelRow / ToggleRow / SliderRow / ColorRow / DropdownRow / ButtonRow / ThemePresets / HintText / SwitchUIBtn
+- **自绘标题栏**：支持窗口拖动、关闭（×）和最小化（─）按钮
+- **暗/亮模式自动检测**：通过注册表读取系统主题设置，自动匹配颜色方案
+- **延迟操作模式**：切换 UI 模式、应用保存、取消等操作通过 PostMessage 投递到消息队列安全执行
+- 与 WebView2 版本功能完全对等，提供一致的用户体验
+
+#### WebView2 初始化流程
 
 #### 初始化流程
 
@@ -647,7 +671,8 @@ ApiEnabler::TryEnableApi()
 
 #### 触发时机
 
-集成在 [websocket\_client.cpp](src/websocket_client.cpp) 的 `ReconnectLoop()` 中，当第 3 次连接失败（约已等待 3 秒）时触发，避免首次启动时的正常连接延迟误触。
+- **启动时检测**：在 [main.cpp](src/main.cpp) 中 WebSocket 连接前主动调用 `TryEnableApi()`，先于连接确保 API 已就绪
+- **重连失败检测**：集成在 [websocket_client.cpp](src/websocket_client.cpp) 的 `ReconnectLoop()` 中，当第 3 次连接失败（约已等待 3 秒）时触发，避免首次启动时的正常连接延迟误触
 
 ### 3.11 CMakeLists.txt 构建系统
 

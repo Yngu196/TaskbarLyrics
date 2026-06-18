@@ -10,6 +10,7 @@
 #include <shellapi.h>
 
 #include <fstream>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 namespace moekoe {
@@ -131,9 +132,10 @@ bool ApiEnabler::IsMoeKoeMusicRunning() {
     std::string exePath(path);
     for (auto& c : exePath) c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
 
-    // 可能的 exe 名: moekoemusic.exe, MoeKoe Music.exe 等
+    // 可能的 exe 名: MoeKoe Music.exe, moekoemusic.exe 等
     if (exePath.find("moekoemusic") != std::string::npos ||
-        exePath.find("moejue") != std::string::npos) {
+        exePath.find("moejue") != std::string::npos ||
+        exePath.find("moekoe music") != std::string::npos) {
         Log("IsMoeKoeMusicRunning: found process PID=" + std::to_string(pid) + " path=" + path);
         return true;
     }
@@ -152,7 +154,8 @@ bool ApiEnabler::IsMoeKoeMusicRunning() {
             for (auto& c : exeName)
                 c = static_cast<wchar_t>(towlower(static_cast<wint_t>(c)));
             if (exeName.find(L"moekoemusic") != std::wstring::npos ||
-                exeName.find(L"moejue") != std::wstring::npos) {
+                exeName.find(L"moejue") != std::wstring::npos ||
+                exeName.find(L"moekoe music") != std::wstring::npos) {
                 found = true;
                 break;
             }
@@ -247,13 +250,14 @@ bool ApiEnabler::WriteApiMode(const std::string& configPath) {
 }
 
 bool ApiEnabler::RestartMoeKoeMusic() {
-    // 通过快照找到 MoeKoeMusic 进程，获取完整路径后终止并重新启动
+    // 通过快照找到所有 MoeKoeMusic 进程
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return false;
 
     PROCESSENTRY32W pe{};
     pe.dwSize = sizeof(pe);
     std::wstring exePath;
+    std::vector<DWORD> pids;  // 收集所有 MoeKoeMusic 进程 PID
 
     if (Process32FirstW(snap, &pe)) {
         do {
@@ -261,45 +265,63 @@ bool ApiEnabler::RestartMoeKoeMusic() {
             for (auto& c : name)
                 c = static_cast<wchar_t>(towlower(static_cast<wint_t>(c)));
             if (name.find(L"moekoemusic") != std::wstring::npos ||
-                name.find(L"moejue") != std::wstring::npos) {
+                name.find(L"moejue") != std::wstring::npos ||
+                name.find(L"moekoe music") != std::wstring::npos) {
 
-                // 打开进程获取完整路径
-                HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ |
-                                           SYNCHRONIZE, FALSE, pe.th32ProcessID);
-                if (hProc) {
-                    wchar_t buf[MAX_PATH] = {};
-                    DWORD sz = MAX_PATH;
-                    if (QueryFullProcessImageNameW(hProc, 0, buf, &sz)) {
-                        exePath = buf;
+                // 获取完整 exe 路径（只需一次）
+                if (exePath.empty()) {
+                    HANDLE hProc = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
+                                               FALSE, pe.th32ProcessID);
+                    if (hProc) {
+                        wchar_t buf[MAX_PATH] = {};
+                        DWORD sz = MAX_PATH;
+                        if (QueryFullProcessImageNameW(hProc, 0, buf, &sz)) {
+                            exePath = buf;
+                        }
+                        CloseHandle(hProc);
                     }
-                    CloseHandle(hProc);
                 }
-                break;
+                pids.push_back(pe.th32ProcessID);
             }
         } while (Process32NextW(snap, &pe));
     }
     CloseHandle(snap);
 
-    if (exePath.empty()) {
-        Log("RestartMoeKoeMusic: could not find executable path");
+    if (exePath.empty() || pids.empty()) {
+        Log("RestartMoeKoeMusic: could not find executable path or processes");
         return false;
     }
 
-    Log("RestartMoeKoeMusic: found executable, attempting restart");
+    Log("RestartMoeKoeMusic: found " + std::to_string(pids.size()) +
+        " process(es), exe=" + std::string(exePath.begin(), exePath.end()));
 
-    // 使用 ShellExecuteW 启动新实例（会自动处理 UAC 等问题）
+    // 1. 先终止所有旧实例（否则新实例因单实例锁立即退出，读不到新配置）
+    for (DWORD pid : pids) {
+        HANDLE hProc = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid);
+        if (hProc) {
+            TerminateProcess(hProc, 0);
+            WaitForSingleObject(hProc, 5000);  // 等待进程完全退出
+            CloseHandle(hProc);
+            Log("RestartMoeKoeMusic: terminated old process PID=" + std::to_string(pid));
+        }
+    }
+
+    // 2. 短暂等待单实例锁释放
+    Sleep(500);
+
+    // 3. 启动新实例（此时无旧实例，新实例读取 apiMode=on 的配置文件，正常启动 API）
     HINSTANCE result = ShellExecuteW(
         nullptr, L"open", exePath.c_str(),
         nullptr, nullptr, SW_SHOWNORMAL);
 
-    // reinterpret_cast<HINSTANCE>(intptr_t(32)) 表示成功 (>32)
-    if (reinterpret_cast<intptr_t>(result) > 32) {
-        Log("RestartMoeKoeMusic: launched new instance successfully");
-        return true;
+    bool launched = (reinterpret_cast<intptr_t>(result) > 32);
+    if (!launched) {
+        Log("RestartMoeKoeMusic: ShellExecute failed");
+        return false;
     }
 
-    Log("RestartMoeKoeMusic: ShellExecute failed");
-    return false;
+    Log("RestartMoeKoeMusic: launched new instance successfully");
+    return true;
 }
 
 } // namespace moekoe

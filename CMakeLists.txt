@@ -230,6 +230,7 @@ set(SOURCES
     src/websocket_client.cpp
     src/http_server.cpp
     src/settings_window.cpp
+    src/d2d_settings_window.cpp
     src/lyrics_parser.cpp
     src/taskbar_window.cpp
     src/renderer.cpp
@@ -249,6 +250,7 @@ set(HEADERS
     src/websocket_client.h
     src/http_server.h
     src/settings_window.h
+    src/d2d_settings_window.h
     src/lyrics_parser.h
     src/taskbar_window.h
     src/renderer.h
@@ -289,6 +291,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     winhttp          # iTunes Strategy HTTP 请求
     windowsapp        # C++/WinRT 运行时 (SMTC)
     ${WEBVIEW2_LOADER_LIB}
+    dwmapi            # DWM 圆角窗口 (D2D 设置界面)
 )
 
 # 资源

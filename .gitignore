@@ -50,6 +50,11 @@ MoeKoeTaskbarLyrics.exe.WebView2/
 *.WebView2/
 EBWebView/
 
+# Dev notes (推测/分析文档，不纳入版本控制)
+问题推测.md
+问题推测2.md
+尝试替代webview2的方案.md
+
 # Misc
 Thumbs.db
 .DS_Store

@@ -7,6 +7,7 @@
 #include "http_server.h"
 #include "logger.h"
 #include "settings_window.h"
+#include "d2d_settings_window.h"
 #include "lyrics_data.h"
 #include "lyrics_parser.h"
 #include "native_messaging.h"
@@ -15,6 +16,7 @@
 #include "taskbar_window.h"
 #include "tray_icon.h"
 #include "websocket_client.h"
+#include "api_enabler.h"
 
 #include <nlohmann/json.hpp>
 #include <windows.h>
@@ -39,6 +41,7 @@ struct AppContext {
     moekoe::ProcessMonitor*  processMonitor{nullptr};
     moekoe::HttpServer*      httpServer{nullptr};
     moekoe::SettingsWindow*   settingsWindow{nullptr};
+    moekoe::D2DSettingsWindow* d2dSettingsWindow{nullptr};
     moekoe::NativeMessagingHost* nativeHost{nullptr};
     HINSTANCE                hInstance{nullptr};
     HWND                     hwnd{nullptr}; // 隐式消息窗口
@@ -140,13 +143,76 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         break;
     }
     case ID_MENU_SETTINGS: {
-        // 优先尝试 WebView2 设置界面
-        bool useWebView2 = true;
+        // 根据上次保存的 UI 模式选择打开哪种设置界面
+        const std::string uiMode = app.config->Advanced().settingsUiMode;
+        const bool useD2D = (uiMode == "d2d");
+
+        if (useD2D) {
+            // ═══════ D2D 原生自绘设置界面 ═══════
+            if (!app.d2dSettingsWindow) {
+                app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
+                    const auto savedPos = app.config->Position();
+                    *app.config = cfg;
+                    app.config->MutablePosition() = savedPos;
+                    ApplyRendererSettings(app);
+                    if (app.taskbarWindow) {
+                        app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
+                        app.taskbarWindow->Reposition();
+                    }
+                    if (app.tray) {
+                        app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
+                    }
+                    Log("[SETTINGS] D2D config applied and saved\n");
+                });
+                // 切换到 WebView2 模式的回调
+                app.d2dSettingsWindow->OnSwitchMode([&](const std::string& newMode) {
+                    app.config->MutableAdvanced().settingsUiMode = newMode;
+                    app.config->Save();
+                    Log("[SETTINGS] Switching mode to: %s\n", newMode.c_str());
+                    // 关闭 D2D 窗口后立即打开 WebView2 设置
+                    if (newMode == "webview") {
+                        app.d2dSettingsWindow->Close();
+                        delete app.d2dSettingsWindow;
+                        app.d2dSettingsWindow = nullptr;
+                        if (!app.settingsWindow) {
+                            app.settingsWindow = new moekoe::SettingsWindow();
+                            app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
+                                const auto savedPos = app.config->Position();
+                                *app.config = cfg;
+                                app.config->MutablePosition() = savedPos;
+                                ApplyRendererSettings(app);
+                                if (app.taskbarWindow) {
+                                    app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
+                                    app.taskbarWindow->Reposition();
+                                }
+                                if (app.tray) {
+                                    app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
+                                }
+                                Log("[SETTINGS] WebView2 config applied and saved\n");
+                            });
+                            app.settingsWindow->OnSwitchMode([&](const std::string& m) {
+                                Log("[SETTINGS] WebView2 switching mode to: %s\n", m.c_str());
+                            });
+                        }
+                        app.settingsWindow->Show(app.hInstance, app.hwnd, *app.config);
+                    }
+                });
+            }
+
+            if (app.d2dSettingsWindow->Show(app.hInstance, app.hwnd, *app.config)) {
+                break; // D2D 窗口创建成功
+            } else {
+                delete app.d2dSettingsWindow;
+                app.d2dSettingsWindow = nullptr;
+                // D2D 失败，回退到 WebView2
+            }
+        }
+
+        // ═══════ WebView2 设置界面（默认 / 回退） ═══════
         if (!app.settingsWindow) {
             app.settingsWindow = new moekoe::SettingsWindow();
             app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
-                // 将 WebView2 设置界面更新的配置同步到主 config 对象
-                // 注意：保留当前位置偏移，避免保存设置时重置位置
                 const auto savedPos = app.config->Position();
                 *app.config = cfg;
                 app.config->MutablePosition() = savedPos;
@@ -155,26 +221,55 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                     app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
                     app.taskbarWindow->Reposition();
                 }
-                // 同步托盘菜单状态
                 if (app.tray) {
                     app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
                 }
-                Log("[SETTINGS] Config applied and saved\n");
+                Log("[SETTINGS] WebView2 config applied and saved\n");
+            });
+            // WebView2 → D2D 切换回调
+            app.settingsWindow->OnSwitchMode([&](const std::string& newMode) {
+                Log("[SETTINGS] WebView2 switching mode to: %s\n", newMode.c_str());
+                // 关闭 WebView2 窗口后立即打开 D2D 原生设置
+                if (newMode == "d2d") {
+                    app.settingsWindow->Close();
+                    delete app.settingsWindow;
+                    app.settingsWindow = nullptr;
+                    // 创建并显示 D2D 设置窗口
+                    if (!app.d2dSettingsWindow) {
+                        app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                        app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
+                            const auto savedPos = app.config->Position();
+                            *app.config = cfg;
+                            app.config->MutablePosition() = savedPos;
+                            ApplyRendererSettings(app);
+                            if (app.taskbarWindow) {
+                                app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
+                                app.taskbarWindow->Reposition();
+                            }
+                            if (app.tray) {
+                                app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
+                            }
+                            Log("[SETTINGS] D2D config applied and saved\n");
+                        });
+                        app.d2dSettingsWindow->OnSwitchMode([&](const std::string& m) {
+                            app.config->MutableAdvanced().settingsUiMode = m;
+                            app.config->Save();
+                        });
+                    }
+                    app.d2dSettingsWindow->Show(app.hInstance, app.hwnd, *app.config);
+                }
             });
         }
 
-        if (useWebView2) {
-            if (app.settingsWindow->Show(app.hInstance, app.hwnd, *app.config)) {
-                // WebView2 窗口创建成功（异步初始化中）
-                break;
-            } else {
-                // WebView2 完全失败，回退到 Win32 对话框
-                delete app.settingsWindow;
-                app.settingsWindow = nullptr;
-            }
+        if (app.settingsWindow->Show(app.hInstance, app.hwnd, *app.config)) {
+            break; // WebView2 窗口创建成功
+        } else {
+            // WebView2 也失败，回退到 Win32 对话框
+            delete app.settingsWindow;
+            app.settingsWindow = nullptr;
         }
 
-        // 回退: 使用旧的 Win32 配置对话框（始终以独立模式显示）
+        // ═══════ 最终回退：Win32 原生对话框 ═══════
         if (moekoe::ConfigDialog::Show(app.hInstance, app.hwnd, *app.config,
                                        /*boundMode*/ false,
                                        [&app]() {
@@ -545,6 +640,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     taskbarWindow.OnHoverChanged([&]() {
         ::PostMessageW(hMsgWnd, WM_RENDER_UPDATE, 0, 0);
     });
+
+    // 主动检测：MoeKoeMusic 在运行但 API 未开启 → 自动开启并重启
+    {
+        auto apiResult = moekoe::ApiEnabler::TryEnableApi();
+        if (apiResult == moekoe::ApiEnableResult::EnabledAndRestarted) {
+            Log("[MAIN] API auto-enabled and MoeKoeMusic restarted, waiting for new instance...\n");
+            Sleep(2000); // 等待新实例完全启动
+        } else {
+            Log("[MAIN] API auto-enable check result: %s\n",
+                moekoe::ApiEnabler::ResultToString(apiResult).c_str());
+        }
+    }
 
     char url[64];
     std::snprintf(url, sizeof(url), "ws://127.0.0.1:%d",

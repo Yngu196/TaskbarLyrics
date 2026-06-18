@@ -19,6 +19,7 @@ namespace moekoe {
 class SettingsWindow {
 public:
     using ConfigChangedCallback = std::function<void(const Config&)>;
+    using SwitchModeCallback    = std::function<void(const std::string& mode)>; // "webview" / "d2d"
 
     SettingsWindow();
     ~SettingsWindow();
@@ -37,6 +38,9 @@ public:
 
     // 注册配置变更回调（JS 点"应用并保存"时触发）
     void OnConfigChanged(ConfigChangedCallback cb) { onConfigChanged_ = std::move(cb); }
+
+    // 注册 UI 模式切换回调（JS 点"切换到原生设置"时触发）
+    void OnSwitchMode(SwitchModeCallback cb) { onSwitchMode_ = std::move(cb); }
 
     // 标记 WebView 初始化失败（由 NavigationCompleted 调用）
     void SetWebViewInitFailed() { webViewInitFailed_ = true; }
@@ -75,6 +79,7 @@ private:
     std::wstring settingsUrl_;
     Config currentConfig_;
     ConfigChangedCallback onConfigChanged_;
+    SwitchModeCallback    onSwitchMode_;
     bool webViewInitFailed_{false};  // WebView2 初始化是否失败（导航/加载等）
 
     static constexpr const wchar_t* kWindowClass = L"MoeKoeTaskbarLyricsSettingsClass";

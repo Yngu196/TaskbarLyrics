@@ -150,6 +150,7 @@ bool Config::Load() {
             advanced_.httpServerPort  = a.value("http_server_port", advanced_.httpServerPort);
             advanced_.refreshRateHz   = a.value("refresh_rate_hz",  advanced_.refreshRateHz);
             advanced_.debugLog        = a.value("debug_log",        advanced_.debugLog);
+            advanced_.settingsUiMode   = a.value("settings_ui_mode",  advanced_.settingsUiMode);
         }
 
         if (j.contains("position")) {
@@ -229,6 +230,7 @@ bool Config::Save() const {
         {"http_server_port", advanced_.httpServerPort},
         {"refresh_rate_hz",  advanced_.refreshRateHz},
         {"debug_log",        advanced_.debugLog},
+        {"settings_ui_mode", advanced_.settingsUiMode},
     };
 
     j["position"] = {

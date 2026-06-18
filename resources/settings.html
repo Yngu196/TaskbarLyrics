@@ -451,6 +451,7 @@ button.danger:hover { border-color: var(--danger); color: var(--danger); }
     <div class="btn-row">
         <button id="applyBtn" class="primary">应用并保存</button>
         <button id="cancelBtn">取消</button>
+        <button id="switchToD2DBtn">切换到原生设置</button>
     </div>
 </div>
 
@@ -670,6 +671,10 @@ document.getElementById('resetPos').addEventListener('click', () => {
 
 document.getElementById('pickFontBtn').addEventListener('click', () => {
     sendToHost({ type: 'pickFont' });
+});
+
+document.getElementById('switchToD2DBtn').addEventListener('click', () => {
+    sendToHost({ type: 'switchMode', mode: 'd2d' });
 });
 
 // 初始化：请求配置
