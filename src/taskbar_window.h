@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <UIAutomation.h>
 
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -123,6 +124,7 @@ public:
     static HWINEVENTHOOK s_shellMenuHook_;    // Start Menu 弹出/关闭事件
     static HWND s_lyricsWnd_;
     static bool s_shellInteractionLocked_;    // Start Menu 激活期间锁定定位
+    static std::chrono::steady_clock::time_point s_shellInteractionLockedTime_;  // 锁设置时间戳（超时自动复位）
     static RECT s_frozenTaskbarRect_;         // 锁定时冻结的任务栏几何快照
     static RECT s_lastGoodTaskbarRect_;      // 非冻结期间已知稳定 rect（供冻结快照使用，避免 Explorer 脏写污染）
     static HWINEVENTHOOK s_foregroundHook_;      // Win11 Start Menu 前台检测

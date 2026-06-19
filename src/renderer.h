@@ -177,7 +177,7 @@ private:
     // 封面图缓存：后台线程下载到临时文件，渲染线程从文件创建 D2D 位图
     Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
     std::string cachedCoverUrl_;
-    std::string pendingCoverFile_;       // 后台线程下载完成的临时文件路径（待渲染线程消费）
+    std::atomic<std::string*> pendingCoverFile_{nullptr};  // 后台线程 new，原子 swap 给渲染线程。渲染线程 delete 后置 nullptr
     std::atomic<bool> coverLoadInProgress_{false};
 
     // 卡片模式专用颜色画刷

@@ -52,8 +52,10 @@ constexpr int HTTP_SERVER_PORT = 6523;
 ///
 /// 注意：此 token 仅为"同源弱鉴权"，不能替代 TLS / 签名；
 ///       由于两端代码都在同一台机器上，对本地 root 级攻击者无意义。
-constexpr const char* LOCAL_AUTH_TOKEN =
-    "MoeKoeTL-2k7qFb9zXm4Nv3Wc8YhRtSjP0DlQn6Bo1";
+///
+/// Token 现在由 Config::GetAuthToken() 从注册表动态读取（首次自动生成 UUID），
+/// 不再硬编码在二进制中。此常量已废弃，仅保留头名称。
+/// 旧常量 LOCAL_AUTH_TOKEN 已移除：参见 config.h::Config::GetAuthToken()。
 
 /// HTTP 请求中携带鉴权 token 的头名称
 constexpr const char* LOCAL_AUTH_HEADER_NAME = "X-MoeKoe-Token";

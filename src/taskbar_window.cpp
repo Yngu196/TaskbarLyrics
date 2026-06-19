@@ -20,6 +20,7 @@ HWINEVENTHOOK TaskbarWindow::s_taskbarHook_ = nullptr;
 HWINEVENTHOOK TaskbarWindow::s_shellMenuHook_ = nullptr;
 HWND TaskbarWindow::s_lyricsWnd_ = nullptr;
 bool TaskbarWindow::s_shellInteractionLocked_ = false;
+std::chrono::steady_clock::time_point TaskbarWindow::s_shellInteractionLockedTime_{};
 RECT TaskbarWindow::s_frozenTaskbarRect_{};
 RECT TaskbarWindow::s_lastGoodTaskbarRect_{};
 HWINEVENTHOOK TaskbarWindow::s_foregroundHook_      = nullptr;
@@ -51,6 +52,7 @@ void CALLBACK ShellMenuWinEventProc(HWINEVENTHOOK, DWORD event, HWND,
         // 使用 s_lastGoodTaskbarRect_（PositionLyricsInTaskbar 非冻结模式时缓存的最后稳定 rect），
         // 彻底隔离 Explorer 的瞬时脏写。
         TaskbarWindow::s_shellInteractionLocked_ = true;
+        TaskbarWindow::s_shellInteractionLockedTime_ = std::chrono::steady_clock::now();
         if (TaskbarWindow::s_lastGoodTaskbarRect_.right != 0) {
             TaskbarWindow::s_frozenTaskbarRect_ = TaskbarWindow::s_lastGoodTaskbarRect_;
             wchar_t dbg[160];
@@ -120,6 +122,7 @@ void CALLBACK ForegroundWinEventProc(HWINEVENTHOOK, DWORD, HWND hWnd,
     if (isStartMenu) {
         if (!TaskbarWindow::s_shellInteractionLocked_) {
             TaskbarWindow::s_shellInteractionLocked_ = true;
+            TaskbarWindow::s_shellInteractionLockedTime_ = std::chrono::steady_clock::now();
             TaskbarWindow::s_lockedByStartMenuFg_    = true;
             if (TaskbarWindow::s_lastGoodTaskbarRect_.right != 0) {
                 TaskbarWindow::s_frozenTaskbarRect_ = TaskbarWindow::s_lastGoodTaskbarRect_;
@@ -753,7 +756,17 @@ void TaskbarWindow::CheckResize() {
     // Start Menu 激活期间跳过帧级重检测：冻结模式下已使用稳定快照定位，
     // 无需在此轮询 GetWindowRect 规避 Explorer 临时脏写。
     // 同时防止 MENUPOPUPSTART 尚未设置锁时 CheckResize 抢先触发未保护的 PositionLyricsInTaskbar。
-    if (s_shellInteractionLocked_) return;
+    // 超时保护：若 s_shellInteractionLocked_ 超过 5 秒未解除则自动复位，防止永久锁死。
+    if (s_shellInteractionLocked_) {
+        const auto now = std::chrono::steady_clock::now();
+        constexpr auto kMaxLockDuration = std::chrono::seconds(5);
+        if (now - s_shellInteractionLockedTime_ > kMaxLockDuration) {
+            s_shellInteractionLocked_ = false;
+            ::OutputDebugStringW(L"[TaskbarLyrics] CheckResize: s_shellInteractionLocked_ timeout (5s), force reset\n");
+        } else {
+            return;
+        }
+    }
 
     RECT tb{};
     ::GetWindowRect(hTaskbar_, &tb);

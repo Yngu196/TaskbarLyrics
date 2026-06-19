@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fstream>
 #include <algorithm>
+#include <rpc.h>
 #include <shlobj.h>
 #include <shobjidl.h>
 #include <windows.h>
@@ -510,6 +511,83 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 
     moekoe::Log("[AUTOSTART] StartupFolder: shortcut created successfully\n");
     return true;
+}
+
+// ── GetAuthToken ──
+// 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取鉴权 token。
+// 首次运行时生成 UUID 写入注册表；回退使用 MachineGuid 哈希。
+std::string Config::GetAuthToken() {
+    constexpr const wchar_t* kRegPath = L"Software\\MoeKoeMusic\\TaskbarLyrics";
+    constexpr const wchar_t* kValueName = L"authToken";
+
+    // 1. 尝试从注册表读取已有 token
+    HKEY hKey = nullptr;
+    LONG lr = ::RegOpenKeyExW(HKEY_CURRENT_USER, kRegPath, 0, KEY_READ | KEY_WRITE, &hKey);
+    if (lr == ERROR_SUCCESS) {
+        wchar_t buffer[64] = {};
+        DWORD size = sizeof(buffer);
+        DWORD type = REG_SZ;
+        lr = ::RegGetValueW(hKey, nullptr, kValueName, RRF_RT_REG_SZ, &type, buffer, &size);
+        ::RegCloseKey(hKey);
+        if (lr == ERROR_SUCCESS && size > 2) {
+            std::string token = WideToUtf8(buffer);
+            Log("[AUTH] Token loaded from registry\n");
+            return token;
+        }
+    }
+
+    // 2. 生成新 UUID token
+    UUID uuid;
+    RPC_STATUS rs = ::UuidCreate(&uuid);
+    wchar_t* uuidStr = nullptr;
+    std::string token;
+    if (rs == RPC_S_OK || rs == RPC_S_UUID_LOCAL_ONLY) {
+        ::UuidToStringW(&uuid, reinterpret_cast<RPC_WSTR*>(&uuidStr));
+        if (uuidStr) {
+            token = WideToUtf8(uuidStr);
+            ::RpcStringFreeW(reinterpret_cast<RPC_WSTR*>(&uuidStr));
+            Log("[AUTH] Generated UUID token\n");
+        }
+    }
+
+    // 3. 回退：使用 MachineGuid 的简单哈希
+    if (token.empty()) {
+        wchar_t mguid[128] = {};
+        DWORD mgSize = sizeof(mguid);
+        lr = ::RegGetValueW(HKEY_LOCAL_MACHINE,
+            L"SOFTWARE\\Microsoft\\Cryptography",
+            L"MachineGuid", RRF_RT_REG_SZ, nullptr, mguid, &mgSize);
+        if (lr == ERROR_SUCCESS) {
+            std::string guidStr = WideToUtf8(mguid);
+            // 简单 DJB2 哈希避免直接暴露 MachineGuid
+            unsigned long hash = 5381;
+            for (char c : guidStr) hash = ((hash << 5) + hash) + (unsigned char)c;
+            char buf[32];
+            snprintf(buf, sizeof(buf), "MoeKoeTL-%08lx", hash);
+            token = buf;
+            Log("[AUTH] Fallback token generated from MachineGuid hash\n");
+        }
+    }
+
+    // 4. 仍失败：使用硬编码兜底 token（仅极端情况）
+    if (token.empty()) {
+        token = "MoeKoeTL-FALLBACK-UNSAFE";
+        Log("[AUTH] WARNING: Using hardcoded fallback token (registry unavailable)\n");
+    }
+
+    // 5. 写入注册表供后续使用
+    lr = ::RegCreateKeyExW(HKEY_CURRENT_USER, kRegPath, 0, nullptr,
+                           REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr);
+    if (lr == ERROR_SUCCESS) {
+        std::wstring wtoken(token.begin(), token.end());
+        ::RegSetValueExW(hKey, kValueName, 0, REG_SZ,
+                         reinterpret_cast<const BYTE*>(wtoken.c_str()),
+                         static_cast<DWORD>((wtoken.size() + 1) * sizeof(wchar_t)));
+        ::RegCloseKey(hKey);
+        Log("[AUTH] Token persisted to registry\n");
+    }
+
+    return token;
 }
 
 } // namespace moekoe

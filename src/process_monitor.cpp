@@ -2,6 +2,7 @@
 // process_monitor.cpp - 进程监控模块实现
 #include "process_monitor.h"
 #include "constants.h"
+#include "logger.h"
 
 #include <windows.h>
 #include <tlhelp32.h>
@@ -89,7 +90,17 @@ void ProcessMonitor::Start(const std::wstring& exeName,
 void ProcessMonitor::Stop() {
     running_.store(false);
     if (monitorThread_.joinable()) {
-        monitorThread_.join();
+        DWORD waitResult = ::WaitForSingleObject(
+            monitorThread_.native_handle(),
+            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+        if (waitResult == WAIT_TIMEOUT) {
+            moekoe::Log("[PM] Monitor thread join timed out (%d ms), forcing exit\n",
+                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            monitorThread_.detach();
+            ::ExitProcess(4);
+        } else {
+            monitorThread_.join();
+        }
     }
 }
 

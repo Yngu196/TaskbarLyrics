@@ -88,6 +88,11 @@ public:
     // ---- 路径 ----
     static std::string GetConfigPath();
 
+    // ---- 鉴权 Token ----
+    // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取。
+    // 首次调用时自动生成 UUID 写入注册表，回退使用 MachineGuid 哈希。
+    static std::string GetAuthToken();
+
 private:
     // 注册表 Run 键方案
     bool SetAutoStartRegistry(bool enable);

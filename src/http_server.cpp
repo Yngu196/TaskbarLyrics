@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 // http_server.cpp - 极简 HTTP 服务器实现
 #include "http_server.h"
+#include "config.h"
 #include "constants.h"
 #include "logger.h"
 
@@ -69,7 +70,7 @@ std::string ExtractHeader(const char* request, size_t len, const char* headerNam
 bool CheckLocalAuthToken(SOCKET client, int port, const char* request, size_t len) {
     const std::string token = ExtractHeader(request, len,
                                             moekoe::constants::LOCAL_AUTH_HEADER_NAME);
-    if (token == moekoe::constants::LOCAL_AUTH_TOKEN) return true;
+    if (token == moekoe::Config::GetAuthToken()) return true;
     SendResponse(client, port, 403, "Forbidden", "application/json",
                  "{\"error\":\"invalid or missing auth token\"}");
     return false;
@@ -139,7 +140,17 @@ void HttpServer::Stop() {
     }
 
     if (serverThread_.joinable()) {
-        serverThread_.join();
+        DWORD waitResult = ::WaitForSingleObject(
+            serverThread_.native_handle(),
+            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+        if (waitResult == WAIT_TIMEOUT) {
+            moekoe::Log("[SERVER] Thread join timed out (%d ms), forcing exit\n",
+                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            serverThread_.detach();
+            ::ExitProcess(2);
+        } else {
+            serverThread_.join();
+        }
     }
 }
 

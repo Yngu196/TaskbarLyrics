@@ -217,7 +217,7 @@ void TaskbarRenderer::Shutdown() {
     cardCurrentBrush_.Reset();
     d2dCoverBitmap_.Reset();
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
-    pendingCoverFile_.clear();     // 清除待消费的临时文件
+    delete pendingCoverFile_.exchange(nullptr);     // 清除待消费的临时文件
     cardNextFormat_.Reset();
     cardCurrentFormat_.Reset();
     translationBrush_.Reset();
@@ -672,7 +672,7 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
         cachedCoverUrl_ = url;
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
         d2dCoverBitmap_.Reset();       // 清除旧位图，避免显示过期封面
-        pendingCoverFile_.clear();     // 清除旧的待消费文件
+        delete pendingCoverFile_.exchange(nullptr);     // 清除旧的待消费文件
 
         std::string targetUrl = url;
         std::thread([this, targetUrl]() {
@@ -685,30 +685,39 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
             HRESULT hr = ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, nullptr);
 
             if (SUCCEEDED(hr)) {
-                // 下载成功：存储临时文件路径供渲染线程消费
-                // （不在此处做任何 WIC/D2D 操作，避免跨线程资源域问题）
+                // 下载成功：通过 atomic swap 将临时文件路径交给渲染线程，
+                // 避免 std::string 本身的数据竞争。若存在未被消费的旧路径则一并清理。
                 std::wstring ws(tempFile);
-                pendingCoverFile_ = std::string(ws.begin(), ws.end());
+                auto* owned = new std::string(ws.begin(), ws.end());
+                auto* old = pendingCoverFile_.exchange(owned, std::memory_order_release);
+                delete old;
             } else {
                 // 下载失败：删除空文件
                 ::DeleteFileW(tempFile);
             }
 
             coverLoadInProgress_.store(false, std::memory_order_release);
-            if (debugLog_) Log("[COVER] Download %s: %s, url='%s'\n",
-                SUCCEEDED(hr) ? "OK" : "FAIL",
-                SUCCEEDED(hr) ? pendingCoverFile_.c_str() : "error",
-                targetUrl.substr(0, 60).c_str());
+            if (debugLog_) {
+                std::wstring ws(tempFile);
+                std::string tempPathUtf8(ws.begin(), ws.end());
+                Log("[COVER] Download %s: %s, url='%s'\n",
+                    SUCCEEDED(hr) ? "OK" : "FAIL",
+                    SUCCEEDED(hr) ? tempPathUtf8.c_str() : "error",
+                    targetUrl.substr(0, 60).c_str());
+            }
         }).detach();
     }
 
     // ═════ 消费后台下载结果：在渲染线程创建 D2D 位图 ═════
     // 使用像素数据直接创建 D2D Bitmap（绕过 CreateBitmapFromWicBitmap，
     // 避免 D2DERR_WRONG_RESOURCE_DOMAIN 跨域问题）
-    if (!pendingCoverFile_.empty()) {
+    auto* pendingRaw = pendingCoverFile_.exchange(nullptr, std::memory_order_acquire);
+    if (pendingRaw) {
+        std::string pendingPath = std::move(*pendingRaw);
+        delete pendingRaw;
         Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
         HRESULT hr = wicFactory_->CreateDecoderFromFilename(
-            std::wstring(pendingCoverFile_.begin(), pendingCoverFile_.end()).c_str(),
+            std::wstring(pendingPath.begin(), pendingPath.end()).c_str(),
             nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
             decoder.GetAddressOf());
 
@@ -786,10 +795,9 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
             }
         }
 
-        // 无论成功与否都清理临时文件和路径（避免重复处理）
-        if (!pendingCoverFile_.empty()) {
-            ::DeleteFileW(std::wstring(pendingCoverFile_.begin(), pendingCoverFile_.end()).c_str());
-            pendingCoverFile_.clear();
+        // 无论成功与否都清理临时文件（避免残留）
+        if (!pendingPath.empty()) {
+            ::DeleteFileW(std::wstring(pendingPath.begin(), pendingPath.end()).c_str());
         }
     }
 

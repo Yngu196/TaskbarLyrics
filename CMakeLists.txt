@@ -91,7 +91,15 @@ message(STATUS "Found mbedx509: ${MBEDX509_LIBRARY}")
 message(STATUS "Found mbedcrypto: ${MBEDCRYPTO_LIBRARY}")
 
 # 3. ixwebsocket —— 使用 add_subdirectory 从源码编译（确保编译器版本一致）
-set(IXWEBSOCKET_SOURCE_DIR "D:/vcpkg/buildtrees/ixwebsocket/src/v11.4.6-fd590fbebb.clean" CACHE PATH "ixwebsocket source directory")
+set(IXWEBSOCKET_SOURCE_DIR "" CACHE PATH "ixwebsocket source directory (optional, for source build)")
+if(NOT IXWEBSOCKET_SOURCE_DIR)
+    find_path(IXWEBSOCKET_SOURCE_DIR ixwebsocket/IXWebSocket.h
+        PATHS "${CMAKE_SOURCE_DIR}/third_party/ixwebsocket"
+              "D:/vcpkg/buildtrees/ixwebsocket"
+              "C:/vcpkg/buildtrees/ixwebsocket"
+              "${VCPKG_INSTALLED_DIR}/include"
+        PATH_SUFFIXES src)
+endif()
 if(EXISTS "${IXWEBSOCKET_SOURCE_DIR}/CMakeLists.txt")
     message(STATUS "Building ixwebsocket from source: ${IXWEBSOCKET_SOURCE_DIR}")
     set(IXWEBSOCKET_USE_TLS ON CACHE INTERNAL "")
@@ -122,9 +130,9 @@ else()
     if(EXISTS "${IXWEBSOCKET_DEBUG_LIB}")
         message(STATUS "Using manually built ixwebsocket Debug: ${IXWEBSOCKET_DEBUG_LIB}")
     else()
-        message(WARNING "ixwebsocket Debug lib not found, forcing Release runtime")
-        set(IXWEBSOCKET_DEBUG_LIB "${IXWEBSOCKET_RELEASE_LIB}")
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL" CACHE STRING "" FORCE)
+        message(FATAL_ERROR "ixwebsocket Debug library not found. "
+            "Please build the Debug configuration of ixwebsocket or use a Release-only build. "
+            "To override the debug library path, set IXWEBSOCKET_DEBUG_LIB.")
     endif()
 
     find_path(IXWEBSOCKET_INCLUDE_DIR ixwebsocket/IXWebSocket.h

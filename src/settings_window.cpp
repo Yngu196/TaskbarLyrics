@@ -81,11 +81,16 @@ public:
 
     // ICoreWebView2CreateEnvironmentCompletedHandler
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Environment* env) override {
-        moekoe::Log("[SETTINGS] Env created, hr=0x%08lX\n", result);
-        if (SUCCEEDED(result) && owner_ && env) {
-            owner_->OnEnvironmentReady(env);
+        try {
+            moekoe::Log("[SETTINGS] Env created, hr=0x%08lX\n", result);
+            if (SUCCEEDED(result) && owner_ && env) {
+                owner_->OnEnvironmentReady(env);
+            }
+            return S_OK;
+        } catch (...) {
+            moekoe::Log("[SETTINGS] Env callback threw exception\n");
+            return E_FAIL;
         }
-        return S_OK;
     }
 
 private:
@@ -117,11 +122,16 @@ public:
 
     // ICoreWebView2CreateCoreWebView2ControllerCompletedHandler
     HRESULT STDMETHODCALLTYPE Invoke(HRESULT result, ICoreWebView2Controller* controller) override {
-        moekoe::Log("[SETTINGS] Controller created, hr=0x%08lX\n", result);
-        if (SUCCEEDED(result) && owner_ && controller) {
-            owner_->OnControllerReady(controller);
+        try {
+            moekoe::Log("[SETTINGS] Controller created, hr=0x%08lX\n", result);
+            if (SUCCEEDED(result) && owner_ && controller) {
+                owner_->OnControllerReady(controller);
+            }
+            return S_OK;
+        } catch (...) {
+            moekoe::Log("[SETTINGS] Controller callback threw exception\n");
+            return E_FAIL;
         }
-        return S_OK;
     }
 
 private:
@@ -154,19 +164,24 @@ public:
     // ICoreWebView2WebMessageReceivedEventHandler
     HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* /*sender*/,
                                      ICoreWebView2WebMessageReceivedEventArgs* args) override {
-        LPWSTR msg = nullptr;
-        HRESULT hr = args->TryGetWebMessageAsString(&msg);
-        if (SUCCEEDED(hr) && msg && owner_) {
-            int len = WideCharToMultiByte(CP_UTF8, 0, msg, -1, nullptr, 0, nullptr, nullptr);
-            if (len > 0) {
-                std::string utf8(static_cast<size_t>(len), '\0');
-                WideCharToMultiByte(CP_UTF8, 0, msg, -1, &utf8[0], len, nullptr, nullptr);
-                utf8.pop_back();
-                owner_->OnWebMessageReceived(utf8);
+        try {
+            LPWSTR msg = nullptr;
+            HRESULT hr = args->TryGetWebMessageAsString(&msg);
+            if (SUCCEEDED(hr) && msg && owner_) {
+                int len = WideCharToMultiByte(CP_UTF8, 0, msg, -1, nullptr, 0, nullptr, nullptr);
+                if (len > 0) {
+                    std::string utf8(static_cast<size_t>(len), '\0');
+                    WideCharToMultiByte(CP_UTF8, 0, msg, -1, &utf8[0], len, nullptr, nullptr);
+                    utf8.pop_back();
+                    owner_->OnWebMessageReceived(utf8);
+                }
+                CoTaskMemFree(msg);
             }
-            CoTaskMemFree(msg);
+            return S_OK;
+        } catch (...) {
+            moekoe::Log("[SETTINGS] WebMessage callback threw exception\n");
+            return E_FAIL;
         }
-        return S_OK;
     }
 
 private:
@@ -199,32 +214,35 @@ public:
     // ICoreWebView2NavigationCompletedEventHandler
     HRESULT STDMETHODCALLTYPE Invoke(ICoreWebView2* /*sender*/,
                                      ICoreWebView2NavigationCompletedEventArgs* args) override {
-        BOOL isSuccess = FALSE;
-        COREWEBVIEW2_WEB_ERROR_STATUS webErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
-        args->get_IsSuccess(&isSuccess);
-        args->get_WebErrorStatus(&webErrorStatus);
+        try {
+            BOOL isSuccess = FALSE;
+            COREWEBVIEW2_WEB_ERROR_STATUS webErrorStatus = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
+            args->get_IsSuccess(&isSuccess);
+            args->get_WebErrorStatus(&webErrorStatus);
 
-        moekoe::Log("[SETTINGS] NavigationCompleted: success=%d, error=%d\n",
-                 static_cast<int>(isSuccess), static_cast<int>(webErrorStatus));
+            moekoe::Log("[SETTINGS] NavigationCompleted: success=%d, error=%d\n",
+                     static_cast<int>(isSuccess), static_cast<int>(webErrorStatus));
 
-        if (!isSuccess) {
-            moekoe::Log("[SETTINGS] Navigation FAILED! Error code: %d\n", webErrorStatus);
-            // 标记 WebView 初始化失败，让调用方知道需要回退
-            if (owner_) {
-                owner_->SetWebViewInitFailed();
-                MessageBoxW(owner_->GetHwnd(),
-                    L"设置页面加载失败。\n将回退到基础设置界面。",
-                    L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONWARNING);
+            if (!isSuccess) {
+                moekoe::Log("[SETTINGS] Navigation FAILED! Error code: %d\n", webErrorStatus);
+                if (owner_) {
+                    owner_->SetWebViewInitFailed();
+                    MessageBoxW(owner_->GetHwnd(),
+                        L"设置页面加载失败。\n将回退到基础设置界面。",
+                        L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONWARNING);
+                }
+            } else {
+                moekoe::Log("[SETTINGS] Navigation OK - settings.html loaded successfully\n");
+                if (owner_) {
+                    owner_->SendConfigToWebView(owner_->GetCurrentConfig());
+                }
             }
-        } else {
-            moekoe::Log("[SETTINGS] Navigation OK - settings.html loaded successfully\n");
-            // 发送初始配置到 WebView
-            if (owner_) {
-                owner_->SendConfigToWebView(owner_->GetCurrentConfig());
-            }
+
+            return S_OK;
+        } catch (...) {
+            moekoe::Log("[SETTINGS] Navigation callback threw exception\n");
+            return E_FAIL;
         }
-
-        return S_OK;
     }
 
 private:

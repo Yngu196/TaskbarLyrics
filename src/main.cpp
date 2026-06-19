@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <memory>
 #include <string>
 
 namespace {
@@ -30,26 +31,27 @@ namespace {
 // 日志快捷方式（使用统一日志系统）
 using moekoe::Log;
 
-// 全局应用上下文
+// 全局应用上下文（成员按析构顺序排列：后声明的先析构）
+// 依赖关系：taskbarWindow → renderer → config
 struct AppContext {
-    moekoe::Config*          config{nullptr};
-    moekoe::TaskbarWindow*   taskbarWindow{nullptr};
-    moekoe::TaskbarRenderer* renderer{nullptr};
-    moekoe::TrayIcon*        tray{nullptr};
-    moekoe::WebSocketClient* wsClient{nullptr};
-    moekoe::LyricsParser*    parser{nullptr};
-    moekoe::ProcessMonitor*  processMonitor{nullptr};
-    moekoe::HttpServer*      httpServer{nullptr};
-    moekoe::SettingsWindow*   settingsWindow{nullptr};
-    moekoe::D2DSettingsWindow* d2dSettingsWindow{nullptr};
-    moekoe::NativeMessagingHost* nativeHost{nullptr};
     HINSTANCE                hInstance{nullptr};
-    HWND                     hwnd{nullptr}; // 隐式消息窗口
+    HWND                     hwnd{nullptr};
     bool                     running{true};
+    int                      fullscreenDebounceCnt{0};
+    bool                     lastFullscreenState{false};
 
-    // 全屏检测防抖状态
-    int  fullscreenDebounceCnt{0};     // 连续检测到全屏/非全屏的帧数
-    bool lastFullscreenState{false};   // 上一帧的全屏状态
+    // RAII 管理的组件（按依赖顺序声明：先声明后析构）
+    std::unique_ptr<moekoe::NativeMessagingHost> nativeHost;
+    std::unique_ptr<moekoe::D2DSettingsWindow>   d2dSettingsWindow;
+    std::unique_ptr<moekoe::SettingsWindow>       settingsWindow;
+    std::unique_ptr<moekoe::HttpServer>           httpServer;
+    std::unique_ptr<moekoe::ProcessMonitor>       processMonitor;
+    std::unique_ptr<moekoe::WebSocketClient>      wsClient;
+    std::unique_ptr<moekoe::LyricsParser>         parser;
+    std::unique_ptr<moekoe::TaskbarRenderer>      renderer;        // 依赖 taskbarWindow 的 HWND
+    std::unique_ptr<moekoe::TaskbarWindow>         taskbarWindow;   // 依赖 renderer
+    std::unique_ptr<moekoe::TrayIcon>             tray;
+    std::unique_ptr<moekoe::Config>               config;          // 最后声明，最先析构
 };
 
 using namespace moekoe::constants;
@@ -69,7 +71,7 @@ std::wstring ToTooltipWide(const std::string& s) {
 
 // 检测前台窗口是否处于全屏状态
 // 判断标准：窗口矩形覆盖所在显示器（>= 显示器尺寸），且无标题栏
-bool IsForegroundFullscreen() {
+bool IsForegroundFullscreen(bool debugLog) {
     HWND fgw = ::GetForegroundWindow();
     if (!fgw) return false;
 
@@ -103,7 +105,7 @@ bool IsForegroundFullscreen() {
 
     // 【调试】每秒输出一次检测详情，定位检测失效原因
     static int s_debugCounter = 0;
-    if (++s_debugCounter >= 60) {
+    if (debugLog && ++s_debugCounter >= 60) {
         s_debugCounter = 0;
         LONG style = ::GetWindowLongW(fgw, GWL_STYLE);
         LONG exStyle = ::GetWindowLongW(fgw, GWL_EXSTYLE);
@@ -223,7 +225,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         if (useD2D) {
             // ═══════ D2D 原生自绘设置界面 ═══════
             if (!app.d2dSettingsWindow) {
-                app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                app.d2dSettingsWindow = std::make_unique<moekoe::D2DSettingsWindow>();
                 app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                     const auto savedPos = app.config->Position();
                     *app.config = cfg;
@@ -246,10 +248,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                     // 关闭 D2D 窗口后立即打开 WebView2 设置
                     if (newMode == "webview") {
                         app.d2dSettingsWindow->Close();
-                        delete app.d2dSettingsWindow;
+                        app.d2dSettingsWindow.reset();
                         app.d2dSettingsWindow = nullptr;
                         if (!app.settingsWindow) {
-                            app.settingsWindow = new moekoe::SettingsWindow();
+                            app.settingsWindow = std::make_unique<moekoe::SettingsWindow>();
                             app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                 const auto savedPos = app.config->Position();
                                 *app.config = cfg;
@@ -268,10 +270,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                                 Log("[SETTINGS] WebView2 (from D2D) switching mode to: %s\n", m.c_str());
                                 if (m == "d2d") {
                                     app.settingsWindow->Close();
-                                    delete app.settingsWindow;
+                                    app.settingsWindow.reset();
                                     app.settingsWindow = nullptr;
                                     if (!app.d2dSettingsWindow) {
-                                        app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                                        app.d2dSettingsWindow = std::make_unique<moekoe::D2DSettingsWindow>();
                                         app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                             const auto savedPos = app.config->Position();
                                             *app.config = cfg;
@@ -292,10 +294,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                                             Log("[SETTINGS] D2D (from WebView2) switching mode to: %s\n", sm.c_str());
                                             if (sm == "webview") {
                                                 app.d2dSettingsWindow->Close();
-                                                delete app.d2dSettingsWindow;
+                                                app.d2dSettingsWindow.reset();
                                                 app.d2dSettingsWindow = nullptr;
                                                 if (!app.settingsWindow) {
-                                                    app.settingsWindow = new moekoe::SettingsWindow();
+                                                    app.settingsWindow = std::make_unique<moekoe::SettingsWindow>();
                                                     app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                                         const auto savedPos = app.config->Position();
                                                         *app.config = cfg;
@@ -316,10 +318,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                                                         Log("[SETTINGS] WebView2 switching mode to: %s\n", sm2.c_str());
                                                         if (sm2 == "d2d") {
                                                             app.settingsWindow->Close();
-                                                            delete app.settingsWindow;
+                                                            app.settingsWindow.reset();
                                                             app.settingsWindow = nullptr;
                                                             if (!app.d2dSettingsWindow) {
-                                                                app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                                                                app.d2dSettingsWindow = std::make_unique<moekoe::D2DSettingsWindow>();
                                                                 app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                                                     const auto savedPos = app.config->Position();
                                                                     *app.config = cfg;
@@ -359,7 +361,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
             if (app.d2dSettingsWindow->Show(app.hInstance, app.hwnd, *app.config)) {
                 break; // D2D 窗口创建成功
             } else {
-                delete app.d2dSettingsWindow;
+                app.d2dSettingsWindow.reset();
                 app.d2dSettingsWindow = nullptr;
                 // D2D 失败，回退到 WebView2
             }
@@ -367,7 +369,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
 
         // ═══════ WebView2 设置界面（默认 / 回退） ═══════
         if (!app.settingsWindow) {
-            app.settingsWindow = new moekoe::SettingsWindow();
+            app.settingsWindow = std::make_unique<moekoe::SettingsWindow>();
             app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                 const auto savedPos = app.config->Position();
                 *app.config = cfg;
@@ -388,11 +390,11 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 // 关闭 WebView2 窗口后立即打开 D2D 原生设置
                 if (newMode == "d2d") {
                     app.settingsWindow->Close();
-                    delete app.settingsWindow;
+                    app.settingsWindow.reset();
                     app.settingsWindow = nullptr;
                     // 创建并显示 D2D 设置窗口
                     if (!app.d2dSettingsWindow) {
-                        app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                        app.d2dSettingsWindow = std::make_unique<moekoe::D2DSettingsWindow>();
                         app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                             const auto savedPos = app.config->Position();
                             *app.config = cfg;
@@ -413,10 +415,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                             Log("[SETTINGS] D2D (from WebView2) switching mode to: %s\n", m.c_str());
                             if (m == "webview") {
                                 app.d2dSettingsWindow->Close();
-                                delete app.d2dSettingsWindow;
+                                app.d2dSettingsWindow.reset();
                                 app.d2dSettingsWindow = nullptr;
                                 if (!app.settingsWindow) {
-                                    app.settingsWindow = new moekoe::SettingsWindow();
+                                    app.settingsWindow = std::make_unique<moekoe::SettingsWindow>();
                                     app.settingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                         const auto savedPos = app.config->Position();
                                         *app.config = cfg;
@@ -437,10 +439,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                                         Log("[SETTINGS] WebView2 (from D2D) switching mode to: %s\n", sm.c_str());
                                         if (sm == "d2d") {
                                             app.settingsWindow->Close();
-                                            delete app.settingsWindow;
+                                            app.settingsWindow.reset();
                                             app.settingsWindow = nullptr;
                                             if (!app.d2dSettingsWindow) {
-                                                app.d2dSettingsWindow = new moekoe::D2DSettingsWindow();
+                                                app.d2dSettingsWindow = std::make_unique<moekoe::D2DSettingsWindow>();
                                                 app.d2dSettingsWindow->OnConfigChanged([&](const moekoe::Config& cfg) {
                                                     const auto savedPos = app.config->Position();
                                                     *app.config = cfg;
@@ -477,7 +479,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
             break; // WebView2 窗口创建成功
         } else {
             // WebView2 也失败，回退到 Win32 对话框
-            delete app.settingsWindow;
+            app.settingsWindow.reset();
             app.settingsWindow = nullptr;
         }
 
@@ -592,14 +594,14 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 static bool s_blockEntered = false;
                 if (!s_blockEntered) {
                     s_blockEntered = true;
-                    Log("[FullscreenDetect] block entered, enableFullscreenHide=true\n");
+                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] block entered, enableFullscreenHide=true\n");
                 }
-                const bool isFullscreen = IsForegroundFullscreen();
+                const bool isFullscreen = IsForegroundFullscreen(app->config->Advanced().debugLog);
                 if (isFullscreen == app->lastFullscreenState) {
                     if (app->fullscreenDebounceCnt < 99) app->fullscreenDebounceCnt++;
                 } else {
                     // 状态翻转：输出日志定位频繁切换原因
-                    Log("[FullscreenDetect] state flip: %d -> %d (debounce reset)\n",
+                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] state flip: %d -> %d (debounce reset)\n",
                         (int)app->lastFullscreenState, (int)isFullscreen);
                     app->fullscreenDebounceCnt = 0;
                     app->lastFullscreenState = isFullscreen;
@@ -608,7 +610,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 // 防抖阈值：~120ms（8 帧 × 15ms MIN_FRAME_INTERVAL）
                 constexpr int kDebounceThreshold = 8;
                 if (app->fullscreenDebounceCnt == kDebounceThreshold) {
-                    Log("[FullscreenDetect] debounce reached -> SetFullscreenHidden(%d)\n",
+                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] debounce reached -> SetFullscreenHidden(%d)\n",
                         (int)isFullscreen);
                     app->taskbarWindow->SetFullscreenHidden(isFullscreen);
                 }
@@ -621,7 +623,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     moekoe::TaskbarWindow::s_forceDebounceReset_ = false;
                     app->fullscreenDebounceCnt = 0;
                     app->lastFullscreenState = false;
-                    Log("[FullscreenDetect] debounce reset by external trigger (shell interaction)\n");
+                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] debounce reset by external trigger (shell interaction)\n");
                 }
             }
 
@@ -742,12 +744,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // ═══════ 第 2 阶段：应用初始化 ═══════
     // 目的：加载配置、创建消息窗口和托盘图标
-    moekoe::Config config;
-    config.Load();
-    moekoe::SetLogEnabled(config.Advanced().debugLog);
-    Log("[STARTUP] Config loaded\n");
-    config.SetAutoStart(config.IsAutoStart());  // 同步开机自启注册表
-    Log("[STARTUP] AutoStart=%s\n", config.IsAutoStart() ? "ON" : "OFF");
 
     if (!RegisterMessageClass(hInstance)) {
         std::fprintf(stderr, "[Error] RegisterClassExW failed\n");
@@ -764,16 +760,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     }
 
     AppContext app;
-    app.config = &config;
     app.hwnd   = hMsgWnd;
     app.hInstance = hInstance;
     ::SetWindowLongPtrW(hMsgWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&app));
 
+    app.config = std::make_unique<moekoe::Config>();
+    auto& config = *app.config;
+    config.Load();
+    moekoe::SetLogEnabled(config.Advanced().debugLog);
+    Log("[STARTUP] Config loaded\n");
+    config.SetAutoStart(config.IsAutoStart());
+    Log("[STARTUP] AutoStart=%s\n", config.IsAutoStart() ? "ON" : "OFF");
+
     // ═══════ 第 3 阶段：业务模块初始化 ═══════
     // 目的：创建核心业务逻辑模块（任务栏窗口、渲染引擎、WebSocket、HTTP服务器）
     // 创建系统托盘
-    moekoe::TrayIcon tray;
-    app.tray = &tray;
+    app.tray = std::make_unique<moekoe::TrayIcon>();
+    auto& tray = *app.tray;
     tray.Initialize(hInstance, hMsgWnd);
     tray.SetMenuCheckedAutoStart(config.IsAutoStart());
 
@@ -790,7 +793,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     }
 
     // 8) 创建嵌入任务栏的歌词窗口
-    moekoe::TaskbarWindow taskbarWindow;
+    app.taskbarWindow = std::make_unique<moekoe::TaskbarWindow>();
+    auto& taskbarWindow = *app.taskbarWindow;
     if (!taskbarWindow.Create(hInstance, hTaskbar)) {
         ::MessageBoxW(nullptr,
                       L"创建任务栏歌词窗口失败。",
@@ -799,7 +803,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         tray.Shutdown();
         return 1;
     }
-    app.taskbarWindow = &taskbarWindow;
 
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);
@@ -827,8 +830,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     ::ShowWindow(taskbarWindow.GetHandle(), SW_HIDE);
 
     // 9) 初始化渲染器
-    moekoe::TaskbarRenderer renderer;
-    app.renderer = &renderer;
+    app.renderer = std::make_unique<moekoe::TaskbarRenderer>();
+    auto& renderer = *app.renderer;
     ApplyRendererSettings(app);
     if (!renderer.Initialize(taskbarWindow.GetHandle())) {
         ::MessageBoxW(nullptr,
@@ -838,18 +841,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         tray.Shutdown();
         return 1;
     }
-    app.renderer = &renderer;
 
     // 同步任务栏方向到渲染器（纵向屏幕/垂直任务栏适配）
     renderer.SetVerticalTaskbar(taskbarWindow.IsVerticalTaskbar());
     renderer.SetDebugLog(config.Advanced().debugLog);
 
     // 10) 启动 WebSocket 客户端 + 歌词解析
-    moekoe::LyricsParser parser;
-    app.parser = &parser;
+    app.parser = std::make_unique<moekoe::LyricsParser>();
+    auto& parser = *app.parser;
 
-    moekoe::WebSocketClient wsClient;
-    app.wsClient = &wsClient;
+    app.wsClient = std::make_unique<moekoe::WebSocketClient>();
+    auto& wsClient = *app.wsClient;
     wsClient.SetDebugLog(config.Advanced().debugLog);
 
     wsClient.OnLyrics([&](const moekoe::LyricsData& data) {
@@ -917,8 +919,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     wsClient.Connect(url);
 
     // 10.5) 启动 HTTP 服务器（用于 popup.js 通信：ping / shutdown / lyrics）
-    moekoe::HttpServer httpServer;
-    app.httpServer = &httpServer;
+    app.httpServer = std::make_unique<moekoe::HttpServer>();
+    auto& httpServer = *app.httpServer;
     httpServer.OnCommand([&](const std::string& command) {
         Log("[HTTP] Command received: %s\n", command.c_str());
         if (command == "shutdown") {
@@ -1032,8 +1034,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // 11) 启动 Native Host stdin 读取（MoeKoeMusic 托管模式下的生命周期管理）
     // 在后台线程中读取 stdin JSON Lines，收到 shutdown 时通知主线程退出
-    moekoe::NativeMessagingHost nativeHost;
-    app.nativeHost = &nativeHost;
+    app.nativeHost = std::make_unique<moekoe::NativeMessagingHost>();
+    auto& nativeHost = *app.nativeHost;
     nativeHost.SetMessageHandler([&app](const moekoe::NativeHostMessage& msg) {
         Log("[NATIVE-HOST] Received message: type=%s\n", msg.type.c_str());
         // 业务消息处理：可根据 payload 中的 action 执行对应操作

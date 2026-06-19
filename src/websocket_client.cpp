@@ -218,7 +218,17 @@ void WebSocketClient::Disconnect() {
     // 协作式等待：ReconnectLoop 内部已使用短间隔轮询 stopRequested_，
     // 理论上应在 ~100ms 内退出。保留超时作为安全网。
     if (reconnectThread_.joinable()) {
-        reconnectThread_.join();
+        DWORD waitResult = ::WaitForSingleObject(
+            reconnectThread_.native_handle(),
+            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+        if (waitResult == WAIT_TIMEOUT) {
+            moekoe::Log("[WS] Reconnect thread join timed out (%d ms), forcing exit\n",
+                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            reconnectThread_.detach();
+            ::ExitProcess(3);
+        } else {
+            reconnectThread_.join();
+        }
     }
 
     if (connected_.exchange(false)) {
