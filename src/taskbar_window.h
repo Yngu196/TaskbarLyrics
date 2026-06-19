@@ -109,6 +109,16 @@ public:
 
     // 自定义消息:通知外部(主循环)执行每帧任务
     static constexpr UINT WM_FRAME_TICK = WM_USER + 0x100;
+    static constexpr UINT WM_DELAYED_REPOSITION = WM_USER + 0x101;  // SetWinEventHook 触发的延迟定位
+
+    // SetWinEventHook: 监听 Shell_TrayWnd 位置变化，解决 auto-hide/Win 键偏移
+    static void InstallTaskbarHook(HWND lyricsWnd);
+    static void RemoveTaskbarHook();
+    static HWINEVENTHOOK s_taskbarHook_;
+    static HWINEVENTHOOK s_shellMenuHook_;    // Start Menu 弹出/关闭事件
+    static HWND s_lyricsWnd_;
+    static bool s_shellInteractionLocked_;    // Start Menu 激活期间锁定定位
+    static RECT s_frozenTaskbarRect_;         // 锁定时冻结的任务栏几何快照
 
 private:
     // 窗口过程(静态 + 实例)
@@ -135,7 +145,9 @@ private:
     bool          positionLocked_{false};   // 位置锁定：禁止拖动
     bool          fullyLocked_{false};     // 完全锁定：禁止拖动+按钮交互
     bool          taskbarAutoHide_{false}; // 任务栏自动隐藏状态
-    bool          taskbarVisible_{true};   // 自动隐藏模式下任务栏当前是否可见
+    bool          taskbarVisible_{false};   // 任务栏当前是否可见
+    RECT          stableTaskbarRect_{};     // 稳定帧矩形（动画期间不更新）
+    int           cachedRightEdgeOffset_{0}; // tbRect.right - rightEdge 缓存（动画期间防射线位置跳动）
     POINT         dragStartPos_{0, 0};     // 拖动开始时鼠标屏幕坐标
     POINT         dragStartWinPos_{0, 0};  // 拖动开始时窗口屏幕坐标
     int           dragOffsetX_{0};         // 用户拖动产生的累积偏移
@@ -146,11 +158,6 @@ private:
     ButtonCallback onButtonClicked_;
     HoverChangedCallback onHoverChanged_;
 
-    // Z-order 恢复: 每 kTopmostRestoreInterval 帧强制断言一次 HWND_TOPMOST
-    // 原因: 任务栏(Shell_TrayWnd)也是系统级 TOPMOST 窗口，点击任务栏/展开托盘时
-    //       Windows 会将任务栏提升到普通 TOPMOST 窗口之上，需定期恢复
-    static constexpr int kTopmostRestoreInterval = 30;  // 约 0.5 秒 @60fps
-    int           topmostFrameCounter_{0};
 };
 
 } // namespace moekoe

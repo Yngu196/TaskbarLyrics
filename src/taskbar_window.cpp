@@ -14,6 +14,71 @@
 
 namespace moekoe {
 
+// ---- 静态: SetWinEventHook ----
+HWINEVENTHOOK TaskbarWindow::s_taskbarHook_ = nullptr;
+HWINEVENTHOOK TaskbarWindow::s_shellMenuHook_ = nullptr;
+HWND TaskbarWindow::s_lyricsWnd_ = nullptr;
+bool TaskbarWindow::s_shellInteractionLocked_ = false;
+RECT TaskbarWindow::s_frozenTaskbarRect_{};
+
+void CALLBACK TaskbarWinEventProc(HWINEVENTHOOK, DWORD, HWND hWnd,
+                                   LONG idObject, LONG, DWORD, DWORD) {
+    // 只响应 Shell_TrayWnd 的位置变化
+    if (idObject != OBJID_WINDOW || !hWnd) return;
+    wchar_t cls[32] = {};
+    ::GetClassNameW(hWnd, cls, 31);
+    if (wcscmp(cls, L"Shell_TrayWnd") != 0) return;
+
+    // 投递延迟消息：10ms 等 DWM 帧完成，避免在动画中定位
+    if (TaskbarWindow::s_lyricsWnd_) {
+        ::PostMessageW(TaskbarWindow::s_lyricsWnd_,
+                       TaskbarWindow::WM_DELAYED_REPOSITION, 0, 0);
+    }
+}
+
+void CALLBACK ShellMenuWinEventProc(HWINEVENTHOOK, DWORD event, HWND,
+                                     LONG, LONG, DWORD, DWORD) {
+    if (event == EVENT_SYSTEM_MENUPOPUPSTART) {
+        // 锁定定位 + 冻结当前任务栏几何快照
+        // Explorer 在 Start Menu 激活期间会临时改动任务栏内部布局（托盘重排、
+        // client width 微变），导致 GetWindowRect 返回值虽不变但子区域偏移了。
+        // 快照冻结确保后续所有布局计算基于锁定前的稳定值。
+        TaskbarWindow::s_shellInteractionLocked_ = true;
+        HWND tb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+        if (tb) {
+            ::GetWindowRect(tb, &TaskbarWindow::s_frozenTaskbarRect_);
+        }
+    } else if (event == EVENT_SYSTEM_MENUPOPUPEND) {
+        if (TaskbarWindow::s_lyricsWnd_) {
+            ::SetTimer(TaskbarWindow::s_lyricsWnd_, 3, 300, nullptr);
+        }
+    }
+}
+
+void TaskbarWindow::InstallTaskbarHook(HWND lyricsWnd) {
+    s_lyricsWnd_ = lyricsWnd;
+    s_taskbarHook_ = ::SetWinEventHook(
+        EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE,
+        nullptr, TaskbarWinEventProc,
+        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    s_shellMenuHook_ = ::SetWinEventHook(
+        EVENT_SYSTEM_MENUPOPUPSTART, EVENT_SYSTEM_MENUPOPUPEND,
+        nullptr, ShellMenuWinEventProc,
+        0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+}
+
+void TaskbarWindow::RemoveTaskbarHook() {
+    if (s_taskbarHook_) {
+        ::UnhookWinEvent(s_taskbarHook_);
+        s_taskbarHook_ = nullptr;
+    }
+    if (s_shellMenuHook_) {
+        ::UnhookWinEvent(s_shellMenuHook_);
+        s_shellMenuHook_ = nullptr;
+    }
+    s_lyricsWnd_ = nullptr;
+}
+
 // ---- 静态: 任务栏句柄查找 ----
 HWND TaskbarWindow::FindTaskbarHandle() {
     // 主任务栏
@@ -57,13 +122,12 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     ::RegisterClassExW(&wc);
 
     // 3) 创建独立浮动窗口 (不嵌入任务栏)
-    //   WS_EX_NOACTIVATE   : 不抢夺焦点
     //   WS_EX_TOOLWINDOW   : 不在任务栏显示
     //   WS_EX_LAYERED      : 支持透明 (配合 UpdateLayeredWindow)
-    //   WS_EX_TOPMOST      : 始终在任务栏上方
+    //   不使用 WS_EX_TOPMOST ：Start Menu / Shell UI 不会与歌词冲突（酷狗方案）
     //   注意: 不使用 WS_EX_TRANSPARENT，以便接收鼠标消息
     const DWORD exStyle = WS_EX_NOACTIVATE |
-                          WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TOPMOST;
+                          WS_EX_TOOLWINDOW | WS_EX_LAYERED;
     const DWORD style   = WS_POPUP;
 
     hwnd_ = ::CreateWindowExW(
@@ -78,15 +142,23 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
         this);
     if (!hwnd_) return false;
 
+    // 设为 Shell_TrayWnd 的 owned window，使其在天生处于任务栏 Z-order 组内
+    // 始终渲染在任务栏上方，无需 HWND_TOPMOST 竞争，不受 Win 键 Start Menu 影响
+    ::SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hTaskbar_));
+
     // 4) 初始化信息并定位
     DetectTaskbarInfo();
     PositionLyricsInTaskbar();
+
+    // 5) 监听任务栏位置变化（auto-hide 滑出、Win 键、DPI 变化等）
+    InstallTaskbarHook(hwnd_);
 
     created_ = true;
     return true;
 }
 
 void TaskbarWindow::Destroy() {
+    RemoveTaskbarHook();
     if (hwnd_) {
         ::DestroyWindow(hwnd_);
         hwnd_ = nullptr;
@@ -139,6 +211,10 @@ void TaskbarWindow::DetectTaskbarInfo() {
 void TaskbarWindow::PositionLyricsInTaskbar() {
     if (!hwnd_ || !hTaskbar_) return;
 
+    // Start Menu 激活期间：Explorer 内部布局不可靠（托盘重排、client width 微变）
+    // 使用锁定前捕获的冻结快照，完全隔离 Explorer 的临时变动
+    const bool useFrozen = s_shellInteractionLocked_ && s_frozenTaskbarRect_.right != 0;
+
     // 记录旧方位，用于检测方向变化
     const TaskbarPosition oldPosition = info_.position;
     DetectTaskbarInfo();
@@ -152,58 +228,61 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
         ::OutputDebugStringW(L"[TaskbarLyrics] 任务栏方位变化，重置拖动偏移\n");
     }
 
-    // ── APPBAR 自动隐藏处理 ──
-    // 通过任务栏实际矩形高度判断其是否处于"滑出"状态：
-    //   隐藏时高度 ≈ 2-4px（仅保留边缘触发条），显示时恢复正常（40-48px）
-    // 比基于鼠标位置的 PtInRect 更稳定，避免边缘抖动导致的闪烁
-    if (taskbarAutoHide_) {
-        RECT tbCurrent{};
-        ::GetWindowRect(hTaskbar_, &tbCurrent);
-        // 垂直任务栏时用宽度判断，水平任务栏时用高度判断
-        const int tbSize = (info_.position == TaskbarPosition::LEFT ||
-                            info_.position == TaskbarPosition::RIGHT)
-                               ? (tbCurrent.right - tbCurrent.left)
-                               : (tbCurrent.bottom - tbCurrent.top);
-        constexpr int kAutoHideThreshold = 10;  // 低于此值认为任务栏已收起
-        const bool tbIsVisible = (tbSize >= kAutoHideThreshold);
-
-        if (tbIsVisible && !taskbarVisible_) {
-            taskbarVisible_ = true;
-            // 继续下面的正常定位流程
-        } else if (!tbIsVisible && taskbarVisible_) {
-            taskbarVisible_ = false;
-            // 任务栏收起时，将歌词窗口缩小到边缘 1px 条
-            // 而非完全隐藏，这样任务栏滑出时窗口能立即恢复
-            ::SetWindowPos(hwnd_, HWND_TOPMOST,
-                           tbCurrent.left, tbCurrent.top,
-                           tbCurrent.right - tbCurrent.left,
-                           tbCurrent.bottom - tbCurrent.top,
-                           SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
-            return;
-        } else if (!tbIsVisible && !taskbarVisible_) {
-            // 保持边缘 1px 条可见
-            ::SetWindowPos(hwnd_, HWND_TOPMOST,
-                           tbCurrent.left, tbCurrent.top,
-                           tbCurrent.right - tbCurrent.left,
-                           tbCurrent.bottom - tbCurrent.top,
-                           SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
-            return;
-        }
-        // tbIsVisible == true && taskbarVisible_ == true: 正常显示
-    } else {
-        // 非自动隐藏模式：确保窗口可见
-        if (!taskbarVisible_) {
+    // ── 自动隐藏状态跟踪（不干预定位，仅记录状态）──
+    // 冻结模式下跳过实时状态检测
+    if (!useFrozen) {
+        if (taskbarAutoHide_) {
+            RECT tbCurrent{};
+            ::GetWindowRect(hTaskbar_, &tbCurrent);
+            const int tbSize = (info_.position == TaskbarPosition::LEFT ||
+                                info_.position == TaskbarPosition::RIGHT)
+                                   ? (tbCurrent.right - tbCurrent.left)
+                                   : (tbCurrent.bottom - tbCurrent.top);
+            constexpr int kAutoHideThreshold = 10;
+            taskbarVisible_ = (tbSize >= kAutoHideThreshold);
+        } else {
             taskbarVisible_ = true;
         }
     }
 
     RECT tbRect{};
-    ::GetWindowRect(hTaskbar_, &tbRect);
+    if (useFrozen) {
+        tbRect = s_frozenTaskbarRect_;
+    } else {
+        ::GetWindowRect(hTaskbar_, &tbRect);
+    }
+
+    // ── 帧锁定：动画期间拒绝使用中间态矩形 ──
+    // 两次采样间隔 2ms，若差异 > 5px 说明任务栏正在滑入/滑出动画中
+    // 直接回退到上次稳定值，避免歌词跳动到动画中间位置
+    // 注意：冻结模式下跳过（s_frozenTaskbarRect_ 已是稳定值）
+    if (!useFrozen && taskbarAutoHide_) {
+        RECT tbCheck{};
+        ::Sleep(2);
+        ::GetWindowRect(hTaskbar_, &tbCheck);
+        const int delta = (info_.position == TaskbarPosition::LEFT ||
+                           info_.position == TaskbarPosition::RIGHT)
+                              ? abs((tbRect.right - tbRect.left) - (tbCheck.right - tbCheck.left))
+                              : abs(tbRect.bottom - tbCheck.bottom);
+        if (delta > 5) {
+            // 动画中 → 使用上次稳定矩形
+            if (stableTaskbarRect_.right != 0) {
+                tbRect = stableTaskbarRect_;
+            }
+        } else {
+            // 稳定 → 更新缓存
+            stableTaskbarRect_ = tbRect;
+        }
+    } else {
+        stableTaskbarRect_ = tbRect;
+    }
+
     lastTaskbarRect_ = tbRect;
     const int tbWidth  = tbRect.right  - tbRect.left;
     const int tbHeight = tbRect.bottom - tbRect.top;
 
     // 枚举任务栏子窗口，找到空闲区域
+    // 冻结模式下跳过：子窗口状态不可靠
     struct ChildInfo {
         HWND  hwnd;
         RECT  rect;   // 屏幕坐标
@@ -267,7 +346,24 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
     case TaskbarPosition::BOTTOM: {
         // 底部任务栏: 歌词定位在右侧（紧靠托盘左侧），不覆盖最小化窗口区域
         int rightEdge = tbRect.right;
-        if (foundTray) rightEdge = trayRect.left;
+
+        // 冻结模式：用缓存偏移；正常模式：实时检测托盘位置
+        if (useFrozen) {
+            rightEdge -= cachedRightEdgeOffset_;
+        } else if (foundTray) {
+            rightEdge = trayRect.left;
+        }
+
+        // ── 缓存托盘偏移，动画期间复用稳定值 ──
+        const int offsetFromRight = tbRect.right - rightEdge;
+        const bool isAnimating = !useFrozen && taskbarAutoHide_ && (
+            abs(tbRect.bottom - stableTaskbarRect_.bottom) > 5 ||
+            abs(tbRect.top - stableTaskbarRect_.top) > 5);
+        if (!isAnimating && foundTray) {
+            cachedRightEdgeOffset_ = offsetFromRight;
+        } else if (isAnimating) {
+            rightEdge = tbRect.right - cachedRightEdgeOffset_;
+        }
 
         // 歌词窗口最大宽度
         const int maxLyricWidth = ::MulDiv(
@@ -281,7 +377,7 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
         w = std::min(maxLyricWidth, std::max(availableWidth, constants::MIN_LYRIC_AVAILABLE_WIDTH));
         x = rightEdge - w + dragOffsetX_;
         y = tbRect.top + dragOffsetY_;
-        h = tbHeight;
+        h = tbHeight;   // 歌词高度填满任务栏
         break;
     }
     case TaskbarPosition::TOP: {
@@ -374,25 +470,15 @@ void TaskbarWindow::PositionLyricsInTaskbar() {
         ::OutputDebugStringW(dbg);
     }
 
-    // 使用屏幕坐标定位独立窗口
+    // owned window 天然在 owner (任务栏) 之上，用 HWND_TOP 保持此关系
     ::SetWindowPos(
-        hwnd_, HWND_TOPMOST,
+        hwnd_, HWND_TOP,
         x, y, w, h,
         SWP_NOACTIVATE | SWP_SHOWWINDOW | SWP_FRAMECHANGED);
 }
 
 void TaskbarWindow::CheckResize() {
     if (!hTaskbar_) return;
-
-    // 定期强制恢复 TOPMOST Z-order
-    // 任务栏(Shell_TrayWnd)是系统级 TOPMOST 窗口，点击任务栏按钮/展开托盘时
-    // Windows 会将其提升到普通 TOPMOST 窗口之上，仅靠 WM_ACTIVATE 恢复存在时序竞争
-    ++topmostFrameCounter_;
-    if (topmostFrameCounter_ >= kTopmostRestoreInterval) {
-        topmostFrameCounter_ = 0;
-        ::SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
-                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
-    }
 
     RECT tb{};
     ::GetWindowRect(hTaskbar_, &tb);
@@ -809,13 +895,6 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         }
         return 0;
     }
-    case WM_ACTIVATE: {
-        // 始终恢复 TOPMOST：点击任务栏/托盘时窗口会收到 WA_INACTIVE
-        // 若不恢复，任务栏等系统窗口可能将歌词窗口覆盖到下方
-        ::SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
-        return 0;
-    }
     case WM_DPICHANGED: {
         // DPI 变化：旧偏移量基于旧 DPI 的像素值，直接复用会导致窗口飞出屏幕
         self->dragOffsetX_ = 0;
@@ -824,13 +903,11 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_SETTINGCHANGE: {
-        // SPI_SETWORKAREA: 分辨率/缩放/多显示器/自动隐藏任务栏滑出时发送
-        // SPI_SETNONCLIENTMETRICS: 系统字体/边框大小变更
-        // 注意：自动隐藏模式下按 Win 键也会触发 SPI_SETWORKAREA，
-        // 不应因此重置拖动偏移。仅当任务栏位置/方向真正变化时才重置，
-        // 该逻辑已在 PositionLyricsInTaskbar 的 DetectTaskbarInfo 中处理。
+        // SPI_SETWORKAREA: 分辨率/缩放/多显示器/自动隐藏任务栏/Start Menu 弹出时发送
+        // 先交给 DefWindowProc 让系统处理工作区变化，再立即重新定位覆盖系统调整
         if (wParam == SPI_SETWORKAREA || wParam == SPI_SETNONCLIENTMETRICS) {
-            self->PositionLyricsInTaskbar();
+            ::DefWindowProcW(hwnd, msg, wParam, lParam);
+            if (self) self->PositionLyricsInTaskbar();
         }
         return 0;
     }
@@ -845,6 +922,26 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         ::PostQuitMessage(0);
         return 0;
     }
+    case WM_TIMER:
+        if (wParam == 2 && self) {
+            // SetWinEventHook → 16ms 延迟 → 此时 DWM 已稳定 → 正确定位
+            ::KillTimer(hwnd, 2);
+            self->PositionLyricsInTaskbar();
+        } else if (wParam == 3) {
+            // Start Menu 关闭 300ms 后解锁，Explorer Rect 已恢复
+            ::KillTimer(hwnd, 3);
+            TaskbarWindow::s_shellInteractionLocked_ = false;
+            if (self) self->PositionLyricsInTaskbar();
+        }
+        return 0;
+    case TaskbarWindow::WM_DELAYED_REPOSITION:
+        // SetWinEventHook 通知：任务栏位置已变更
+        // 延迟 16ms（一帧）等待 DWM 稳定后定位
+        if (self) {
+            ::KillTimer(hwnd, 2);
+            ::SetTimer(hwnd, 2, 16, nullptr);
+        }
+        return 0;
     default:
         break;
     }
