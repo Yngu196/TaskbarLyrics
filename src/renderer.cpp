@@ -44,7 +44,7 @@ TaskbarRenderer::~TaskbarRenderer() {
 D2D1_COLOR_F TaskbarRenderer::ParseColor(const std::string& hex, float alpha) {
     if (hex.size() == 7 && hex[0] == '#') {
         unsigned int r = 0, g = 0, b = 0;
-        if (std::sscanf(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
+        if (sscanf_s(hex.c_str() + 1, "%02x%02x%02x", &r, &g, &b) == 3) {
             return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, alpha);
         }
     }
@@ -128,7 +128,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            std::max<FLOAT>(8.0f, settings_.cardCurrentFontSize),
+            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeCurrent)),
             L"zh-CN",
             cardCurrentFormat_.GetAddressOf());
         if (cardCurrentFormat_) {
@@ -141,7 +141,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            std::max<FLOAT>(8.0f, settings_.cardNextFontSize),
+            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeNext)),
             L"zh-CN",
             cardNextFormat_.GetAddressOf());
         if (cardNextFormat_) {
@@ -153,7 +153,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
 
     if (renderTarget_) {
         const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
-        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, settings_.normalOpacity);
+        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
         renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
@@ -198,7 +198,7 @@ void TaskbarRenderer::CreateRenderTarget() {
     }
 }
 
-void TaskbarRenderer::ApplySettings(const RendererSettings& s) {
+void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
     settings_ = s;
     if (initialized_) {
         textFormat_.Reset();
@@ -217,7 +217,7 @@ void TaskbarRenderer::Shutdown() {
     cardCurrentBrush_.Reset();
     d2dCoverBitmap_.Reset();
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
-    delete pendingCoverFile_.exchange(nullptr);     // 清除待消费的临时文件
+    delete pendingCoverData_.exchange(nullptr);     // 清除待消费的内存数据
     cardNextFormat_.Reset();
     cardCurrentFormat_.Reset();
     translationBrush_.Reset();
@@ -246,7 +246,7 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
         cardCurrentBrush_.Reset();
         cardNextBrush_.Reset();
         const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
-        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, settings_.normalOpacity);
+        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
         renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
@@ -303,73 +303,69 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
 
-    // 水平偏移量（像素）：支持垂直模式下的自定义内边距
     const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
     const float availableWidth = static_cast<FLOAT>(width_) - paddingX * 2.0f;
 
-    // 布局区域（用于文本度量）
     D2D1_RECT_F layoutRect = D2D1::RectF(
         paddingX, 0.0f, static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_));
 
-    // 获取文本度量
-    Microsoft::WRL::ComPtr<IDWriteTextLayout> fullLayout;
-    bool hasLayout = false;
+    // ── 缓存文本布局：仅在歌词内容变化时重建 CreateTextLayout ──
+    bool layoutValid = false;
     DWRITE_TEXT_METRICS metrics{};
-    if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
-            text.c_str(), length, textFormat_.Get(),
-            layoutRect.right - layoutRect.left, static_cast<FLOAT>(height_),
-            fullLayout.GetAddressOf()))) {
-        if (SUCCEEDED(fullLayout->GetMetrics(&metrics))) {
-            hasLayout = true;
+    if (cachedLayout_ && text == cachedKaraokeText_) {
+        layoutValid = true;
+    } else {
+        // 文本变化 → 重建布局并缓存
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> newLayout;
+        if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
+                text.c_str(), length, textFormat_.Get(),
+                layoutRect.right - layoutRect.left, static_cast<FLOAT>(height_),
+                newLayout.GetAddressOf()))) {
+            DWRITE_TEXT_METRICS m{};
+            if (SUCCEEDED(newLayout->GetMetrics(&m))) {
+                cachedLayout_ = newLayout;
+                cachedKaraokeText_ = text;
+                cachedTextWidth_ = m.width;
+                layoutValid = true;
+            }
         }
     }
 
-    const float textWidth = hasLayout ? metrics.width : 0.0f;
+    const float textWidth = layoutValid ? cachedTextWidth_ : 0.0f;
 
     // ── 判断是否需要跑马灯滚动 ──
-    // 只要文本超宽且跑马灯状态机已激活（非Idle），就始终使用滚动模式绘制，
-    // 避免 scrollOffset 从 0 跳变到 > 0 时产生 居中→左对齐 的视觉闪烁。
-    const bool needsMarquee = (hasLayout && textWidth > availableWidth + 1.0f
+    const bool needsMarquee = (layoutValid && textWidth > availableWidth + 1.0f
                                && marqueeState_ != MarqueeState::Idle);
 
     if (needsMarquee) {
-        // ═══════ 滚动模式：用 DrawTextLayout + 精确坐标 ═══════
-        // 将布局改为左对齐，避免 CENTER 对齐导致的位置偏差
-        fullLayout->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-
-        // 滚动模式：文本起始位置紧贴左侧内边距（paddingX），
-        // 随 scrollOffset 增大向左偏移，从而逐步露出右侧被截断的内容。
-        // scrollOffset==0 时第一个字在最左侧，只有右侧被截断（符合从左到右的高亮方向）。
+        cachedLayout_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         const float textLeft = paddingX - scrollOffset;
 
-        // 用 DrawTextLayout + Point2F 精确定位，完全绕过 DrawTextW 的自动对齐
         renderTarget_->DrawTextLayout(
-            D2D1::Point2F(textLeft, 0.0f), fullLayout.Get(), normalBrush_.Get());
+            D2D1::Point2F(textLeft, 0.0f), cachedLayout_.Get(), normalBrush_.Get());
 
-        if (enableKaraoke && progress > 0.0 && hasLayout) {
+        if (enableKaraoke && progress > 0.0) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth > 0.0f) {
-                // 高亮裁剪区域：从 textLeft 开始，宽度为 highlightWidth
                 D2D1_RECT_F clipRect = D2D1::RectF(
                     textLeft, 0.0f,
                     textLeft + highlightWidth,
                     static_cast<FLOAT>(height_));
                 renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 renderTarget_->DrawTextLayout(
-                    D2D1::Point2F(textLeft, 0.0f), fullLayout.Get(), highlightBrush_.Get());
+                    D2D1::Point2F(textLeft, 0.0f), cachedLayout_.Get(), highlightBrush_.Get());
                 renderTarget_->PopAxisAlignedClip();
             }
         }
     } else {
-        // ═══════ 非滚动模式：居中显示（原有逻辑）═══════
+        // ═══════ 非滚动模式：居中显示 ═══════
         renderTarget_->DrawTextW(
             text.c_str(), length, textFormat_.Get(), layoutRect, normalBrush_.Get());
 
-        if (enableKaraoke && progress > 0.0 && hasLayout) {
+        if (enableKaraoke && progress > 0.0 && layoutValid) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth <= 0.0f) return;
 
-            // 非滚动模式下，文本在 layoutRect 内居中
             const float centeredLeft = paddingX + (availableWidth - textWidth) / 2.0f;
             D2D1_RECT_F clipRect = D2D1::RectF(
                 centeredLeft, 0.0f,
@@ -663,19 +659,18 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float radius = constants::CARD_COVER_RADIUS_DP * dpiScale;
 
-    // ═════ 异步下载封面图（仅下载，不做 D2D 操作） ═════
-    // URL 变更时启动后台线程下载到临时文件（不阻塞渲染）
-    // 后台线程只负责：URLDownloadToFile → 保存文件路径
-    // 渲染线程负责：WIC 解码 → D2D 位图创建（必须在 renderTarget_ 同一线程）
+    // ═════ 异步下载封面图到内存（无磁盘 I/O） ═════
+    // URL 变更时启动后台线程下载到 std::vector<uint8_t>，通过 atomic swap 交给渲染线程
     if (!url.empty() && url != cachedCoverUrl_ &&
         !coverLoadInProgress_.load(std::memory_order_relaxed)) {
         cachedCoverUrl_ = url;
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
         d2dCoverBitmap_.Reset();       // 清除旧位图，避免显示过期封面
-        delete pendingCoverFile_.exchange(nullptr);     // 清除旧的待消费文件
+        delete pendingCoverData_.exchange(nullptr);     // 清除旧的待消费数据
 
         std::string targetUrl = url;
         std::thread([this, targetUrl]() {
+            // 下载到临时文件，然后读入内存立即删除（避免磁盘持久化）
             wchar_t tempPath[MAX_PATH] = {0};
             ::GetTempPathW(MAX_PATH, tempPath);
             wchar_t tempFile[MAX_PATH] = {0};
@@ -685,41 +680,52 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
             HRESULT hr = ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, nullptr);
 
             if (SUCCEEDED(hr)) {
-                // 下载成功：通过 atomic swap 将临时文件路径交给渲染线程，
-                // 避免 std::string 本身的数据竞争。若存在未被消费的旧路径则一并清理。
-                std::wstring ws(tempFile);
-                auto* owned = new std::string(ws.begin(), ws.end());
-                auto* old = pendingCoverFile_.exchange(owned, std::memory_order_release);
-                delete old;
+                // 读入内存
+                HANDLE hFile = ::CreateFileW(tempFile, GENERIC_READ, FILE_SHARE_READ,
+                                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (hFile != INVALID_HANDLE_VALUE) {
+                    DWORD fileSize = ::GetFileSize(hFile, nullptr);
+                    if (fileSize > 0 && fileSize < 8 * 1024 * 1024) {  // 拒绝 > 8MB 的图片
+                        auto* data = new std::vector<uint8_t>(fileSize);
+                        DWORD bytesRead = 0;
+                        if (::ReadFile(hFile, data->data(), fileSize, &bytesRead, nullptr) && bytesRead == fileSize) {
+                            auto* old = pendingCoverData_.exchange(data, std::memory_order_release);
+                            delete old;
+                        } else {
+                            delete data;
+                        }
+                    }
+                    ::CloseHandle(hFile);
+                }
+                ::DeleteFileW(tempFile);
             } else {
-                // 下载失败：删除空文件
                 ::DeleteFileW(tempFile);
             }
 
             coverLoadInProgress_.store(false, std::memory_order_release);
-            if (debugLog_) {
-                std::wstring ws(tempFile);
-                std::string tempPathUtf8(ws.begin(), ws.end());
-                Log("[COVER] Download %s: %s, url='%s'\n",
-                    SUCCEEDED(hr) ? "OK" : "FAIL",
-                    SUCCEEDED(hr) ? tempPathUtf8.c_str() : "error",
-                    targetUrl.substr(0, 60).c_str());
-            }
+            if (debugLog_) Log("[COVER] Download %s, url='%.60s'\n",
+                SUCCEEDED(hr) ? "OK" : "FAIL", targetUrl.c_str());
         }).detach();
     }
 
-    // ═════ 消费后台下载结果：在渲染线程创建 D2D 位图 ═════
-    // 使用像素数据直接创建 D2D Bitmap（绕过 CreateBitmapFromWicBitmap，
-    // 避免 D2DERR_WRONG_RESOURCE_DOMAIN 跨域问题）
-    auto* pendingRaw = pendingCoverFile_.exchange(nullptr, std::memory_order_acquire);
+    // ═════ 消费后台下载结果：从内存直接解码 ═════
+    auto* pendingRaw = pendingCoverData_.exchange(nullptr, std::memory_order_acquire);
     if (pendingRaw) {
-        std::string pendingPath = std::move(*pendingRaw);
-        delete pendingRaw;
+        std::unique_ptr<std::vector<uint8_t>> data(pendingRaw);
+
+        // 通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
+        Microsoft::WRL::ComPtr<IWICStream> stream;
+        HRESULT hr = wicFactory_->CreateStream(stream.GetAddressOf());
+        if (SUCCEEDED(hr)) {
+            hr = stream->InitializeFromMemory(data->data(), static_cast<DWORD>(data->size()));
+        }
+
         Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;
-        HRESULT hr = wicFactory_->CreateDecoderFromFilename(
-            std::wstring(pendingPath.begin(), pendingPath.end()).c_str(),
-            nullptr, GENERIC_READ, WICDecodeMetadataCacheOnLoad,
-            decoder.GetAddressOf());
+        if (SUCCEEDED(hr)) {
+            hr = wicFactory_->CreateDecoderFromStream(
+                stream.Get(), nullptr, WICDecodeMetadataCacheOnLoad,
+                decoder.GetAddressOf());
+        }
 
         if (SUCCEEDED(hr)) {
             Microsoft::WRL::ComPtr<IWICBitmapFrameDecode> frame;
@@ -793,11 +799,6 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
                     }
                 }
             }
-        }
-
-        // 无论成功与否都清理临时文件（避免残留）
-        if (!pendingPath.empty()) {
-            ::DeleteFileW(std::wstring(pendingPath.begin(), pendingPath.end()).c_str());
         }
     }
 

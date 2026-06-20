@@ -38,6 +38,10 @@ struct AppearanceConfig {
     int         marqueeDelayMs{2000};          // 歌词显示后延迟多久开始滚动（毫秒）
     int         marqueePauseMs{1000};          // 滚动到端点后暂停时间（毫秒）
     float       marqueeSpeedPxPerSec{40.0f};   // 滚动速度（像素/秒）
+
+    // 卡片模式布局参数（供渲染器使用）
+    int         cardCoverSize{34};             // 封面尺寸 (dp, 会按 DPI 缩放)
+    int         cardGap{8};                    // 封面与文字间距 (dp)
 };
 
 struct AdvancedConfig {

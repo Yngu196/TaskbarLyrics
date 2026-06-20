@@ -17,7 +17,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
     add_compile_options(/W4 /permissive- /utf-8 /EHsc)
     add_compile_options(/await /winrt)  # C++/WinRT 支持 (SMTC API 需要)
-    add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS)
+    add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE)
     set(CMAKE_WIN32_EXECUTABLE ON)
 endif()
 
@@ -241,6 +241,9 @@ set(SOURCES
     src/d2d_settings_window.cpp
     src/lyrics_parser.cpp
     src/taskbar_window.cpp
+    src/taskbar_embedder.cpp
+    src/taskbar_geometry.cpp
+    src/fullscreen_detector.cpp
     src/renderer.cpp
     src/config.cpp
     src/tray_icon.cpp
@@ -261,6 +264,9 @@ set(HEADERS
     src/d2d_settings_window.h
     src/lyrics_parser.h
     src/taskbar_window.h
+    src/taskbar_embedder.h
+    src/taskbar_geometry.h
+    src/fullscreen_detector.h
     src/renderer.h
     src/config.h
     src/tray_icon.h

@@ -169,9 +169,9 @@ void HttpServer::ServerLoop(int port) {
         return;
     }
 
-    // 允许端口复用（方便重启）
+    // 独占端口，防止被其他进程静默占用
     int opt = 1;
-    setsockopt(listenSock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&opt), sizeof(opt));
+    setsockopt(listenSock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&opt), sizeof(opt));
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
@@ -179,7 +179,10 @@ void HttpServer::ServerLoop(int port) {
     addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
     if (bind(listenSock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == SOCKET_ERROR) {
-        Log("[HTTP] bind failed on port %d: %d\n", port, WSAGetLastError());
+        int err = WSAGetLastError();
+        Log("[HTTP] bind failed on port %d: WSA error %d. "
+            "Port may be occupied by another process. Try closing the other process or change httpServerPort in config.\n",
+            port, err);
         closesocket(listenSock);
         WSACleanup();
         return;

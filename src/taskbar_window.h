@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: GPL-2.0
-// taskbar_window.h - 任务栏嵌入窗口管理
+// taskbar_window.h - 任务栏嵌入窗口管理（门面类）
 //
-// 职责:
-//   - 查找 Shell_TrayWnd
-//   - 创建作为其子窗口的 Layered Window
-//   - 监听任务栏变化并自适应调整位置 / 尺寸
-//   - 处理鼠标悬停/离开事件，显示控制按钮
+// 职责: 组合以下子模块，保持外部接口不变
+//   - taskbar_embedder:   窗口创建/销毁/显隐/SetWindowPos 定位
+//   - taskbar_geometry:   任务栏尺寸/位置/DPI/AutoHide 检测、UIA 子窗口枚举
+//   - fullscreen_detector: 全屏检测 + 防抖
+//
+// A1 拆分重构
 //
 #pragma once
 
+#include "fullscreen_detector.h"
+#include "taskbar_embedder.h"
+#include "taskbar_geometry.h"
 #include "lyrics_data.h"
 
 #include <windows.h>
-#include <UIAutomation.h>
 
 #include <chrono>
 #include <cstdint>
@@ -21,21 +24,9 @@
 
 namespace moekoe {
 
-// 任务栏方位
-enum class TaskbarPosition {
-    BOTTOM,
-    TOP,
-    LEFT,
-    RIGHT,
-    UNKNOWN,
-};
-
-struct TaskbarInfo {
-    RECT             rect{0, 0, 0, 0};
-    TaskbarPosition  position{TaskbarPosition::UNKNOWN};
-    UINT             dpi{96};
-    bool             autoHide{false};    // 任务栏是否开启自动隐藏
-};
+// 类型别名：TaskbarPosition / TaskbarInfo 由 taskbar_geometry.h 统一定义
+using TaskbarPosition = moekoe::TaskbarPosition;
+using TaskbarInfo     = moekoe::TaskbarInfo;
 
 class TaskbarWindow {
 public:
@@ -44,6 +35,11 @@ public:
 
     TaskbarWindow(const TaskbarWindow&) = delete;
     TaskbarWindow& operator=(const TaskbarWindow&) = delete;
+
+    // ── 子模块访问（供需要深入控制的外部代码使用）──
+    FullscreenDetector& Fullscreen() { return fullscreenDetector_; }
+    TaskbarGeometry&    Geometry()   { return geometry_; }
+    TaskbarEmbedder&    Embedder()   { return embedder_; }
 
     // 创建嵌入任务栏内部的歌词窗口
     //   hInstance : 当前进程实例
@@ -130,7 +126,6 @@ public:
     static HWINEVENTHOOK s_foregroundHook_;      // Win11 Start Menu 前台检测
     static bool          s_lockedByStartMenuFg_; // 前台 Hook 设置的锁（与 MENUPOPUPSTART 区分来源）
     static TaskbarWindow* s_instance_;            // 指向唯一实例，供静态回调访问实例状态
-    static bool          s_forceDebounceReset_;   // 告知 main.cpp 重置全屏防抖计数器
 
     friend void CALLBACK ShellMenuWinEventProc(HWINEVENTHOOK, DWORD event, HWND,
                                                LONG, LONG, DWORD, DWORD);
@@ -141,26 +136,11 @@ private:
     // 窗口过程(静态 + 实例)
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 
-    // 内部
+    // ═══ 内部定位逻辑 ═══
     void DetectTaskbarInfo();
     void PositionLyricsInTaskbar();
     HoverButton HitTestButton(int x, int y) const;
-
-    /// 拖动松开后检测是否与其他任务栏子窗口重叠，若重叠则弹到最近的空闲位置
     void SnapToEmptySpace();
-
-    // UI Automation: 初始化/清理 IUIAutomation 实例
-    void InitUIAutomation();
-    void CleanupUIAutomation();
-
-    /// 使用 UIA 枚举 Shell_TrayWnd 子窗口，获取关键区域的屏幕矩形。
-    /// 替代 EnumChildWindows + GetWindowRect，从根本上解决 Win 键导致
-    /// Explorer 内部临时脏写（right 膨胀）造成的歌词偏移问题。
-    /// @return true 表示 UIA 枚举成功，false 表示 UIA 不可用（需降级）
-    bool GetChildRectsByUIA(RECT& taskListRect, bool& foundTaskList,
-                            RECT& trayRect,    bool& foundTray,
-                            RECT& rebarRect,   bool& foundRebar,
-                            int   tbWidth);
 
     // 状态
     HINSTANCE     hInstance_{nullptr};
@@ -191,8 +171,10 @@ private:
     ButtonCallback onButtonClicked_;
     HoverChangedCallback onHoverChanged_;
 
-    // UI Automation
-    IUIAutomation* uia_{nullptr};             // UIA 实例，用于获取任务栏子窗口几何信息
+    // ── A1 子模块：窗口嵌入 / 几何检测 / 全屏检测 ──
+    FullscreenDetector fullscreenDetector_;
+    TaskbarGeometry    geometry_;
+    TaskbarEmbedder    embedder_;
 
 };
 

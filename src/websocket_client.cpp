@@ -144,6 +144,17 @@ LyricsData WebSocketClient::ParseKrcString(const std::string& krcText) {
             if (pos < content.size()) {
                 ch = content.substr(pos, (nextOpen == std::string::npos) ? std::string::npos : nextOpen - pos);
                 if (!ch.empty()) {
+                    // 防止恶意 KRC 超大 timings 数组耗尽内存
+                    if (lyricLine.characters.size() >= constants::MAX_CHARS_PER_LINE) {
+                        if (lyricLine.characters.size() == constants::MAX_CHARS_PER_LINE) {
+                            Log("[PARSER] KRC timings array reached MAX_CHARS_PER_LINE (%d), truncating\n",
+                                constants::MAX_CHARS_PER_LINE);
+                        }
+                        // 仍然累积文字以便正确渲染，但不再增加时间轴
+                        fullText += ch;
+                        pos = (nextOpen == std::string::npos) ? content.size() : nextOpen;
+                        continue;
+                    }
                     CharacterTiming ct;
                     ct.ch        = ch;
                     ct.startTime = lineStartMs + charStartMs;
@@ -163,13 +174,15 @@ LyricsData WebSocketClient::ParseKrcString(const std::string& krcText) {
             lyricLine.characters.resize(constants::MAX_CHARS_PER_LINE);
         }
 
-        data.lines.push_back(std::move(lyricLine));
-        ++parsedLines;
-
         // 限制歌词总行数，防止内存耗尽
         if (data.lines.size() >= constants::MAX_LYRIC_LINES) {
+            Log("[PARSER] KRC lyrics reached MAX_LYRIC_LINES (%d), truncating\n",
+                constants::MAX_LYRIC_LINES);
             break;
         }
+
+        data.lines.push_back(std::move(lyricLine));
+        ++parsedLines;
     }
 
     data.valid = !data.lines.empty();

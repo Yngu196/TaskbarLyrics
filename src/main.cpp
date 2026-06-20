@@ -4,6 +4,7 @@
 #include "config.h"
 #include "config_dialog.h"
 #include "constants.h"
+#include "fullscreen_detector.h"
 #include "http_server.h"
 #include "logger.h"
 #include "settings_window.h"
@@ -37,8 +38,6 @@ struct AppContext {
     HINSTANCE                hInstance{nullptr};
     HWND                     hwnd{nullptr};
     bool                     running{true};
-    int                      fullscreenDebounceCnt{0};
-    bool                     lastFullscreenState{false};
 
     // RAII 管理的组件（按依赖顺序声明：先声明后析构）
     std::unique_ptr<moekoe::NativeMessagingHost> nativeHost;
@@ -69,104 +68,14 @@ std::wstring ToTooltipWide(const std::string& s) {
     return out;
 }
 
-// 检测前台窗口是否处于全屏状态
-// 判断标准：窗口矩形覆盖所在显示器（>= 显示器尺寸），且无标题栏
-bool IsForegroundFullscreen(bool debugLog) {
-    HWND fgw = ::GetForegroundWindow();
-    if (!fgw) return false;
-
-    // 排除桌面类窗口（Progman / WorkerW）
-    wchar_t cls[64] = {};
-    ::GetClassNameW(fgw, cls, 63);
-    if (wcscmp(cls, L"Progman") == 0 || wcscmp(cls, L"WorkerW") == 0 ||
-        wcscmp(cls, L"Shell_TrayWnd") == 0) {
-        return false;
-    }
-
-    // 排除本进程自己的窗口
-    DWORD pid = 0;
-    ::GetWindowThreadProcessId(fgw, &pid);
-    if (pid == ::GetCurrentProcessId()) return false;
-
-    // 获取窗口矩形
-    RECT wr{};
-    if (!::GetWindowRect(fgw, &wr)) return false;
-
-    // 获取所在显示器矩形
-    HMONITOR mon = ::MonitorFromWindow(fgw, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{};
-    mi.cbSize = sizeof(mi);
-    if (!::GetMonitorInfoW(mon, &mi)) return false;
-
-    const int monW = mi.rcMonitor.right - mi.rcMonitor.left;
-    const int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
-    const int winW = wr.right - wr.left;
-    const int winH = wr.bottom - wr.top;
-
-    // 【调试】每秒输出一次检测详情，定位检测失效原因
-    static int s_debugCounter = 0;
-    if (debugLog && ++s_debugCounter >= 60) {
-        s_debugCounter = 0;
-        LONG style = ::GetWindowLongW(fgw, GWL_STYLE);
-        LONG exStyle = ::GetWindowLongW(fgw, GWL_EXSTYLE);
-        // 将 wchar_t 类名转为 UTF-8，适配项目 Log() 系统
-        char clsUtf8[128] = {};
-        ::WideCharToMultiByte(CP_UTF8, 0, cls, -1,
-                              clsUtf8, (int)sizeof(clsUtf8), nullptr, nullptr);
-        Log("[FullscreenDetect] cls=%s pid=%lu "
-            "win=(%d,%d,%d,%d) mon=(%d,%d,%d,%d) "
-            "style=0x%08lX exStyle=0x%08lX => %s\n",
-            clsUtf8, pid,
-            wr.left, wr.top, wr.right, wr.bottom,
-            mi.rcMonitor.left, mi.rcMonitor.top,
-            mi.rcMonitor.right, mi.rcMonitor.bottom,
-            style, exStyle,
-            (winW >= monW && winH >= monH) ? "FULLSCREEN" : "normal");
-    }
-
-    // 窗口覆盖整个显示器 → 判定全屏
-    if (winW >= monW && winH >= monH) return true;
-
-    // 补充：无标题栏（WS_CAPTION）的窗口，即使尺寸略小于显示器也视为全屏
-    // （部分全屏应用使用 borderless 窗口，rect 可能稍小于显示器）
-    LONG style = ::GetWindowLongW(fgw, GWL_STYLE);
-    constexpr LONG kFullscreenExcludeStyles = WS_CAPTION | WS_THICKFRAME;
-    if (!(style & kFullscreenExcludeStyles) && winW >= monW - 8 && winH >= monH - 8) {
-        return true;
-    }
-
-    return false;
-}
-
-// 应用渲染器配置
+// 应用渲染器配置（直接传递 AppearanceConfig，无需逐字段拷贝）
 void ApplyRendererSettings(AppContext& app) {
     if (!app.renderer || !app.config) return;
-    moekoe::RendererSettings rs;
-    rs.highlightColor    = app.config->Appearance().highlightColor;
-    rs.normalColor       = app.config->Appearance().normalColor;
-    rs.normalOpacity     = static_cast<float>(app.config->Appearance().normalOpacity);
-    rs.fontFamily        = app.config->Appearance().fontFamily;
-    rs.fontSize          = app.config->Appearance().fontSize;
-    rs.enableKaraoke     = app.config->Appearance().enableKaraoke;
-    rs.enableTranslation = app.config->Appearance().enableTranslation;
-    rs.enableMarquee     = app.config->Appearance().enableMarquee;
-    rs.marqueeMode       = app.config->Appearance().marqueeMode;
-    rs.marqueeDelayMs    = app.config->Appearance().marqueeDelayMs;
-    rs.marqueePauseMs    = app.config->Appearance().marqueePauseMs;
-    rs.marqueeSpeedPxPerSec = app.config->Appearance().marqueeSpeedPxPerSec;
-
-    // 卡片模式配置
-    rs.displayMode           = app.config->Appearance().displayMode;
-    rs.cardCurrentFontSize   = static_cast<float>(app.config->Appearance().cardFontSizeCurrent);
-    rs.cardNextFontSize      = static_cast<float>(app.config->Appearance().cardFontSizeNext);
-    rs.cardCurrentColor      = app.config->Appearance().cardCurrentColor;
-    rs.cardNextColor         = app.config->Appearance().cardNextColor;
-
     Log("[CONFIG] ApplyRenderer: hl=%s nl=%s font=%s size=%d opacity=%.2f\n",
-        rs.highlightColor.c_str(), rs.normalColor.c_str(),
-        rs.fontFamily.c_str(), rs.fontSize, rs.normalOpacity);
-
-    app.renderer->ApplySettings(rs);
+        app.config->Appearance().highlightColor.c_str(), app.config->Appearance().normalColor.c_str(),
+        app.config->Appearance().fontFamily.c_str(), app.config->Appearance().fontSize,
+        app.config->Appearance().normalOpacity);
+    app.renderer->ApplySettings(app.config->Appearance());
 }
 
 // 菜单命令处理
@@ -589,41 +498,20 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             // 2. APPBAR 自动隐藏：窗口已隐藏时跳过渲染（避免 UpdateLayeredWindow 隐式显示导致闪烁）
             if (app->taskbarWindow && app->taskbarWindow->IsAutoHideHidden()) return 0;
 
-            // 2.5. 全屏检测防抖：连续 N 帧为同一状态后才切换显隐
+            // 2.5. 全屏检测防抖：由 FullscreenDetector 独立处理
             if (app->taskbarWindow && app->config && app->config->Advanced().enableFullscreenHide) {
-                static bool s_blockEntered = false;
-                if (!s_blockEntered) {
-                    s_blockEntered = true;
-                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] block entered, enableFullscreenHide=true\n");
-                }
-                const bool isFullscreen = IsForegroundFullscreen(app->config->Advanced().debugLog);
-                if (isFullscreen == app->lastFullscreenState) {
-                    if (app->fullscreenDebounceCnt < 99) app->fullscreenDebounceCnt++;
-                } else {
-                    // 状态翻转：输出日志定位频繁切换原因
-                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] state flip: %d -> %d (debounce reset)\n",
-                        (int)app->lastFullscreenState, (int)isFullscreen);
-                    app->fullscreenDebounceCnt = 0;
-                    app->lastFullscreenState = isFullscreen;
+                bool shouldHide = false;
+                if (app->taskbarWindow->Fullscreen().Update(
+                        app->config->Advanced().enableFullscreenHide,
+                        app->config->Advanced().debugLog,
+                        shouldHide)) {
+                    app->taskbarWindow->SetFullscreenHidden(shouldHide);
                 }
 
-                // 防抖阈值：~120ms（8 帧 × 15ms MIN_FRAME_INTERVAL）
-                constexpr int kDebounceThreshold = 8;
-                if (app->fullscreenDebounceCnt == kDebounceThreshold) {
-                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] debounce reached -> SetFullscreenHidden(%d)\n",
-                        (int)isFullscreen);
-                    app->taskbarWindow->SetFullscreenHidden(isFullscreen);
-                }
-
-                // Shell 交互（如 Win 键呼出开始菜单）在 ShellMenuWinEventProc 中
-                // 直接调用 SetFullscreenHidden(false) 并设置 s_forceDebounceReset_ 标志。
-                // 此处消费该标志，将防抖计数器清零且将基线设为"非全屏"，避免下一帧
-                // 全屏检测读到 isFullscreen==true 后立即触发状态翻转重新计数隐藏。
-                if (moekoe::TaskbarWindow::s_forceDebounceReset_) {
-                    moekoe::TaskbarWindow::s_forceDebounceReset_ = false;
-                    app->fullscreenDebounceCnt = 0;
-                    app->lastFullscreenState = false;
-                    if (app->config->Advanced().debugLog) Log("[FullscreenDetect] debounce reset by external trigger (shell interaction)\n");
+                // Shell 交互即时恢复：消费 forceDebounceReset 标志
+                if (app->taskbarWindow->Fullscreen().ConsumeForceDebounceReset()) {
+                    if (app->config->Advanced().debugLog)
+                        Log("[FullscreenDetect] debounce reset by external trigger (shell interaction)\n");
                 }
             }
 

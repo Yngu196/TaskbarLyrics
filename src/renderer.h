@@ -3,6 +3,7 @@
 // 完全透明背景: WIC + UpdateLayeredWindow + 逐字高亮
 #pragma once
 
+#include "config.h"
 #include "lyrics_data.h"
 
 #include <d2d1.h>
@@ -16,38 +17,6 @@
 
 namespace moekoe {
 
-struct RendererSettings {
-    std::string highlightColor{"#4CC2FF"};
-    std::string normalColor{"#333333"};
-    float       normalOpacity{0.85f};
-    std::string fontFamily{"华文细黑"};
-    int         fontSize{20};
-    bool        enableKaraoke{true};
-    bool        enableTranslation{true};
-
-    // 跑马灯（长歌词滚动）配置
-    bool        enableMarquee{true};
-    std::string marqueeMode{"bounce"};         // bounce / loop / off
-    int         marqueeDelayMs{2000};
-    int         marqueePauseMs{1000};
-    float       marqueeSpeedPxPerSec{40.0f};
-
-    // 显示模式: "karaoke" (默认) | "card" (卡片样式)
-    std::string displayMode{"karaoke"};
-
-    // 卡片模式专用字号（独立于 fontSize）
-    float       cardCurrentFontSize{18.0f};    // 当前行字号
-    float       cardNextFontSize{14.0f};       // 下一行字号
-
-    // 卡片模式专用颜色（独立于 highlightColor / normalColor）
-    std::string cardCurrentColor{"#FFFFFF"};   // 当前行文字颜色
-    std::string cardNextColor{"#AAAAAA"};      // 下一行文字颜色
-
-    // 卡片模式布局参数
-    int         cardCoverSize{34};             // 封面尺寸 (dp, 会按 DPI 缩放)
-    int         cardGap{8};                    // 封面与文字间距 (dp)
-};
-
 class TaskbarRenderer {
 public:
     TaskbarRenderer();
@@ -58,7 +27,7 @@ public:
 
     bool Initialize(HWND hwnd);
     void Shutdown();
-    void ApplySettings(const RendererSettings& s);
+    void ApplySettings(const AppearanceConfig& s);
     void Render(const RenderState& state);
     void Resize(UINT width, UINT height, UINT dpi);
 
@@ -152,7 +121,7 @@ private:
 
     RenderState lastState_;
 
-    RendererSettings settings_;
+    AppearanceConfig settings_;
 
     // ═══════════════════════════════
     // 跑马灯状态机成员
@@ -174,15 +143,23 @@ private:
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardCurrentFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardNextFormat_;
 
-    // 封面图缓存：后台线程下载到临时文件，渲染线程从文件创建 D2D 位图
+    // 封面图缓存：后台线程下载到内存，通过 atomic swap 传递给渲染线程
+    // 渲染线程通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
     Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
     std::string cachedCoverUrl_;
-    std::atomic<std::string*> pendingCoverFile_{nullptr};  // 后台线程 new，原子 swap 给渲染线程。渲染线程 delete 后置 nullptr
+    std::atomic<std::vector<uint8_t>*> pendingCoverData_{nullptr};  // 后台线程 new，原子 swap 给渲染线程。渲染线程 delete 后置 nullptr
     std::atomic<bool> coverLoadInProgress_{false};
 
     // 卡片模式专用颜色画刷
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardCurrentBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardNextBrush_;
+
+    // ═══════════════════════════════
+    // 逐字高亮渲染缓存（P1: 缓存 glyph layout，仅在歌词变化时重建）
+    // ═══════════════════════════════
+    std::wstring         cachedKaraokeText_;
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> cachedLayout_;
+    float                cachedTextWidth_{0.0f};
 
     // ═══════════════════════════════
     // 卡片模式歌词切换动画（淡入淡出 + 位移）

@@ -300,7 +300,21 @@ bool ApiEnabler::RestartMoeKoeMusic() {
         HANDLE hProc = OpenProcess(PROCESS_TERMINATE | SYNCHRONIZE, FALSE, pid);
         if (hProc) {
             TerminateProcess(hProc, 0);
-            WaitForSingleObject(hProc, 5000);  // 等待进程完全退出
+            DWORD waitResult = WaitForSingleObject(hProc, 5000);  // 等待进程完全退出
+            if (waitResult == WAIT_TIMEOUT) {
+                // 超时后检测进程是否仍存在
+                HANDLE hCheck = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+                if (hCheck) {
+                    CloseHandle(hCheck);
+                    Log("RestartMoeKoeMusic: process PID=" + std::to_string(pid) +
+                        " still alive after TerminateProcess timeout. "
+                        "Skipping restart — user must manually close MoeKoeMusic before the new API settings take effect.");
+                    CloseHandle(hProc);
+                    return false;
+                }
+                Log("RestartMoeKoeMusic: process PID=" + std::to_string(pid) +
+                    " terminated but handle not yet signaled");
+            }
             CloseHandle(hProc);
             Log("RestartMoeKoeMusic: terminated old process PID=" + std::to_string(pid));
         }
