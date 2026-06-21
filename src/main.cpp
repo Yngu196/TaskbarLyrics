@@ -508,6 +508,11 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                         app->config->Advanced().debugLog,
                         shouldHide)) {
                     app->taskbarWindow->SetFullscreenHidden(shouldHide);
+                    if (!shouldHide) {
+                        // 退出全屏恢复时重定位，确保使用用户拖动的 dragOffset 而非清零
+                        app->taskbarWindow->InvalidatePositionCache();
+                        app->taskbarWindow->Reposition();
+                    }
                 }
 
                 // Shell 交互即时恢复：消费 forceDebounceReset 标志

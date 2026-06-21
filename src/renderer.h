@@ -44,8 +44,9 @@ private:
                                           double progress,
                                           bool enableKaraoke,
                                           float scrollOffset = 0.0f,
-                                          const float* overridePaddingX = nullptr);
-    void DrawTranslatedText(const std::wstring& text, const float* overridePaddingX = nullptr);
+                                          const float* overridePaddingX = nullptr,
+                                          float opacity = 1.0f);
+    void DrawTranslatedText(const std::wstring& text, const float* overridePaddingX = nullptr, float opacity = 1.0f);
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
@@ -54,7 +55,7 @@ private:
     void RenderCardStyle(const RenderState& state);
     /// 垂直任务栏专用：堆叠式布局（封面在上，歌词在下）
     void RenderCardStyleVertical(const RenderState& state);
-    void DrawCoverArt(const std::string& url, const std::string& fallbackChar,
+    void DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                       float x, float y, float size);
     /// 绘制单行卡片模式歌词（isCurrent=true → 当前行大号亮色，false → 下一行小号灰色）
     void DrawCardLyricsSingle(const std::wstring& line,
@@ -143,6 +144,7 @@ private:
     // 卡片模式专用的 DirectWrite 文本格式（两行不同字号）
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardCurrentFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardNextFormat_;
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> cardFallbackFormat_;  // 无封面 fallback 字符
 
     // 封面图缓存：后台线程下载到内存，通过 atomic swap 传递给渲染线程
     // 渲染线程通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
@@ -160,6 +162,29 @@ private:
     // 卡片模式专用颜色画刷
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardCurrentBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardNextBrush_;
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardBackgroundBrush_;  // 卡片背景画刷（随封面主色调变化）
+
+    // 动态主题色提取（P1：封面渲染增强）
+    /// 从封面像素中提取的主色调（RGBA）。颜色被"欠饱和"处理以避免背景过于鲜艳。
+    /// 当封面位图为空时恢复为默认灰蓝色 #737380（即无封面 fallback 背景色）。
+    D2D1_COLOR_F coverThemeColor_{0.45f, 0.45f, 0.50f, 1.0f};
+
+    // ═════ P1-④: 卡片背景柔焦（小尺寸 WIC 重采样 + 位图画刷拉伸） ═════
+    /// 将封面缩放到 COVER_BLUR_SAMPLE_SIZE 后拉伸铺满卡片，
+    /// 利用 D2D 双线性插值产生柔焦效果，代替纯色背景。
+    Microsoft::WRL::ComPtr<ID2D1Bitmap>      blurredCoverBg_;
+    Microsoft::WRL::ComPtr<ID2D1BitmapBrush> blurredBgBrush_;
+    float blurredBgBitmapW_{0.0f};  // 位图宽度，用于 Stretch 计算
+
+    // ═════ P1-②: 封面 fade-in 过渡动画 ═════
+    /// 封面位图从无到有时触发 fade-in，持续 COVER_FADE_DURATION_MS 毫秒。
+    /// coverFadeAlpha_ 从 0.0f 渐变至 1.0f，作为 DrawBitmap 的不透明度参数。
+    bool    coverFadingIn_{false};
+    double  coverFadeStartTime_{0.0};
+    float   coverFadeAlpha_{1.0f};     // 默认 1.0（已淡入完成），Initialize 后首帧即可见
+
+    /// 驱动封面 fade-in 进度，返回是否处于动画中（需要持续重绘）
+    bool UpdateCoverFade();
 
     // ═══════════════════════════════
     // 逐字高亮渲染缓存（P1: 缓存 glyph layout，仅在歌词变化时重建）
@@ -192,6 +217,26 @@ private:
     /// 更新卡片模式歌词切换动画
     /// 返回是否处于动画中（需要持续重绘）
     bool UpdateCardAnim(const std::string& currentLine, const std::string& nextLine);
+
+    // ═════ P3: 歌词切换动画 + 进度弹簧（普通/卡拉OK模式）═════
+    // 解决歌词行切换时"硬切"和逐字高亮进度跳变的问题。
+
+    /// P3-①: 卡拉OK模式歌词行切换 fade 过渡状态
+    bool     lyricFadeActive_{false};
+    double   lyricFadeStartTime_{0.0};
+    std::wstring lyricFadeOldText_;   // 正在淡出的旧行文本（wstring 缓存，避免 UTF-8→wchar 每帧转换）
+    std::wstring lyricFadeOldTrans_;  // 旧行的翻译文本（仅在 fade 期间绘制）
+
+    /// P3-②: 卡拉OK进度弹簧物理状态（缓和高亮进度的抖动与跳变）
+    double   springProgress_{0.0};    // 当前显示的平滑进度值 [0, 1]
+    double   springVelocity_{0.0};    // 进度变化速率（1/s）
+    double   springLastTime_{0.0};    // 上一次物理步进的时间戳（QPC 秒）
+
+    /// P3-①: 更新歌词行切换 fade 动画。返回是否处于动画中（需持续重绘）。
+    bool UpdateLyricFade(const std::wstring& newText);
+
+    /// P3-②: 弹簧物理步进，将显示进度向目标收敛。返回是否处于运动中（需持续重绘）。
+    bool UpdateProgressSpring(double target, double now);
 
     // ═══════════════════════════════
     // 缓动函数库

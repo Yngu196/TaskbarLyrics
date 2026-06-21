@@ -28,6 +28,9 @@ struct AppearanceConfig {
     int         cardFontSizeCurrent{18};   // 当前行字号（卡片模式）
     int         cardFontSizeNext{14};      // 下一行字号（卡片模式）
 
+    // 卡片模式专用字体（空串时回落 fontFamily）
+    std::string cardFontFamily{};
+
     // 卡片模式专用颜色（独立于 highlightColor / normalColor）
     std::string cardCurrentColor{"#FFFFFF"};  // 当前行文字颜色
     std::string cardNextColor{"#AAAAAA"};     // 下一行文字颜色

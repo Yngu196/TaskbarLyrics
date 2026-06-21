@@ -5,7 +5,7 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v0.4.1-blue" alt="release" />
+  <img src="https://img.shields.io/badge/release-v0.5.0-blue" alt="release" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
 
 </p>
@@ -33,7 +33,7 @@
 
 ### 作为 MoeKoeMusic 插件（推荐）
 
-将 `moeKoe-taskbar-lyrics` 目录复制到 MoeKoeMusic 的插件目录：
+将发布的压缩包解压后复制到 MoeKoeMusic 的插件目录：
 
 ```
 MoeKoeMusic/plugins/extensions/moeKoe-taskbar-lyrics/
@@ -41,7 +41,7 @@ MoeKoeMusic/plugins/extensions/moeKoe-taskbar-lyrics/
 
 或者直接在 MoeKoeMusic 的 插件市场 安装此插件。
 
-然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，程序将随 MoeKoeMusic 自动启动/关闭。
+然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，程序将随 MoeKoeMusic 自动启动/关闭（此功能需MoeKoeMusic版本>1.6.5）。
 
 ### 独立运行
 
@@ -73,6 +73,20 @@ cmake --build --preset x64-Release
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
+
+## v0.5.0 变更
+
+### 架构重构
+
+- 拆分 TaskbarWindow 为 ShellCompanion（全屏检测 + 歌词窗口管理）+ TaskbarWindow（纯任务栏子窗口操作）
+- ShellCompanion 管理歌词 HWND 生命周期与全屏显隐逻辑，TaskbarWindow 专注 `SetParent` / `SetWindowPos` / 位置缓存
+
+新增：封面渲染增强、歌词切换动画、频谱、原生设置...
+
+修复：全屏隐藏失效、退出全屏后位置偏移、插件无法开启MoeKoeMusic的api模式、不支持垂直任务栏等问题
+
+<details>
+<summary>展开历史版本（v0.4.1 / v0.4.0）</summary>
 
 ## v0.4.1 变更
 

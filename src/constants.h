@@ -107,7 +107,11 @@ constexpr int CARD_MIN_WIDTH_BASE_DP = 180;
 constexpr int CARD_COVER_SIZE_DP = 34;
 
 /// 卡片封面圆角半径（96 DPI）
-constexpr float CARD_COVER_RADIUS_DP = 6.0f;
+constexpr float CARD_COVER_RADIUS_DP = 6.0f;   /// 封面圆角半径（DIP）
+constexpr float COVER_THEME_ALPHA = 0.18f;  /// 卡片背景主题色透明度（叠加在任务栏背景上）
+constexpr float COVER_FADE_DURATION_MS = 350.0f;  /// 封面 fade-in 动画时长（毫秒）
+constexpr int   COVER_BLUR_SAMPLE_SIZE = 32;  /// 模糊背景采样尺寸（像素，小尺寸拉伸产生柔焦）
+constexpr float COVER_BLUR_BG_ALPHA = 0.30f;  /// 模糊背景透明度
 
 /// 卡片模式文字阴影偏移 X（像素）
 constexpr float CARD_TEXT_SHADOW_OFFSET_X = 0.0f;
@@ -225,5 +229,18 @@ constexpr float SPECTRUM_BAR_GAP = 1.0f;
 
 /// 频谱条最小高度（像素）
 constexpr float SPECTRUM_BAR_MIN_HEIGHT = 2.0f;
+
+// ═══════════════════════════════════════
+// P3: 歌词切换动画 + 进度弹簧
+// ═══════════════════════════════════════
+
+/// P3-①: 歌词行切换淡入淡出时长（毫秒）。新旧行交叉 fading，EaseOut 缓出，避免逐字高亮硬切。
+constexpr float LYRIC_FADE_DURATION_MS = 200.0f;
+
+/// P3-②: 卡拉OK进度弹簧刚度（1/s²）。越高收敛越快，但过高会产生人工感。120 为适中值。
+constexpr double KARAOKE_PROGRESS_SPRING_STIFFNESS = 120.0;
+
+/// P3-②: 卡拉OK进度弹簧阻尼（1/s）。越高振荡越少。14.0 为临界阻尼略欠阻尼，产生微弱的自然回弹。
+constexpr double KARAOKE_PROGRESS_SPRING_DAMPING = 14.0;
 
 } // namespace moekoe::constants

@@ -33,6 +33,20 @@ std::wstring Utf8ToWide(const std::string& s) {
     return out;
 }
 
+/// 取 UTF-8 字符串首字符（wchar_t）。空串 / 无效 UTF-8 返回 '?'。处理多字节码点（中文等）。
+wchar_t FirstUtf8CharAsWide(const std::string& s) {
+    if (s.empty()) return L'?';
+    // 只转首字符：MultiByteToWideChar 配合 MB_ERR_INVALID_CHARS 确保取完整码点
+    int len = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), 4, nullptr, 0);
+    if (len <= 0) {
+        // 无效 UTF-8 回退单字节 → '?'
+        return L'?';
+    }
+    wchar_t ch = L'?';
+    ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, s.data(), 4, &ch, 1);
+    return ch;
+}
+
 } // namespace
 
 TaskbarRenderer::TaskbarRenderer() = default;
@@ -89,6 +103,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
         spectrumBrush_.Reset();
         cardCurrentBrush_.Reset();
         cardNextBrush_.Reset();
+        cardBackgroundBrush_.Reset();
         const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
         const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
         renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
@@ -103,6 +118,8 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
         renderTarget_->CreateSolidColorBrush(
             ParseColor(settings_.cardNextColor, 1.0f),
             cardNextBrush_.GetAddressOf());
+        coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
+        renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
     }
 
     const std::wstring family = Utf8ToWide(settings_.fontFamily);
@@ -147,8 +164,12 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             btnFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         }
         // 卡片模式文本格式（两行不同字号）
+        // 优先使用卡片专属字体 cardFontFamily，未设置时回落 fontFamily
+        const std::wstring cardFamily = settings_.cardFontFamily.empty()
+            ? family
+            : Utf8ToWide(settings_.cardFontFamily);
         dwriteFactory_->CreateTextFormat(
-            family.c_str(), nullptr,
+            cardFamily.c_str(), nullptr,
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
@@ -161,7 +182,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             cardCurrentFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         }
         dwriteFactory_->CreateTextFormat(
-            family.c_str(), nullptr,
+            cardFamily.c_str(), nullptr,
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
@@ -172,6 +193,20 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             cardNextFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
             cardNextFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             cardNextFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
+        // 卡片模式 fallback 格式：无封面时绘制歌名首字符，字号与封面区域匹配
+        dwriteFactory_->CreateTextFormat(
+            cardFamily.c_str(), nullptr,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD,
+            DWRITE_FONT_STYLE_NORMAL,
+            DWRITE_FONT_STRETCH_NORMAL,
+            (std::max)(10.0f, static_cast<FLOAT>(height_) * 0.35f),
+            L"zh-CN",
+            cardFallbackFormat_.GetAddressOf());
+        if (cardFallbackFormat_) {
+            cardFallbackFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            cardFallbackFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            cardFallbackFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         }
     }
 
@@ -245,7 +280,11 @@ void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
 void TaskbarRenderer::Shutdown() {
     cardNextBrush_.Reset();
     cardCurrentBrush_.Reset();
+    cardBackgroundBrush_.Reset();
     d2dCoverBitmap_.Reset();
+    blurredCoverBg_.Reset();
+    blurredBgBrush_.Reset();
+    blurredBgBitmapW_ = 0.0f;
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
     coverLoadInProgress_.store(false, std::memory_order_release);
     coverDownloadGen_.store(0, std::memory_order_release);  // 重置代际计数器
@@ -255,6 +294,7 @@ void TaskbarRenderer::Shutdown() {
     cachedCoverSize_ = -1.0f;
     cardNextFormat_.Reset();
     cardCurrentFormat_.Reset();
+    cardFallbackFormat_.Reset();
     translationBrush_.Reset();
     highlightBrush_.Reset();
     normalBrush_.Reset();
@@ -296,6 +336,8 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
         renderTarget_->CreateSolidColorBrush(
             ParseColor(settings_.cardNextColor, 1.0f),
             cardNextBrush_.GetAddressOf());
+        coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
+        renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
     }
     // 重建按钮文字格式（高度可能变化）
     btnFormat_.Reset();
@@ -333,7 +375,8 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       double progress,
                                                       bool enableKaraoke,
                                                       float scrollOffset,
-                                                      const float* overridePaddingX) {
+                                                      const float* overridePaddingX,
+                                                      float opacity) {
     if (!renderTarget_ || !textFormat_ || text.empty() ||
         !highlightBrush_ || !normalBrush_) {
         return;
@@ -375,6 +418,24 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const bool needsMarquee = (layoutValid && textWidth > availableWidth + 1.0f
                                && marqueeState_ != MarqueeState::Idle);
 
+    // P3-①: 传入 opacity<1 时为歌词行切换 fade 过渡，用 PushLayer 整体做透明度
+    Microsoft::WRL::ComPtr<ID2D1Layer> fadeLayer;
+    bool layerPushed = false;
+    if (opacity < 1.0f) {
+        // 创建匿名 layer（不指定 geometry → 覆盖整个 render target 区域）
+        HRESULT hrLayer = renderTarget_->CreateLayer(nullptr, fadeLayer.GetAddressOf());
+        if (SUCCEEDED(hrLayer) && fadeLayer) {
+            D2D1_LAYER_PARAMETERS layerParams = D2D1::LayerParameters(
+                D2D1::InfiniteRect(), nullptr,
+                D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                D2D1::IdentityMatrix(),
+                opacity, nullptr,
+                D2D1_LAYER_OPTIONS_NONE);
+            renderTarget_->PushLayer(layerParams, fadeLayer.Get());
+            layerPushed = true;
+        }
+    }
+
     if (needsMarquee) {
         cachedLayout_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         const float textLeft = paddingX - scrollOffset;
@@ -402,26 +463,35 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
         if (enableKaraoke && progress > 0.0 && layoutValid) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
-            if (highlightWidth <= 0.0f) return;
-
-            const float centeredLeft = paddingX + (availableWidth - textWidth) / 2.0f;
-            D2D1_RECT_F clipRect = D2D1::RectF(
-                centeredLeft, 0.0f,
-                centeredLeft + highlightWidth,
-                static_cast<FLOAT>(height_));
-            renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-            renderTarget_->DrawTextW(
-                text.c_str(), length, textFormat_.Get(), layoutRect, highlightBrush_.Get());
-            renderTarget_->PopAxisAlignedClip();
+            if (highlightWidth > 0.0f) {
+                const float centeredLeft = paddingX + (availableWidth - textWidth) / 2.0f;
+                D2D1_RECT_F clipRect = D2D1::RectF(
+                    centeredLeft, 0.0f,
+                    centeredLeft + highlightWidth,
+                    static_cast<FLOAT>(height_));
+                renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                renderTarget_->DrawTextW(
+                    text.c_str(), length, textFormat_.Get(), layoutRect, highlightBrush_.Get());
+                renderTarget_->PopAxisAlignedClip();
+            }
         }
+    }
+
+    if (layerPushed) {
+        renderTarget_->PopLayer();
     }
 }
 
-void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* overridePaddingX) {
+void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* overridePaddingX, float opacity) {
     if (!translationFormat_ || !translationBrush_ || text.empty()) return;
 
     // 水平偏移量（像素）：支持垂直模式下的自定义内边距
     const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
+
+    // P3-①: 歌词行切换 fade 过渡期间，旧行翻译通过 opacity<1 渐隐
+    if (opacity < 1.0f) {
+        translationBrush_->SetOpacity(opacity);
+    }
     
     D2D1_RECT_F layout = D2D1::RectF(
         paddingX, static_cast<FLOAT>(height_) * 0.55f,
@@ -430,6 +500,10 @@ void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* 
         text.c_str(), static_cast<UINT32>(text.size()),
         translationFormat_.Get(),
         layout, translationBrush_.Get());
+
+    if (opacity < 1.0f) {
+        translationBrush_->SetOpacity(1.0f); // 恢复默认
+    }
 }
 
 void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
@@ -532,10 +606,30 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
     const float paddingX = constants::TEXT_PADDING_X;
 
+    // ═════ P1-①+P1-④: 卡片背景（柔焦封面 + 主题色叠加） ═════
+    if (cardBackgroundBrush_) {
+        D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
+        D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
+            constants::CARD_COVER_RADIUS_DP * dpiScale,
+            constants::CARD_COVER_RADIUS_DP * dpiScale);
+        // P1-④: 先绘制柔焦封面背景（若有）
+        if (blurredBgBrush_ && blurredBgBitmapW_ > 0.0f) {
+            float sx = static_cast<float>(width_) / blurredBgBitmapW_;
+            float sy = static_cast<float>(height_) / blurredBgBitmapW_;
+            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Scale(sx, sy));
+            blurredBgBrush_->SetOpacity(constants::COVER_BLUR_BG_ALPHA);
+            renderTarget_->FillRoundedRectangle(bgRR, blurredBgBrush_.Get());
+            blurredBgBrush_->SetOpacity(1.0f);
+            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Identity());
+        }
+        // P1-①: 再叠加半透明主题色调（统一卡片氛围）
+        cardBackgroundBrush_->SetOpacity(constants::COVER_THEME_ALPHA);
+        renderTarget_->FillRoundedRectangle(bgRR, cardBackgroundBrush_.Get());
+        cardBackgroundBrush_->SetOpacity(1.0f);
+    }
+
     // ═════ 1. 绘制封面（左侧） ═════
-    std::string fallback = state.songName.empty()
-        ? "?"
-        : state.songName.substr(0, 1);
+    wchar_t fallback = FirstUtf8CharAsWide(state.songName);
     DrawCoverArt(state.coverArtUrl, fallback, paddingX,
                  (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
 
@@ -631,8 +725,29 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
         static_cast<float>(settings_.cardCoverSize) * dpiScale * 0.8f,
         w - paddingX * 2.0f);
 
+    // ═════ P1-①+P1-④: 绘制卡片背景（柔焦封面 + 主题色叠加） ═════
+    if (cardBackgroundBrush_) {
+        D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, w, h);
+        D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
+            constants::CARD_COVER_RADIUS_DP * dpiScale,
+            constants::CARD_COVER_RADIUS_DP * dpiScale);
+        // P1-④: 先绘制柔焦封面背景（若有）
+        if (blurredBgBrush_ && blurredBgBitmapW_ > 0.0f) {
+            float sx = w / blurredBgBitmapW_;
+            float sy = h / blurredBgBitmapW_;
+            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Scale(sx, sy));
+            blurredBgBrush_->SetOpacity(constants::COVER_BLUR_BG_ALPHA);
+            renderTarget_->FillRoundedRectangle(bgRR, blurredBgBrush_.Get());
+            blurredBgBrush_->SetOpacity(1.0f);
+            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Identity());
+        }
+        cardBackgroundBrush_->SetOpacity(constants::COVER_THEME_ALPHA);
+        renderTarget_->FillRoundedRectangle(bgRR, cardBackgroundBrush_.Get());
+        cardBackgroundBrush_->SetOpacity(1.0f);
+    }
+
     // ═════ 1. 封面（居中顶部） ═════
-    std::string fallback = state.songName.empty() ? "?" : state.songName.substr(0, 1);
+    wchar_t fallback = FirstUtf8CharAsWide(state.songName);
     const float coverX = (w - coverSize) / 2.0f;
     const float coverY = paddingX;
     DrawCoverArt(state.coverArtUrl, fallback, coverX, coverY, coverSize);
@@ -690,7 +805,7 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
     }
 }
 
-void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fallbackChar,
+void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                                     float x, float y, float size) {
     if (!renderTarget_ || size <= 0.0f) return;
 
@@ -704,6 +819,8 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
     if (!url.empty() && url != cachedCoverUrl_) {
         cachedCoverUrl_ = url;
         d2dCoverBitmap_.Reset();       // 立即清除旧位图，切歌瞬间显示兜底符号
+        coverFadingIn_ = false;        // 重置 fade-in 状态，下次封面到位时重新触发
+        coverFadeAlpha_ = 1.0f;
         delete pendingCoverData_.exchange(nullptr);     // 清除旧的待消费数据
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
 
@@ -840,8 +957,119 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
                                         stride,
                                         &bp,
                                         d2dCoverBitmap_.GetAddressOf());
+
+                                    // ═════ P1-①: 从封面像素提取主色调（色相桶投票） ═════
+                                    // 缩略采样：每 4px 一个样本，减少 CPU 开销。
+                                    // 仅对不透明的像素参与投票（alpha < 128 的透明像素跳过）。
+                                    // 结果经过欠饱和处理后存入 coverThemeColor_，供卡片背景使用。
+                                    {
+                                        const int step = 4;
+                                        struct HueBucket { float r, g, b, weight; int count; } buckets[12] = {};
+                                        for (UINT py = 0; py < h; py += step) {
+                                            const BYTE* row = pixels.data() + py * stride;
+                                            for (UINT px = 0; px < w; px += step) {
+                                                const BYTE* p = row + px * 4;
+                                                if (p[3] < 128) continue;  // 跳过透明像素
+                                                float rf = p[2] / 255.0f;  // B=0, G=1, R=2 (BGRA)
+                                                float gf = p[1] / 255.0f;
+                                                float bf = p[0] / 255.0f;
+                                                float maxC = std::max({rf, gf, bf});
+                                                float minC = std::min({rf, gf, bf});
+                                                float delta = maxC - minC;
+                                                float sat = (maxC > 0.001f) ? delta / maxC : 0.0f;
+                                                float val = maxC;
+                                                float weight = sat * val;
+                                                if (weight < 0.05f) continue;  // 跳过近灰色像素
+                                                float hue = 0.0f;
+                                                if (delta > 0.001f) {
+                                                    if (maxC == rf)       hue = 60.0f * fmodf((gf - bf) / delta + 6.0f, 6.0f);
+                                                    else if (maxC == gf)  hue = 60.0f * ((bf - rf) / delta + 2.0f);
+                                                    else                  hue = 60.0f * ((rf - gf) / delta + 4.0f);
+                                                }
+                                                int bin = static_cast<int>(hue / 30.0f) % 12;
+                                                buckets[bin].r += rf * weight;
+                                                buckets[bin].g += gf * weight;
+                                                buckets[bin].b += bf * weight;
+                                                buckets[bin].weight += weight;
+                                                buckets[bin].count++;
+                                            }
+                                        }
+                                        int bestBin = 0;
+                                        float bestWeight = 0.0f;
+                                        for (int i = 0; i < 12; ++i) {
+                                            if (buckets[i].weight > bestWeight) {
+                                                bestWeight = buckets[i].weight;
+                                                bestBin = i;
+                                            }
+                                        }
+                                        auto& b = buckets[bestBin];
+                                        if (b.weight > 0.001f) {
+                                            // 欠饱和处理：将饱和度降低 50%，避免背景过于鲜艳
+                                            float avgR = std::max(0.0f, std::min(1.0f, b.r / b.weight));
+                                            float avgG = std::max(0.0f, std::min(1.0f, b.g / b.weight));
+                                            float avgB = std::max(0.0f, std::min(1.0f, b.b / b.weight));
+                                            // 与中灰混合以降低饱和度
+                                            const float gray = 0.5f;
+                                            const float desat = 0.5f;
+                                            coverThemeColor_ = D2D1::ColorF(
+                                                avgR + (gray - avgR) * desat,
+                                                avgG + (gray - avgG) * desat,
+                                                avgB + (gray - avgB) * desat,
+                                                1.0f);
+                                        } else {
+                                            coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
+                                        }
+                                        if (cardBackgroundBrush_) {
+                                            cardBackgroundBrush_->SetColor(coverThemeColor_);
+                                        }
+                                        if (debugLog_) Log("[COVER] Theme extracted: RGB(%.2f,%.2f,%.2f) bin=%d\n",
+                                            coverThemeColor_.r, coverThemeColor_.g, coverThemeColor_.b, bestBin);
+                                    }
+
                                     if (debugLog_) Log("[COVER] D2D bitmap via pixels: hr=0x%08X, bitmap=%d size=%ux%u\n",
                                         hr, d2dCoverBitmap_ ? 1 : 0, w, h);
+
+                                    // ═════ P1-②: 触发封面 fade-in 动画 ═════
+                                    // 新封面位图刚刚创建完成，启动 fade-in 过渡。
+                                    coverFadingIn_ = true;
+                                    coverFadeStartTime_ = static_cast<double>(GetTickCount64());
+                                    coverFadeAlpha_ = 0.0f;
+
+                                    // ═════ P1-④: 创建柔焦背景 ═════
+                                    // 将封面缩放到 32×32 小尺寸 → D2D 位图画刷 → 拉伸铺满卡片
+                                    // 利用双线性插值产生自然柔焦效果，无需 D2D 1.1
+                                    blurredCoverBg_.Reset();
+                                    blurredBgBrush_.Reset();
+                                    blurredBgBitmapW_ = 0.0f;
+                                    {
+                                        Microsoft::WRL::ComPtr<IWICBitmapScaler> blurScaler;
+                                        hr = wicFactory_->CreateBitmapScaler(blurScaler.GetAddressOf());
+                                        if (SUCCEEDED(hr)) {
+                                            hr = blurScaler->Initialize(
+                                                frame.Get(),
+                                                constants::COVER_BLUR_SAMPLE_SIZE,
+                                                constants::COVER_BLUR_SAMPLE_SIZE,
+                                                WICBitmapInterpolationModeHighQualityCubic);
+                                        }
+                                        if (SUCCEEDED(hr)) {
+                                            hr = renderTarget_->CreateBitmapFromWicBitmap(
+                                                blurScaler.Get(), nullptr,
+                                                blurredCoverBg_.GetAddressOf());
+                                        }
+                                        if (SUCCEEDED(hr) && blurredCoverBg_) {
+                                            blurredBgBitmapW_ = blurredCoverBg_->GetSize().width;
+                                            renderTarget_->CreateBitmapBrush(
+                                                blurredCoverBg_.Get(),
+                                                D2D1::BitmapBrushProperties(
+                                                    D2D1_EXTEND_MODE_CLAMP,
+                                                    D2D1_EXTEND_MODE_CLAMP,
+                                                    D2D1_BITMAP_INTERPOLATION_MODE_LINEAR),
+                                                D2D1::BrushProperties(
+                                                    1.0f,
+                                                    D2D1::Matrix3x2F::Identity()),
+                                                blurredBgBrush_.GetAddressOf());
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -852,6 +1080,9 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
     }
 
     // ═════ 绘制 ═════
+    // 驱动封面 fade-in 进度（每帧调用，动画完成后自动跳过）
+    UpdateCoverFade();
+
     D2D1_ROUNDED_RECT rr = D2D1::RoundedRect(
         D2D1::RectF(x, y, x + size, y + size), radius, radius);
 
@@ -889,12 +1120,24 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
                 D2D1_LAYER_OPTIONS_NONE);
             renderTarget_->PushLayer(layerParams, coverLayer_.Get());
             renderTarget_->DrawBitmap(
-                d2dCoverBitmap_.Get(), destRect, 1.0f,
+                d2dCoverBitmap_.Get(), destRect, coverFadeAlpha_,
                 D2D1_BITMAP_INTERPOLATION_MODE_LINEAR, nullptr);
             renderTarget_->PopLayer();
         }
     } else {
-        // 无封面：显示灰底圆角矩形 + 音乐符号
+        // 无封面：显示灰底圆角矩形 + 歌名首字 fallback
+        // 同时重置主题色为默认灰蓝色，使卡片背景回归中性。
+        coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
+        if (cardBackgroundBrush_) {
+            cardBackgroundBrush_->SetColor(coverThemeColor_);
+        }
+        // 无封面时清除柔焦背景，回落纯色
+        blurredCoverBg_.Reset();
+        blurredBgBrush_.Reset();
+        blurredBgBitmapW_ = 0.0f;
+        // 无封面时重置 fade-in 状态
+        coverFadingIn_ = false;
+        coverFadeAlpha_ = 1.0f;
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.45f, 0.45f, 0.5f, 0.85f), bgBrush.GetAddressOf());
@@ -902,15 +1145,15 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, const std::string& fa
             renderTarget_->FillRoundedRectangle(rr, bgBrush.Get());
         }
 
-        // 使用较大的字体绘制音乐符号，确保清晰可见
-        if (textFormat_) {
-            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> iconBrush;
+        // 绘制歌名首字符（fallbackChar），使用卡片字体 + next 颜色，高透明度弱化
+        if (cardFallbackFormat_ && fallbackChar != L'\0') {
+            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> fgBrush;
             renderTarget_->CreateSolidColorBrush(
-                D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.95f), iconBrush.GetAddressOf());
-            if (iconBrush) {
+                D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.60f), fgBrush.GetAddressOf());
+            if (fgBrush) {
                 D2D1_RECT_F textRect = D2D1::RectF(x, y, x + size, y + size);
-                renderTarget_->DrawTextW(L"\u266A", 1, textFormat_.Get(),
-                                          textRect, iconBrush.Get());
+                renderTarget_->DrawTextW(&fallbackChar, 1, cardFallbackFormat_.Get(),
+                                          textRect, fgBrush.Get());
             }
         }
     }
@@ -1035,6 +1278,9 @@ void TaskbarRenderer::PresentToLayeredWindow() {
     ::ReleaseDC(nullptr, hdcScreen);
 }
 
+// 前置声明：P3 动画时间戳获取（匿名命名空间，定义在文件尾部跑马灯区域）
+namespace { double GetCurrentTimeSeconds(); }
+
 void TaskbarRenderer::Render(const RenderState& state) {
     if (!initialized_ || !renderTarget_) return;
 
@@ -1061,6 +1307,22 @@ void TaskbarRenderer::Render(const RenderState& state) {
         cardScrollNeedsRedraw = UpdateCardAnim(state.currentLine, state.nextLine);
     }
 
+    // P3: 歌词切换动画 + 进度弹簧（仅 karaoke 模式）
+    bool kP3NeedsRedraw = false;
+    // 先获取当前时间供后续弹簧步进重用（避免多次 QPC 调用）
+    const double now = GetCurrentTimeSeconds();
+    double smoothProgress = state.progress; // 默认值：弹簧未启动时直接用原始进度
+    if (settings_.displayMode != "card" && state.hasLyrics && !state.currentLine.empty()) {
+        const std::wstring lineW = Utf8ToWide(state.currentLine);
+        if (UpdateLyricFade(lineW)) {
+            kP3NeedsRedraw = true;
+        }
+        if (UpdateProgressSpring(state.progress, now)) {
+            kP3NeedsRedraw = true;
+        }
+        smoothProgress = springProgress_;
+    }
+
     bool stateChanged = (state.hasLyrics != lastState_.hasLyrics ||
                          state.currentLine != lastState_.currentLine ||
                          state.currentTranslated != lastState_.currentTranslated ||
@@ -1075,9 +1337,15 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 卡片模式无跑马灯：无封面图时每帧重绘（确保 fallback 始终可见），
     // 有封面图后按需重绘（state 变化时才更新）
     const bool needCardRedraw = (settings_.displayMode == "card" && !d2dCoverBitmap_);
-    if (!stateChanged && !marqueeNeedsRedraw && !needCardRedraw && !cardScrollNeedsRedraw) {
+    if (!stateChanged && !marqueeNeedsRedraw && !needCardRedraw && !cardScrollNeedsRedraw && !kP3NeedsRedraw) {
         return;
     }
+
+    // P3-①: 歌词行切换 fade 启动后的首帧 —— 缓存旧行翻译（此时 lastState_ 尚未更新，仍保留上一帧的值）
+    if (lyricFadeActive_ && lyricFadeOldTrans_.empty()) {
+        lyricFadeOldTrans_ = Utf8ToWide(lastState_.currentTranslated);
+    }
+
     lastState_ = state;
 
     RECT rc{};
@@ -1115,7 +1383,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
             const float coverSize = static_cast<float>(settings_.cardCoverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float paddingX = constants::TEXT_PADDING_X;
-            std::string fallback = state.songName.empty() ? "?" : state.songName.substr(0, 1);
+            wchar_t fallback = FirstUtf8CharAsWide(state.songName);
             DrawCoverArt(state.coverArtUrl, fallback, paddingX,
                          (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
             if (!state.spectrumBands.empty()) {
@@ -1137,13 +1405,40 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
         if (state.hasLyrics && !state.currentLine.empty()) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
-            DrawHighlightedTextPerCharacter(lineW, state.progress, settings_.enableKaraoke,
-                                           scrollOffset,
-                                           isVerticalTaskbar_ ? &vertPaddingX : nullptr);
+            const float* padPtr = isVerticalTaskbar_ ? &vertPaddingX : nullptr;
 
-            if (settings_.enableTranslation && !state.currentTranslated.empty()) {
-                const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                DrawTranslatedText(trW, isVerticalTaskbar_ ? &vertPaddingX : nullptr);
+            // P3-①: 歌词行切换 fade 过渡 —— 旧行淡出 + 新行淡入，EaseOut 交叉
+            if (lyricFadeActive_) {
+                const double elapsed = now - lyricFadeStartTime_;
+                const double dur = static_cast<double>(constants::LYRIC_FADE_DURATION_MS) / 1000.0;
+                double rawT = elapsed / dur;
+                if (rawT >= 1.0) rawT = 1.0;
+                const float fadeT = EaseOutCubic(static_cast<float>(rawT));
+
+                // 旧行：progress=1.0（已完成），无卡拉OK、无跑马灯，渐隐
+                DrawHighlightedTextPerCharacter(lyricFadeOldText_, 1.0, false, 0.0f,
+                                               padPtr, 1.0f - fadeT);
+                // 旧行翻译（同步渐隐）
+                if (settings_.enableTranslation && !lyricFadeOldTrans_.empty()) {
+                    DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT);
+                }
+
+                // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
+                DrawHighlightedTextPerCharacter(lineW, smoothProgress, settings_.enableKaraoke,
+                                               scrollOffset, padPtr, fadeT);
+                if (settings_.enableTranslation && !state.currentTranslated.empty()) {
+                    const std::wstring trW = Utf8ToWide(state.currentTranslated);
+                    DrawTranslatedText(trW, padPtr, fadeT);
+                }
+            } else {
+                // 非 fade：正常渲染（使用弹簧平滑进度）
+                DrawHighlightedTextPerCharacter(lineW, smoothProgress, settings_.enableKaraoke,
+                                               scrollOffset, padPtr);
+
+                if (settings_.enableTranslation && !state.currentTranslated.empty()) {
+                    const std::wstring trW = Utf8ToWide(state.currentTranslated);
+                    DrawTranslatedText(trW, padPtr);
+                }
             }
         } else {
             if (state.isPlaying) {
@@ -1436,6 +1731,95 @@ bool TaskbarRenderer::UpdateCardAnim(const std::string& currentLine,
     return true;
 }
 
+// ═════ P3-①: 歌词行切换 fade 动画 ═════
+// 检测歌词行变化 → 缓存旧行文本 → 启动 200ms EaseOut 交叉淡化。
+// 返回 true 表示动画进行中，调用方据此触发持续重绘。
+bool TaskbarRenderer::UpdateLyricFade(const std::wstring& newText)
+{
+    // 首帧：新行文本入库，不做 fade
+    static std::wstring lastText;
+    if (lastText.empty()) {
+        lastText = newText;
+        return false;
+    }
+
+    // 歌词行发生变化且新旧均非空 → 启动 fade
+    const bool lineChanged = (newText != lastText);
+    if (lineChanged && !newText.empty() && !lastText.empty()) {
+        lyricFadeOldText_ = lastText;
+
+        LARGE_INTEGER li, freq;
+        ::QueryPerformanceCounter(&li);
+        ::QueryPerformanceFrequency(&freq);
+        lyricFadeStartTime_ = static_cast<double>(li.QuadPart) / static_cast<double>(freq.QuadPart);
+        lyricFadeActive_ = true;
+    }
+    lastText = newText;
+
+    if (!lyricFadeActive_) {
+        return false;
+    }
+
+    // 检查动画是否到期
+    LARGE_INTEGER li2, freq2;
+    ::QueryPerformanceCounter(&li2);
+    ::QueryPerformanceFrequency(&freq2);
+    const double now = static_cast<double>(li2.QuadPart) / static_cast<double>(freq2.QuadPart);
+    const double elapsed = now - lyricFadeStartTime_;
+    const double dur = static_cast<double>(constants::LYRIC_FADE_DURATION_MS) / 1000.0;
+
+    if (elapsed >= dur) {
+        lyricFadeActive_ = false;
+        lyricFadeOldText_.clear();
+        lyricFadeOldTrans_.clear();
+        return false;
+    }
+
+    return true;
+}
+
+// ═════ P3-②: 卡拉OK进度弹簧 ═════
+// 使用弹簧-阻尼物理模型将显示进度向目标平滑收敛。
+// stiffness=120（刚度）、damping=14（接近临界阻尼），约 50ms 内完成主要运动。
+// 返回 true 表示弹簧仍在运动中，需持续重绘。
+bool TaskbarRenderer::UpdateProgressSpring(double target, double now)
+{
+    // 首次调用初始化
+    if (springLastTime_ == 0.0) {
+        springProgress_ = target;
+        springVelocity_ = 0.0;
+        springLastTime_ = now;
+        return false;
+    }
+
+    const double dt = now - springLastTime_;
+    springLastTime_ = now;
+
+    // 时间步长钳位：避免暂停/调试期间超大 dt 导致弹簧爆炸
+    const double clampedDt = (dt > 0.1) ? 0.1 : ((dt <= 0.0) ? 1.0 / 60.0 : dt);
+
+    // 弹簧-阻尼物理：F = -k*(x-target) - c*v
+    const double k = constants::KARAOKE_PROGRESS_SPRING_STIFFNESS;
+    const double c = constants::KARAOKE_PROGRESS_SPRING_DAMPING;
+    const double dx = springProgress_ - target;
+    const double acceleration = -k * dx - c * springVelocity_;
+
+    // 半隐式欧拉积分（先更新速度再更新位置，数值更稳定）
+    springVelocity_ += acceleration * clampedDt;
+    springProgress_ += springVelocity_ * clampedDt;
+
+    // 收敛判定：位移和速度均足够小时视为静止，吸附到目标值
+    const bool converged = (std::abs(springProgress_ - target) < 0.0005 &&
+                            std::abs(springVelocity_) < 0.001);
+    if (converged) {
+        springProgress_ = target;
+        springVelocity_ = 0.0;
+        return false;
+    }
+
+    return true;
+}
+
 // ═══════════════════════════════════════════
 // 频谱渲染实现
 // ═══════════════════════════════════════════
@@ -1460,6 +1844,32 @@ void TaskbarRenderer::DrawSpectrumBars(const std::vector<float>& bands, float x,
         spectrumBrush_->SetOpacity(alpha * (0.12f + bands[i] * 0.88f));
         renderTarget_->FillRectangle(rect, spectrumBrush_.Get());
     }
+}
+
+// ═════ P1-②: 封面 fade-in 过渡动画 ═════
+// 使用 ease-out cubic 缓动：1 - (1 - t)^3。
+// 350ms 内 coverFadeAlpha_ 从 0→1，后续帧跳过不计算。
+// 返回 true 表示动画进行中（调用方可据此触发额外重绘）。
+bool TaskbarRenderer::UpdateCoverFade()
+{
+    if (!coverFadingIn_) return false;
+
+    const double now = static_cast<double>(GetTickCount64());
+    const double elapsed = now - coverFadeStartTime_;
+    const double dur = static_cast<double>(constants::COVER_FADE_DURATION_MS);
+
+    if (elapsed >= dur) {
+        // 动画完成
+        coverFadeAlpha_ = 1.0f;
+        coverFadingIn_ = false;
+        return false;
+    }
+
+    // ease-out cubic
+    const double t = elapsed / dur;
+    const double eased = 1.0 - (1.0 - t) * (1.0 - t) * (1.0 - t);
+    coverFadeAlpha_ = static_cast<float>(eased);
+    return true;
 }
 
 } // namespace moekoe

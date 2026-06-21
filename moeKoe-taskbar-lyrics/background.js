@@ -373,5 +373,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 loadPortConfig().then(() => {
     connectWebSocket();
-    console.log(`[TaskbarLyrics] 插件已加载 (v0.4.1 Native Host 模式, WS端口: ${wsPort})`);
+    console.log(`[TaskbarLyrics] 插件已加载 (v0.5.0 Native Host 模式, WS端口: ${wsPort})`);
 });

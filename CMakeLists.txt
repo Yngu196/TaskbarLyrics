@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 0.3.8
+    VERSION 0.5.0
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 
@@ -239,6 +239,7 @@ set(SOURCES
     src/settings_window.cpp
     src/d2d_settings_window.cpp
     src/lyrics_parser.cpp
+    src/shell_companion.cpp
     src/taskbar_window.cpp
     src/taskbar_embedder.cpp
     src/taskbar_geometry.cpp
@@ -263,6 +264,7 @@ set(HEADERS
     src/settings_window.h
     src/d2d_settings_window.h
     src/lyrics_parser.h
+    src/shell_companion.h
     src/taskbar_window.h
     src/taskbar_embedder.h
     src/taskbar_geometry.h
@@ -307,6 +309,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     ${WEBVIEW2_LOADER_LIB}
     dwmapi            # DWM 圆角窗口 (D2D 设置界面)
     UIAutomationCore   # UI Automation: 获取任务栏子窗口几何信息
+)
+
+# 输出到项目根目录下的 moeKoe-taskbar-lyrics 文件夹
+# 使用 _DEBUG/_RELEASE 两变量指向同一目录，避免 MSVC 多配置生成器追加 /Debug 子目录
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
 )
 
 # 资源
@@ -365,4 +374,10 @@ if(MSVC)
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>/z.dll
             COMMENT "Copying z.dll to output directory")
     endif()
+
+    # 打包 moeKoe-taskbar-lyrics 文件夹为 zip（自动化构建产物）
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND powershell -NoProfile -Command
+            "Compress-Archive -Path '${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics/*' -DestinationPath '${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics.zip' -Force"
+        COMMENT "Packaging moeKoe-taskbar-lyrics.zip")
 endif()

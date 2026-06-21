@@ -409,6 +409,7 @@ void D2DSettingsWindow::BuildControls(const Config& cfg) {
               static_cast<float>(a.cardFontSizeCurrent), "");
     addSlider("cardFontSizeNext", "下一行字号", 8.f, 18.f,
               static_cast<float>(a.cardFontSizeNext), "");
+    addLabelRow("cardFontFamily", "字体", a.cardFontFamily.empty() ? "(与主模式相同)" : a.cardFontFamily, /*readOnly*/true);
     addColor("cardCurrentColor", "当前行颜色", a.cardCurrentColor);
     addColor("cardNextColor", "下一行颜色", a.cardNextColor);
 
@@ -484,7 +485,7 @@ void D2DSettingsWindow::UpdateControlVisibility() {
         "marquee", "marqueeMode", "marqueeDelay", "marqueePause", "marqueeSpeed"
     };
     static const std::vector<std::string> cardOnly = {
-        "cardFontSizeCurrent", "cardFontSizeNext", "cardCurrentColor", "cardNextColor"
+        "cardFontSizeCurrent", "cardFontSizeNext", "cardFontFamily", "cardCurrentColor", "cardNextColor"
     };
 
     // 跟踪「长歌词滚动（跑马灯）」和「卡片样式设置」两个 section 的范围。

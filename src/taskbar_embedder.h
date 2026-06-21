@@ -34,6 +34,7 @@ public:
     void Destroy();
 
     HWND GetHandle() const { return hwnd_; }
+    void SetHandle(HWND hwnd) { hwnd_ = hwnd; }
 
     // 定位窗口到任务栏指定坐标；forceTopmost 用于全屏恢复时将窗口从 offscreen 拉回可见区域
     void Position(int x, int y, int w, int h, bool forceTopmost = false);

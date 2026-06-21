@@ -137,6 +137,7 @@ bool Config::Load() {
             appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
             appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
             appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
+            appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
             appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
             appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
@@ -219,6 +220,7 @@ bool Config::Save() const {
         {"display_mode",       appearance_.displayMode},
         {"card_font_size_current", appearance_.cardFontSizeCurrent},
         {"card_font_size_next",    appearance_.cardFontSizeNext},
+        {"card_font_family",       appearance_.cardFontFamily},
         {"card_current_color",     appearance_.cardCurrentColor},
         {"card_next_color",        appearance_.cardNextColor},
         {"marquee_mode",       appearance_.marqueeMode},

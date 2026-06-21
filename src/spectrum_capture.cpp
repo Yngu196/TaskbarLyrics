@@ -347,7 +347,16 @@ void SpectrumCapture::Stop() {
 
     running_ = false;
     if (impl_->captureThread && impl_->captureThread->joinable()) {
-        impl_->captureThread->join();
+        DWORD waitResult = ::WaitForSingleObject(
+            impl_->captureThread->native_handle(),
+            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+        if (waitResult == WAIT_TIMEOUT) {
+            Log("[Spectrum] Thread join timed out (%d ms), detaching\n",
+                moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            impl_->captureThread->detach();
+        } else {
+            impl_->captureThread->join();
+        }
     }
     impl_->captureThread.reset();
 }
