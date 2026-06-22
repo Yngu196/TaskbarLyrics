@@ -376,8 +376,10 @@ if(MSVC)
     endif()
 
     # 打包 moeKoe-taskbar-lyrics 文件夹为 zip（自动化构建产物）
+    # 使用 Python zipfile 确保正斜杠路径，兼容 MoeKoeMusic 的 zip 解析器
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-        COMMAND powershell -NoProfile -Command
-            "Compress-Archive -Path '${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics/*' -DestinationPath '${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics.zip' -Force"
+        COMMAND python "${CMAKE_SOURCE_DIR}/scripts/pack_zip.py"
+            "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
+            "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics.zip"
         COMMENT "Packaging moeKoe-taskbar-lyrics.zip")
 endif()
