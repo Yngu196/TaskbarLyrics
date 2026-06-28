@@ -288,7 +288,10 @@ void TaskbarRenderer::Shutdown() {
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
     coverLoadInProgress_.store(false, std::memory_order_release);
     coverDownloadGen_.store(0, std::memory_order_release);  // 重置代际计数器
-    delete pendingCoverData_.exchange(nullptr);     // 清除待消费的内存数据
+    {
+        std::lock_guard<std::mutex> lock(pendingCoverMutex_);
+        pendingCoverData_.reset();
+    }
     coverLayer_.Reset();
     coverClipGeo_.Reset();
     cachedCoverSize_ = -1.0f;
@@ -821,7 +824,10 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
         d2dCoverBitmap_.Reset();       // 立即清除旧位图，切歌瞬间显示兜底符号
         coverFadingIn_ = false;        // 重置 fade-in 状态，下次封面到位时重新触发
         coverFadeAlpha_ = 1.0f;
-        delete pendingCoverData_.exchange(nullptr);     // 清除旧的待消费数据
+        {
+            std::lock_guard<std::mutex> lock(pendingCoverMutex_);
+            pendingCoverData_.reset();
+        }
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
 
         int gen = ++coverDownloadGen_;  // 递增代际，使可能还在跑的旧下载失效
@@ -855,8 +861,10 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                         auto* data = new std::vector<uint8_t>(fileSize);
                         DWORD bytesRead = 0;
                         if (::ReadFile(hFile, data->data(), fileSize, &bytesRead, nullptr) && bytesRead == fileSize) {
-                            auto* old = pendingCoverData_.exchange(data, std::memory_order_release);
-                            delete old;
+                            {
+                                std::lock_guard<std::mutex> lock(pendingCoverMutex_);
+                                pendingCoverData_ = std::shared_ptr<std::vector<uint8_t>>(data);
+                            }
                         } else {
                             delete data;
                         }
@@ -875,9 +883,12 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
     }
 
     // ═════ 消费后台下载结果：从内存直接解码 ═════
-    auto* pendingRaw = pendingCoverData_.exchange(nullptr, std::memory_order_acquire);
-    if (pendingRaw) {
-        std::unique_ptr<std::vector<uint8_t>> data(pendingRaw);
+    std::shared_ptr<std::vector<uint8_t>> data;
+    {
+        std::lock_guard<std::mutex> lock(pendingCoverMutex_);
+        data.swap(pendingCoverData_);
+    }
+    if (data) {
 
         // 通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
         Microsoft::WRL::ComPtr<IWICStream> stream;

@@ -18,6 +18,9 @@
 #include <thread>
 #include <vector>
 
+#include <kiss_fft.h>
+#include <kiss_fftr.h>
+
 #pragma comment(lib, "ole32.lib")
 
 namespace moekoe {
@@ -33,50 +36,6 @@ void ApplyHannWindow(std::vector<float>& buf) {
     for (size_t i = 0; i < n; ++i) {
         float w = 0.5f * (1.0f - std::cos(2.0f * 3.14159265358979323846f * static_cast<float>(i) / static_cast<float>(n - 1)));
         buf[i] *= w;
-    }
-}
-
-// 迭代 in-place radix-2 Cooley-Tukey FFT
-// buf 是复数对 {real0, imag0, real1, imag1, ...}
-void FFT(std::vector<float>& buf) {
-    const size_t n = buf.size() / 2;
-    // 位反转
-    size_t j = 0;
-    for (size_t i = 0; i < n; ++i) {
-        if (i < j) {
-            std::swap(buf[2 * i], buf[2 * j]);
-            std::swap(buf[2 * i + 1], buf[2 * j + 1]);
-        }
-        size_t m = n >> 1;
-        while (m >= 1 && j >= m) {
-            j -= m;
-            m >>= 1;
-        }
-        j += m;
-    }
-
-    // 蝴蝶运算
-    for (size_t len = 2; len <= n; len <<= 1) {
-        float angle = -2.0f * 3.14159265358979323846f / static_cast<float>(len);
-        float wReal = std::cos(angle);
-        float wImag = std::sin(angle);
-        for (size_t i = 0; i < n; i += len) {
-            float curReal = 1.0f;
-            float curImag = 0.0f;
-            for (size_t k = 0; k < len / 2; ++k) {
-                size_t idxA = 2 * (i + k);
-                size_t idxB = 2 * (i + k + len / 2);
-                float tReal = curReal * buf[idxB] - curImag * buf[idxB + 1];
-                float tImag = curReal * buf[idxB + 1] + curImag * buf[idxB];
-                buf[idxB] = buf[idxA] - tReal;
-                buf[idxB + 1] = buf[idxA + 1] - tImag;
-                buf[idxA] += tReal;
-                buf[idxA + 1] += tImag;
-                float newReal = curReal * wReal - curImag * wImag;
-                curImag = curReal * wImag + curImag * wReal;
-                curReal = newReal;
-            }
-        }
     }
 }
 
@@ -264,25 +223,29 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
         }
 
         if (available >= FFT_SIZE) {
-            std::vector<float> fftBuf(FFT_SIZE * 2, 0.0f); // complex pairs
+            std::vector<float> realBuf(FFT_SIZE);
             {
                 std::lock_guard<std::mutex> lock(ringMutex);
                 size_t readPos = (ringWritePos + kRingBufferSize - available) % kRingBufferSize;
                 for (int i = 0; i < FFT_SIZE; ++i) {
-                    fftBuf[2 * i] = ringBuffer[readPos];
-                    fftBuf[2 * i + 1] = 0.0f;
+                    realBuf[i] = ringBuffer[readPos];
                     readPos = (readPos + 1) % kRingBufferSize;
                 }
                 ringSamplesAvailable -= FFT_SIZE;
             }
 
-            ApplyHannWindow(fftBuf);
-            FFT(fftBuf);
+            ApplyHannWindow(realBuf);
+
+            // kiss_fftr: 实数 FFT（输入 N 个实数，输出 N/2+1 个复数）
+            kiss_fftr_cfg fftCfg = kiss_fftr_alloc(FFT_SIZE, 0, nullptr, nullptr);
+            std::vector<kiss_fft_cpx> freqOut(FFT_SIZE / 2 + 1);
+            kiss_fftr(fftCfg, realBuf.data(), freqOut.data());
+            free(fftCfg);
 
             std::vector<float> magnitudes(FFT_SIZE / 2);
             for (int i = 0; i < FFT_SIZE / 2; ++i) {
-                float re = fftBuf[2 * i];
-                float im = fftBuf[2 * i + 1];
+                float re = freqOut[i].r;
+                float im = freqOut[i].i;
                 magnitudes[static_cast<size_t>(i)] = std::sqrt(re * re + im * im);
             }
 

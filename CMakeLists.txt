@@ -152,7 +152,20 @@ else()
     )
 endif()
 
-# 5. nlohmann_json（header-only，用 find_path 直接找头文件）
+# 5. kissfft（实数 FFT 库，用于频谱分析）
+find_library(KISSFFT_LIBRARY kissfft-float PATHS "${VCPKG_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+find_path(KISSFFT_INCLUDE_DIR kiss_fft.h PATHS "${VCPKG_INSTALLED_DIR}/include/kissfft" NO_DEFAULT_PATH)
+if(KISSFFT_LIBRARY AND KISSFFT_INCLUDE_DIR)
+    add_library(kissfft::kissfft STATIC IMPORTED)
+    set_target_properties(kissfft::kissfft PROPERTIES
+        IMPORTED_LOCATION "${KISSFFT_LIBRARY}"
+        INTERFACE_INCLUDE_DIRECTORIES "${KISSFFT_INCLUDE_DIR}")
+    message(STATUS "Found kissfft: ${KISSFFT_LIBRARY}")
+else()
+    message(FATAL_ERROR "kissfft not found in vcpkg installed directory")
+endif()
+
+# 6. nlohmann_json（header-only，用 find_path 直接找头文件）
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
     PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
 if(!NLOHMANN_JSON_INCLUDE_DIR)
@@ -214,11 +227,15 @@ add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
 target_include_directories(${PROJECT_NAME} PRIVATE
     src
     ${NLOHMANN_JSON_INCLUDE_DIR}
+    ${KISSFFT_INCLUDE_DIR}
 )
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE KISSFFT_STATIC)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
     ixwebsocket::ixwebsocket
     nlohmann_json::nlohmann_json
+    kissfft::kissfft
     Threads::Threads
     d2d1
     dwrite
@@ -276,6 +293,14 @@ if(MSVC)
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>/z.dll
             COMMENT "Copying z.dll to output directory")
     endif()
+
+    # 2) kissfft-float.dll（kissfft 运行时依赖）
+    # vcpkg classic mode 构建为 DLL，需要复制到输出目录
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<IF:$<CONFIG:Debug>,${VCPKG_INSTALLED_DIR}/debug/bin/kissfft-float.dll,${VCPKG_INSTALLED_DIR}/bin/kissfft-float.dll>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>/kissfft-float.dll
+        COMMENT "Copying kissfft-float.dll to output directory")
 
     # 打包 moeKoe-taskbar-lyrics 文件夹为 zip（自动化构建产物）
     # 使用 Python zipfile 确保正斜杠路径，兼容 MoeKoeMusic 的 zip 解析器

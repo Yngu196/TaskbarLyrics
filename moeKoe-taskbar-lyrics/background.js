@@ -50,6 +50,7 @@ async function getAuthToken() {
     const token = `MoeKoeTL-${ts}-${rnd}-${extra}`;
     await chrome.storage.local.set({ authToken: token });
     cachedAuthToken = token;
+    scheduleStateSave();
     return token;
 }
 
@@ -136,6 +137,7 @@ function sendBridgeRequest(type, payload) {
 
         const id = crypto.randomUUID();
         messageSeq++;
+        scheduleStateSave();
         bridgePort.postMessage({ type, payload, requestId: id, seq: messageSeq });
         pending.set(id, resolve);
         pending.set('__seq__' + id, messageSeq);  // 记录发送时的序列号
@@ -176,8 +178,7 @@ function scheduleReconnect() {
     // 达到最大重连次数上限后停止自动重连，通知用户手动干预
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         reconnectAborted = true;
-        // 持久化中止状态，防止 Service Worker 重启后丢失
-        chrome.storage.local.set({ reconnectAborted: true }).catch(() => {});
+        scheduleStateSave();
         console.error(`[TaskbarLyrics] 重连已达上限 (${MAX_RECONNECT_ATTEMPTS} 次)，已停止自动重连，请检查服务端状态或手动点击重连`);
         broadcastToPopup({
             type: 'connectionStatus',
@@ -191,6 +192,7 @@ function scheduleReconnect() {
     // 首次连接失败使用 1 秒，之后以指数退避递增，上限 MAX_RECONNECT_DELAY
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
     reconnectAttempts++;
+    scheduleStateSave();
     console.log(`[TaskbarLyrics] ${delay / 1000} 秒后尝试重连 (第 ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} 次)`);
     broadcastToPopup({
         type: 'connectionStatus',
@@ -206,7 +208,7 @@ function scheduleReconnect() {
 function resetReconnectState() {
     reconnectAttempts = 0;
     reconnectAborted = false;
-    chrome.storage.local.remove('reconnectAborted').catch(() => {});
+    scheduleStateSave();
 }
 
 function connectWebSocket() {
@@ -241,6 +243,7 @@ function connectWebSocket() {
             lastConnectTime = Date.now();
             clearConnectionTimeout();
             connected = true;
+            scheduleStateSave();
             console.log('[TaskbarLyrics] WebSocket 已连接');
             broadcastToPopup({
                 type: 'connectionStatus',
@@ -271,6 +274,7 @@ function connectWebSocket() {
         ws.onclose = () => {
             clearConnectionTimeout();
             connected = false;
+            scheduleStateSave();
             console.log('[TaskbarLyrics] WebSocket 已断开');
             broadcastToPopup({
                 type: 'connectionStatus',
@@ -391,20 +395,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 });
 
-// ---- 启动 ----
+// ---- 状态持久化（MV3 Service Worker 生命周期） ----
+// Service Worker 可随时被终止，关键状态写入 chrome.storage.session，
+// 重启时恢复以避免 connect 状态、重连计数等丢失。
+// 不可序列化的对象（ws、bridgePort、pending）在重启后自然重新建立。
 
-// 恢复持久化状态（防止 Service Worker 重启后丢失重连中止标记）
-async function restorePersistedState() {
+const SESSION_KEY = 'serviceWorkerState';
+
+async function saveState() {
+    const state = {
+        connected,
+        reconnectAttempts,
+        reconnectAborted,
+        lastConnectTime,
+        wsPort,
+        wsProtocol,
+        messageSeq,
+        cachedAuthToken
+    };
     try {
-        const stored = await chrome.storage.local.get('reconnectAborted');
-        if (stored.reconnectAborted === true) {
-            reconnectAborted = true;
-            console.log('[TaskbarLyrics] 已恢复持久化的重连中止状态');
+        await chrome.storage.session.set({ [SESSION_KEY]: state });
+    } catch (_) {}
+}
+
+async function restoreState() {
+    try {
+        const stored = await chrome.storage.session.get(SESSION_KEY);
+        const s = stored[SESSION_KEY];
+        if (s && typeof s === 'object') {
+            // 恢复可持久化的标量状态
+            reconnectAttempts = (typeof s.reconnectAttempts === 'number') ? s.reconnectAttempts : 0;
+            reconnectAborted = !!s.reconnectAborted;
+            lastConnectTime = (typeof s.lastConnectTime === 'number') ? s.lastConnectTime : null;
+            wsPort = (typeof s.wsPort === 'number') ? s.wsPort : DEFAULT_WS_PORT;
+            wsProtocol = (typeof s.wsProtocol === 'string') ? s.wsProtocol : DEFAULT_WS_PROTOCOL;
+            messageSeq = (typeof s.messageSeq === 'number') ? s.messageSeq : 0;
+            cachedAuthToken = (typeof s.cachedAuthToken === 'string') ? s.cachedAuthToken : null;
+            // connected 仅在 Worker 刚启动时无意义（ws 对象已销毁），
+            // 但若之前已中止重连则不自动连接
+            connected = false;
+            console.log('[TaskbarLyrics] 已从 chrome.storage.session 恢复状态');
         }
     } catch (_) {}
 }
 
-restorePersistedState().then(() => {
+// 在关键状态变化点自动持久化（节流调用，实际由 saveState 内部处理）
+function scheduleStateSave() {
+    // 直接调用 saveState，chrome.storage.session 写入极快无需节流
+    saveState().catch(() => {});
+}
+
+// ---- 启动 ----
+
+restoreState().then(() => {
     return loadPortConfig();
 }).then(() => {
     // 若上次已中止则不自动重连，等待用户手动触发

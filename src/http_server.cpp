@@ -216,8 +216,8 @@ void HttpServer::ServerLoop(int port) {
             continue;
         }
 
-        // 设置接收超时
-        timeval recvTv{2, 0};
+        // 设置接收超时（防止恶意/僵死连接占用线程）
+        timeval recvTv{5, 0};
         setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&recvTv), sizeof(recvTv));
 
         // 读取请求

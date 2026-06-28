@@ -14,6 +14,8 @@
 #include <cstdint>
 #include <string>
 #include <atomic>
+#include <mutex>
+#include <memory>
 
 namespace moekoe {
 
@@ -150,7 +152,9 @@ private:
     // 渲染线程通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
     Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
     std::string cachedCoverUrl_;
-    std::atomic<std::vector<uint8_t>*> pendingCoverData_{nullptr};  // 后台线程 new，原子 swap 给渲染线程。渲染线程 delete 后置 nullptr
+    // 封面数据缓冲：后台线程写入，渲染线程消费。shared_ptr 自动管理生命周期，互斥锁保证线程安全。
+    std::mutex pendingCoverMutex_;
+    std::shared_ptr<std::vector<uint8_t>> pendingCoverData_;
     std::atomic<bool> coverLoadInProgress_{false};
     std::atomic<int> coverDownloadGen_{0};  // 代际计数器：URL 变化时递增，下载线程完成后比对以丢弃过期结果
 
