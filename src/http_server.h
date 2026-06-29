@@ -1,21 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0
-// http_server.h - 极简 HTTP 服务器（用于 popup.js / 外部程序通信）
+// http_server.h - HTTP 服务器（基于 cpp-httplib 提供完整 HTTP/1.1 语义）
 //
 // 职责:
-//   - 监听指定端口（默认 6521）
-//   - GET  /ping       → 返回 {"status":"ok"}
+//   - 监听指定端口（默认 6523），仅绑定 127.0.0.1
+//   - GET  /ping       → 返回 {"status":"ok","service":"MoeKoeTaskbarLyrics"}
 //   - POST /lyrics     → 接收歌词+封面数据并回调
-//   - POST /           → 解析 JSON，支持 "shutdown" 命令
+//   - POST / /shutdown → 解析 JSON，支持 "shutdown" 命令
 //   - 运行在独立线程，不阻塞主线程
+//   - 通过 cpp-httplib 获得完整的 chunked encoding / header 折叠 / keep-alive 等 HTTP/1.1 语义
 //
 #pragma once
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <string>
 #include <thread>
 
-#include "constants.h"
+namespace httplib {
+class Server;
+} // namespace httplib
 
 namespace moekoe {
 
@@ -35,7 +39,7 @@ public:
     HttpServer& operator=(const HttpServer&) = delete;
 
     // 启动服务器（异步，返回是否成功启动）
-    bool Start(int port = moekoe::constants::HTTP_SERVER_PORT);
+    bool Start(int port = 6523);
 
     // 停止服务器
     void Stop();
