@@ -5,7 +5,7 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/release-v0.5.0-blue" alt="release" />
+  <img src="https://img.shields.io/badge/release-v0.5.1-blue" alt="release" />
   <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
 
 </p>
@@ -72,6 +72,14 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
+
+## v0.5.1 变更
+
+### 修复与改进
+
+- 版本号统一更新至 0.5.1（CMakeLists.txt / manifest.json / vcpkg.json）
+- 新增单元测试框架：集成 Catch2 v3 + CMake CTest，覆盖 `lyrics_parser` 核心逻辑（LRC/KRC 解析、二分查找）
+- 清理废弃的 WebView2 铃声残留引用，简化构建流程
 
 ## v0.5.0 变更
 

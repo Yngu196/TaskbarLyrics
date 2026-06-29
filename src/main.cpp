@@ -24,6 +24,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <memory>
 #include <string>

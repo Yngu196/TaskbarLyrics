@@ -39,7 +39,11 @@ public:
     };
     static std::vector<LrcLine> ParseLRC(const std::string& lrcContent);
 
+#ifdef MOEKOE_UNIT_TEST
+public:
+#else
 private:
+#endif
     // 二分查找 currentTimeSec 对应的歌词行索引;未匹配返回 -1
     int FindLineIndex(double currentTimeSec) const;
 

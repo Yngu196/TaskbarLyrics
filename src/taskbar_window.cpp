@@ -339,7 +339,7 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_DESTROY: {
-        ::PostQuitMessage(0);
+        // 主消息循环已在 Cleanup 阶段退出，PostQuitMessage 不再需要
         return 0;
     }
     case WM_TIMER:

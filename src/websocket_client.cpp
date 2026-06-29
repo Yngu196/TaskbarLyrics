@@ -222,26 +222,23 @@ void WebSocketClient::Disconnect() {
     stopRequested_.store(true);
     reconnectNow_.store(false);
 
-    if (client_) {
-        try {
-            client_->stop();
-        } catch (...) { /* ignore */ }
-    }
-
-    // 协作式等待：ReconnectLoop 内部已使用短间隔轮询 stopRequested_，
-    // 理论上应在 ~100ms 内退出。保留超时作为安全网。
+    // 先等待 reconnectThread 退出，避免 ix::WebSocket::stop() 与 reconnectThread 死锁
     if (reconnectThread_.joinable()) {
         DWORD waitResult = ::WaitForSingleObject(
             reconnectThread_.native_handle(),
             moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
         if (waitResult == WAIT_TIMEOUT) {
-            moekoe::Log("[WS] Reconnect thread join timed out (%d ms), forcing exit\n",
+            moekoe::Log("[WS] Reconnect thread join timed out (%d ms), detaching\n",
                        moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
             reconnectThread_.detach();
-            ::ExitProcess(3);
         } else {
             reconnectThread_.join();
         }
+    }
+
+    // reconnectThread 已退出后再 stop client，避免锁争用
+    if (client_) {
+        try { client_->stop(); } catch (...) {}
     }
 
     if (connected_.exchange(false)) {

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 0.5.0
+    VERSION 0.5.1
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 
@@ -359,4 +359,64 @@ if(MSVC)
             "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
             "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics.zip"
         COMMENT "Packaging moeKoe-taskbar-lyrics.zip")
+endif()
+
+# ──── 单元测试 ────
+option(BUILD_TESTING "Build unit tests" ON)
+
+if(BUILD_TESTING)
+    enable_testing()
+
+    # 使用 FetchContent 获取 Catch2 v3（header + 轻量编译）
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.7.1
+        GIT_SHALLOW    TRUE
+    )
+    # 最小化 Catch2 编译：只构建需要的组件
+    set(CATCH_BUILD_TESTING OFF CACHE INTERNAL "")
+    set(CATCH_BUILD_EXAMPLES OFF CACHE INTERNAL "")
+    set(CATCH_BUILD_EXTRA_TESTS OFF CACHE INTERNAL "")
+    set(CATCH_INSTALL_DOCS OFF CACHE INTERNAL "")
+    set(CATCH_INSTALL_EXTRAS OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(Catch2)
+
+    # 测试目标：lyrics_parser 核心逻辑
+    add_executable(test_lyrics_parser
+        tests/test_lyrics_parser.cpp
+        src/lyrics_parser.cpp
+    )
+
+    target_include_directories(test_lyrics_parser PRIVATE
+        src
+        ${CMAKE_SOURCE_DIR}/third_party
+    )
+
+    target_compile_definitions(test_lyrics_parser PRIVATE
+        MOEKOE_UNIT_TEST
+    )
+
+    if(MSVC)
+        target_compile_options(test_lyrics_parser PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_lyrics_parser PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        # 测试可执行文件必须是 Console 应用（而非 WinMain 入口）
+        set_target_properties(test_lyrics_parser PROPERTIES
+            WIN32_EXECUTABLE OFF
+        )
+    endif()
+
+    target_link_libraries(test_lyrics_parser PRIVATE
+        Catch2::Catch2
+        Threads::Threads
+    )
+
+    # 注册 CTest
+    include(CTest)
+    add_test(NAME LyricsParser COMMAND $<TARGET_FILE:test_lyrics_parser> -s)
 endif()
