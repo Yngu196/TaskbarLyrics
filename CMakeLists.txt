@@ -30,25 +30,35 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
     if(DEFINED ENV{VCPKG_INSTALLED_DIR})
         set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
     elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
-        # 尝试 x64-windows 和 x64-windows-142 两个 triplet
-        if(EXISTS "$ENV{VCPKG_INSTALLATION_ROOT}/installed/x64-windows-142")
-            set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLATION_ROOT}/installed/x64-windows-142")
-        else()
-            set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLATION_ROOT}/installed/x64-windows")
-        endif()
-    else()
-        # 自动搜索常见安装路径
-        find_path(_VCPKG_CANDIDATE
-            NAMES "include" "lib"
-            PATHS
+        set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
+        foreach(_TRIPLET x64-windows-142 x64-windows)
+            if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
+                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
+                break()
+            endif()
+        endforeach()
+    elseif(DEFINED ENV{VCPKG_ROOT})
+        set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
+        foreach(_TRIPLET x64-windows-142 x64-windows)
+            if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
+                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
+    if(NOT DEFINED VCPKG_INSTALLED_DIR)
+        foreach(_CANDIDATE
                 "D:/vcpkg/installed/x64-windows-142"
                 "D:/vcpkg/installed/x64-windows"
                 "C:/vcpkg/installed/x64-windows-142"
-                "C:/vcpkg/installed/x64-windows"
-            NO_DEFAULT_PATH)
-        if(_VCPKG_CANDIDATE)
-            set(VCPKG_INSTALLED_DIR "${_VCPKG_CANDIDATE}")
-        endif()
+                "C:/vcpkg/installed/x64-windows")
+            if(EXISTS "${_CANDIDATE}/include" AND EXISTS "${_CANDIDATE}/lib")
+                set(VCPKG_INSTALLED_DIR "${_CANDIDATE}")
+                break()
+            endif()
+        endforeach()
     endif()
 endif()
 
@@ -58,8 +68,9 @@ if(NOT EXISTS "${VCPKG_INSTALLED_DIR}")
         "VCPKG_INSTALLED_DIR does not exist: ${VCPKG_INSTALLED_DIR}\n"
         "Please set it via one of:\n"
         "  cmake -DVCPKG_INSTALLED_DIR=<path>\n"
-        "  set VCPKG_INSTALLED_DIR=<path>  (environment variable)\n"
-        "  set VCPKG_INSTALLATION_ROOT=<vcpkg_root>  (environment variable)")
+        "  set VCPKG_INSTALLED_DIR=<path>        (environment variable)\n"
+        "  set VCPKG_INSTALLATION_ROOT=<root>    (environment variable)\n"
+        "  set VCPKG_ROOT=<root>                 (environment variable)")
 endif()
 
 message(STATUS "Using VCPKG_INSTALLED_DIR: ${VCPKG_INSTALLED_DIR}")
@@ -91,10 +102,33 @@ message(STATUS "Found mbedx509: ${MBEDX509_LIBRARY}")
 message(STATUS "Found mbedcrypto: ${MBEDCRYPTO_LIBRARY}")
 
 # 3. ixwebsocket —— 使用 add_subdirectory 从源码编译（确保编译器版本一致）
+# 从环境变量推导 vcpkg buildtrees 路径
+set(_IXWS_VCPKG_ROOTS)
+if(DEFINED ENV{VCPKG_ROOT})
+    list(APPEND _IXWS_VCPKG_ROOTS "$ENV{VCPKG_ROOT}")
+endif()
+if(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
+    list(APPEND _IXWS_VCPKG_ROOTS "$ENV{VCPKG_INSTALLATION_ROOT}")
+endif()
+if(DEFINED VCPKG_INSTALLED_DIR)
+    cmake_path(GET VCPKG_INSTALLED_DIR PARENT_PATH _ixws_installed_parent)
+    cmake_path(GET _ixws_installed_parent PARENT_PATH _ixws_root_derived)
+    if(_ixws_root_derived)
+        list(APPEND _IXWS_VCPKG_ROOTS "${_ixws_root_derived}")
+    endif()
+endif()
+list(REMOVE_DUPLICATES _IXWS_VCPKG_ROOTS)
+set(_IXWS_BUILDTREE_PATHS)
+foreach(_root IN LISTS _IXWS_VCPKG_ROOTS)
+    list(APPEND _IXWS_BUILDTREE_PATHS "${_root}/buildtrees/ixwebsocket")
+endforeach()
+
 set(IXWEBSOCKET_SOURCE_DIR "" CACHE PATH "ixwebsocket source directory (optional, for source build)")
 if(NOT IXWEBSOCKET_SOURCE_DIR)
     find_path(IXWEBSOCKET_SOURCE_DIR ixwebsocket/IXWebSocket.h
         PATHS "${CMAKE_SOURCE_DIR}/third_party/ixwebsocket"
+              ${_IXWS_BUILDTREE_PATHS}
+              # 硬编码路径作为最后 fallback
               "D:/vcpkg/buildtrees/ixwebsocket"
               "C:/vcpkg/buildtrees/ixwebsocket"
               "${VCPKG_INSTALLED_DIR}/include"
@@ -201,10 +235,13 @@ set(SOURCES
     src/taskbar_geometry.cpp
     src/fullscreen_detector.cpp
     src/renderer.cpp
+    src/lyric_renderer.cpp
+    src/card_renderer.cpp
+    src/marquee_engine.cpp
+    src/spring_animation.cpp
     src/spectrum_capture.cpp
     src/config.cpp
     src/tray_icon.cpp
-    src/process_monitor.cpp
     src/config_dialog.cpp
     src/native_messaging.cpp
     src/api_enabler.cpp
@@ -225,9 +262,9 @@ set(HEADERS
     src/taskbar_geometry.h
     src/fullscreen_detector.h
     src/renderer.h
+    src/renderer_utils.h
     src/config.h
     src/tray_icon.h
-    src/process_monitor.h
     src/config_dialog.h
     src/api_enabler.h
 )

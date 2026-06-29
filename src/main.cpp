@@ -13,7 +13,6 @@
 #include "lyrics_data.h"
 #include "lyrics_parser.h"
 #include "native_messaging.h"
-#include "process_monitor.h"
 #include "renderer.h"
 #include "spectrum_capture.h"
 #include "taskbar_window.h"
@@ -45,7 +44,6 @@ struct AppContext {
     std::unique_ptr<moekoe::NativeMessagingHost> nativeHost;
     std::unique_ptr<moekoe::D2DSettingsWindow>   d2dSettingsWindow;
     std::unique_ptr<moekoe::HttpServer>           httpServer;
-    std::unique_ptr<moekoe::ProcessMonitor>       processMonitor;
     std::unique_ptr<moekoe::WebSocketClient>      wsClient;
     std::unique_ptr<moekoe::LyricsParser>         parser;
     std::unique_ptr<moekoe::SpectrumCapture>      spectrumCapture;
