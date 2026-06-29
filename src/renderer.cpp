@@ -264,8 +264,9 @@ void TaskbarRenderer::Shutdown() {
     coverLoadInProgress_.store(false, std::memory_order_release);
     coverDownloadGen_.store(0, std::memory_order_release);  // 重置代际计数器
     {
-        std::lock_guard<std::mutex> lock(pendingCoverMutex_);
-        pendingCoverData_.reset();
+        // 排空无锁队列中可能残留的封面数据
+        std::vector<uint8_t> stale;
+        while (pendingCoverQueue_.try_dequeue(stale)) { }
     }
     coverLayer_.Reset();
     coverClipGeo_.Reset();

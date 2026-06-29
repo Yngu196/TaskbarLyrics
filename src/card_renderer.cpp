@@ -238,8 +238,9 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
         coverFadingIn_ = false;        // 重置 fade-in 状态，下次封面到位时重新触发
         coverFadeAlpha_ = 1.0f;
         {
-            std::lock_guard<std::mutex> lock(pendingCoverMutex_);
-            pendingCoverData_.reset();
+            // 排空无锁队列中可能残留的旧封面数据
+            std::vector<uint8_t> stale;
+            while (pendingCoverQueue_.try_dequeue(stale)) { }
         }
         coverLoadInProgress_.store(true, std::memory_order_relaxed);
 
@@ -271,15 +272,11 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                 if (hFile != INVALID_HANDLE_VALUE) {
                     DWORD fileSize = ::GetFileSize(hFile, nullptr);
                     if (fileSize > 0 && fileSize < 8 * 1024 * 1024) {  // 拒绝 > 8MB 的图片
-                        auto* data = new std::vector<uint8_t>(fileSize);
+                        std::vector<uint8_t> data(fileSize);
                         DWORD bytesRead = 0;
-                        if (::ReadFile(hFile, data->data(), fileSize, &bytesRead, nullptr) && bytesRead == fileSize) {
-                            {
-                                std::lock_guard<std::mutex> lock(pendingCoverMutex_);
-                                pendingCoverData_ = std::shared_ptr<std::vector<uint8_t>>(data);
-                            }
-                        } else {
-                            delete data;
+                        if (::ReadFile(hFile, data.data(), fileSize, &bytesRead, nullptr) && bytesRead == fileSize) {
+                            // 通过无锁队列将封面数据发送给渲染线程（move 语义，零拷贝）
+                            pendingCoverQueue_.enqueue(std::move(data));
                         }
                     }
                     ::CloseHandle(hFile);
@@ -296,18 +293,15 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
     }
 
     // ═════ 消费后台下载结果：从内存直接解码 ═════
-    std::shared_ptr<std::vector<uint8_t>> data;
-    {
-        std::lock_guard<std::mutex> lock(pendingCoverMutex_);
-        data.swap(pendingCoverData_);
-    }
-    if (data) {
+    std::vector<uint8_t> data;
+    pendingCoverQueue_.try_dequeue(data);
+    if (!data.empty()) {
 
         // 通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
         Microsoft::WRL::ComPtr<IWICStream> stream;
         HRESULT hr = wicFactory_->CreateStream(stream.GetAddressOf());
         if (SUCCEEDED(hr)) {
-            hr = stream->InitializeFromMemory(data->data(), static_cast<DWORD>(data->size()));
+            hr = stream->InitializeFromMemory(data.data(), static_cast<DWORD>(data.size()));
         }
 
         Microsoft::WRL::ComPtr<IWICBitmapDecoder> decoder;

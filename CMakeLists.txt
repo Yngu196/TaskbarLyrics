@@ -274,6 +274,7 @@ add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${HEADERS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     src
+    ${CMAKE_SOURCE_DIR}/third_party
     ${NLOHMANN_JSON_INCLUDE_DIR}
     ${KISSFFT_INCLUDE_DIR}
     ${HTTPLIB_INCLUDE_DIR}

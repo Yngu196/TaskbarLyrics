@@ -33,6 +33,7 @@ let wsProtocol = DEFAULT_WS_PROTOCOL;
 // ---- Token 管理 ----
 // 在 Service Worker 启动时生成并缓存令牌，避免每次同步读取 storage
 let cachedAuthToken = null;
+let saveTimeout = null;           // scheduleStateSave 节流定时器
 
 // 获取本地鉴权令牌（首次自动生成并持久化）
 async function getAuthToken() {
@@ -50,7 +51,7 @@ async function getAuthToken() {
     const token = `MoeKoeTL-${ts}-${rnd}-${extra}`;
     await chrome.storage.local.set({ authToken: token });
     cachedAuthToken = token;
-    scheduleStateSave();
+    scheduleStateSave(true);  // token 变更后立即持久化，确保重启后可用
     return token;
 }
 
@@ -439,10 +440,22 @@ async function restoreState() {
     } catch (_) {}
 }
 
-// 在关键状态变化点自动持久化（节流调用，实际由 saveState 内部处理）
-function scheduleStateSave() {
-    // 直接调用 saveState，chrome.storage.session 写入极快无需节流
-    saveState().catch(() => {});
+// 在关键状态变化点自动持久化，2 秒节流防止高频调用触发 Chrome storage.session 写入限制
+// @param {boolean} [immediate=false] - 立即持久化，跳过节流（用于 token 变更等关键场景）
+function scheduleStateSave(immediate = false) {
+    if (immediate) {
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+        }
+        saveState().catch(() => {});
+        return;
+    }
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+        saveTimeout = null;
+        saveState().catch(() => {});
+    }, 2000);
 }
 
 // ---- 启动 ----
