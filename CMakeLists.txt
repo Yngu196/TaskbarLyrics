@@ -354,6 +354,24 @@ if(MSVC)
             $<TARGET_FILE_DIR:${PROJECT_NAME}>/kissfft-float.dll
         COMMENT "Copying kissfft-float.dll to output directory")
 
+    # 3) VC++ Redist CRT DLL（msvcp140 / vcruntime140 / vcruntime140_1）
+    #    发布包中必须附带，避免用户机器缺失 VC Redist 导致启动失败
+    if(DEFINED ENV{VCToolsRedistDir})
+        set(_CRT_SRC_DIR "$ENV{VCToolsRedistDir}/x64/Microsoft.VC143.CRT")
+    else()
+        # 本地开发环境：从 CMake 推导 MSVC 工具链路径
+        set(_CRT_SRC_DIR "${VCToolsRedistDir}/x64/Microsoft.VC143.CRT")
+    endif()
+    foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
+        if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
+            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_CRT_SRC_DIR}/${_CRT_DLL}"
+                    $<TARGET_FILE_DIR:${PROJECT_NAME}>/${_CRT_DLL}
+                COMMENT "Copying ${_CRT_DLL} to output directory")
+        endif()
+    endforeach()
+
 endif()
 
 # ──── 单元测试 ────

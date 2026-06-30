@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // shell_companion.cpp - Shell 层抽象实现
 // v0.5.x: 从 taskbar_window.cpp 中抽取 WinEvent 钩子、全屏检测、定位计算等 Shell 逻辑
 #include "shell_companion.h"

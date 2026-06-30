@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_window.h - 任务栏嵌入窗口管理（门面类）
 //
 // 职责: 组合以下子模块，保持外部接口不变

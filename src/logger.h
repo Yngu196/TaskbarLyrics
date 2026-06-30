@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // logger.h - 统一日志系统
 //
 // 替代各文件中分散的 DebugLog / ConfigDebugLog 实现。

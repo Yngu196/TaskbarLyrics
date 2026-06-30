@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // renderer_utils.h - 渲染器内部辅助函数（多翻译单元共享）
 #pragma once
 

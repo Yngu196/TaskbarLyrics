@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // native_messaging.cpp - MoeKoeMusic Native Host 实现（JSON Lines 协议）
 //
 // 与旧版 Chrome Native Messaging 的区别:

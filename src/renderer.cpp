@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // renderer.cpp - Direct2D + DirectWrite 渲染核心实现
 // 窗口管理、D2D 资源生命周期、主循环
 #include "renderer.h"

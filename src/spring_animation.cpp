@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // spring_animation.cpp - 弹簧物理动画（缓动函数、弹簧步进、行切换淡入淡出）
 #include "renderer.h"
 #include "constants.h"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // process_monitor.cpp - 进程监控模块实现
 #include "process_monitor.h"
 #include "constants.h"

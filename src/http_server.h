@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // http_server.h - HTTP 服务器（基于 cpp-httplib 提供完整 HTTP/1.1 语义）
 //
 // 职责:

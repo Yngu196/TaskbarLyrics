@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_embedder.cpp - 窗口创建/销毁/显隐/SetWindowPos 实现
 //
 // 注意：此文件是 A1 拆分的骨架模块。窗口创建/销毁/全屏显隐已迁移至此，

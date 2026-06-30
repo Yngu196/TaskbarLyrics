@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // tray_icon.cpp - 系统托盘图标实现
 #include "tray_icon.h"
 
@@ -192,11 +192,16 @@ void TrayIcon::ShowContextMenu(HWND hwnd) {
     POINT pt{};
     ::GetCursorPos(&pt);
     ::SetForegroundWindow(hwnd);
-    ::TrackPopupMenuEx(
+    // 使用 TPM_RETURNCMD 获取被选中的菜单项 ID，
+    // 然后在 TrackPopupMenuEx 返回之后手动投递 WM_COMMAND，
+    // 避免 TPM_NONOTIFY 导致菜单选择结果被静默丢弃。
+    const auto cmd = ::TrackPopupMenuEx(
         hMenu_,
-        TPM_RIGHTBUTTON | TPM_NONOTIFY | TPM_VERNEGANIMATION,
+        TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_VERNEGANIMATION,
         pt.x, pt.y, hwnd, nullptr);
-    ::PostMessageW(hwnd, WM_NULL, 0, 0);
+    if (cmd != 0) {
+        ::PostMessageW(hwnd, WM_COMMAND, cmd, 0);
+    }
 }
 
 void TrayIcon::OnTrayMessage(HWND hwnd, WPARAM, LPARAM lParam) {

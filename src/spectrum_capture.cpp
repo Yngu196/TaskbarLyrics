@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // spectrum_capture.cpp - WASAPI loopback FFT 频谱捕获实现
 
 // 必须在 COM 头文件之前包含 windows.h
@@ -238,6 +238,10 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
 
             // kiss_fftr: 实数 FFT（输入 N 个实数，输出 N/2+1 个复数）
             kiss_fftr_cfg fftCfg = kiss_fftr_alloc(FFT_SIZE, 0, nullptr, nullptr);
+            if (!fftCfg) {
+                // 分配失败（内存不足等极端情况），跳过本帧频谱处理
+                continue;
+            }
             std::vector<kiss_fft_cpx> freqOut(FFT_SIZE / 2 + 1);
             kiss_fftr(fftCfg, realBuf.data(), freqOut.data());
             free(fftCfg);

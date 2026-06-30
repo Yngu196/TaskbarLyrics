@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // tray_icon.h - 系统托盘图标
 //
 // 职责:

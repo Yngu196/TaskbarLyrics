@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // marquee_engine.cpp - 跑马灯状态机（滚动位置计算、停顿逻辑、文本宽度测量）
 #include "renderer.h"
 #include "renderer_utils.h"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // native_messaging.h - MoeKoeMusic Native Host 协议处理（JSON Lines）
 //
 // 新协议（MoeKoeMusic 托管式 Native Host）:

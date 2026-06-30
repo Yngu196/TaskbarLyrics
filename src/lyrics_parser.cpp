@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // lyrics_parser.cpp - 歌词解析与同步实现
 #include "lyrics_parser.h"
 

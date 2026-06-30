@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // spectrum_capture.h - WASAPI loopback 音频频谱捕获（PIMPL）
 #pragma once
 

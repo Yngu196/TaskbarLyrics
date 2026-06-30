@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // api_enabler.h — 极简版：仅通过 Native Messaging 写 config.json（由 content.js 触发）
 #pragma once
 

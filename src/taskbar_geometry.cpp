@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_geometry.cpp - 任务栏几何信息与 UIA 枚举实现
 //
 // 任务栏方位判断算法：

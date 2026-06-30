@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // http_server.cpp - HTTP server implementation (based on cpp-httplib)
 //
 // Replaces the original hand-rolled strstr HTTP parsing with httplib, providing:
@@ -40,6 +40,14 @@ HttpServer::~HttpServer() {
 
 bool HttpServer::Start(int port) {
     if (running_.load()) return true;
+
+    // 拒绝在 fallback token 下启动 HTTP 服务：
+    // 此时鉴权形同虚设，任何本机进程都能用固定字符串访问所有接口。
+    if (Config::IsUsingFallbackToken()) {
+        Log("[SERVER] Refusing to start: fallback token active (auth unsafe)\n");
+        return false;
+    }
+
     stopRequested_.store(false);
     port_ = port;
     serverThread_ = std::thread([this, port]() { ServerLoop(port); });

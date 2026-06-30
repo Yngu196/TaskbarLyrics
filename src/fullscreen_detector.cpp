@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // fullscreen_detector.cpp - 全屏检测与防抖实现
 //
 // 检测逻辑：

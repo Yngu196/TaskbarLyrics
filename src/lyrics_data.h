@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // lyrics_data.h - 共享数据结构和类型定义
 //
 // 该文件定义在整个插件中流转的核心数据结构：

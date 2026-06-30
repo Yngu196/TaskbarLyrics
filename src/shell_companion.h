@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // shell_companion.h - Shell 层抽象：封装任务栏几何、窗口嵌入、全屏检测与 WinEvent 钩子
 //
 // 职责:

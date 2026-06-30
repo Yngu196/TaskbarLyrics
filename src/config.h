@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // config.h - 配置管理模块
 //
 // 职责:
@@ -98,6 +98,9 @@ public:
     // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取。
     // 首次调用时自动生成 UUID 写入注册表，回退使用 MachineGuid 哈希。
     static std::string GetAuthToken();
+    // 当所有 Token 来源均不可用时，GetAuthToken 会回退到硬编码 fallback。
+    // 调用方（如 HTTP Server）应检查此状态并决定是否拒绝启动。
+    static bool IsUsingFallbackToken();
 
 private:
     // 注册表 Run 键方案

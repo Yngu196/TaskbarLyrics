@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // main.cpp - MoeKoeMusic 任务栏歌词插件入口
 //
 #include "config.h"

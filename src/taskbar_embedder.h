@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_embedder.h - 窗口创建/销毁/显示/隐藏/SetWindowPos
 //
 // 职责:

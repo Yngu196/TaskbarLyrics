@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // renderer.h - Direct2D + DirectWrite 渲染引擎
 // 完全透明背景: WIC + UpdateLayeredWindow + 逐字高亮
 #pragma once

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // api_enabler.cpp — 极简版：仅写 config.json 的 settings.apiMode
 // 不检测进程、不 Kill、不重启（重启由用户在 MoeKoeMusic UI 中手动完成）
 #include "api_enabler.h"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // websocket_client.h - WebSocket 客户端封装
 //
 // 职责:

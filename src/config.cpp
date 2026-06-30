@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // config.cpp - 配置管理实现
 #include "config.h"
 #include "logger.h"
@@ -516,6 +516,8 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 // ── GetAuthToken ──
 // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取鉴权 token。
 // 首次运行时生成 UUID 写入注册表；回退使用 MachineGuid 哈希。
+static bool s_fallbackToken = false;
+
 std::string Config::GetAuthToken() {
     constexpr const wchar_t* kRegPath = L"Software\\MoeKoeMusic\\TaskbarLyrics";
     constexpr const wchar_t* kValueName = L"authToken";
@@ -572,6 +574,7 @@ std::string Config::GetAuthToken() {
     // 4. 仍失败：使用硬编码兜底 token（仅极端情况）
     if (token.empty()) {
         token = "MoeKoeTL-FALLBACK-UNSAFE";
+        s_fallbackToken = true;
         Log("[AUTH] WARNING: Using hardcoded fallback token (registry unavailable)\n");
     }
 
@@ -588,6 +591,12 @@ std::string Config::GetAuthToken() {
     }
 
     return token;
+}
+
+bool Config::IsUsingFallbackToken() {
+    // 触发 GetAuthToken() 以初始化 s_fallbackToken
+    GetAuthToken();
+    return s_fallbackToken;
 }
 
 } // namespace moekoe

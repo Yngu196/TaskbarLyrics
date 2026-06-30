@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // constants.h - 全局命名常量
 //
 // 目的：消除代码中的魔数，集中管理所有硬编码数值

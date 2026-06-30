@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // websocket_client.cpp - WebSocket 客户端实现
 #include "websocket_client.h"
 

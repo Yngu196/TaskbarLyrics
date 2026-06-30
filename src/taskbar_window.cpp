@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_window.cpp - 任务栏歌词窗口实现
 // Win11 兼容方案: 独立浮动窗口覆盖在任务栏上方
 // (类似 TrafficMonitor / TranslucentTB 的实现方式)

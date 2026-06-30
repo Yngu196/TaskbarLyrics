@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // config_dialog.cpp - GUI 配置界面实现
 //
 // 使用 Win32 对话框实现配置界面，不依赖资源文件

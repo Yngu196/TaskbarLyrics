@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+// SPDX-License-Identifier: GPL-3.0
 // taskbar_geometry.h - 任务栏几何信息与 UIA 枚举
 //
 // 职责:
