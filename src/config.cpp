@@ -522,6 +522,10 @@ std::string Config::GetAuthToken() {
     constexpr const wchar_t* kRegPath = L"Software\\MoeKoeMusic\\TaskbarLyrics";
     constexpr const wchar_t* kValueName = L"authToken";
 
+    // 缓存：首次计算后存入 s_cachedToken，后续调用直接返回，避免每次 HTTP 请求都读注册表。
+    static std::string s_cachedToken;
+    if (!s_cachedToken.empty()) return s_cachedToken;
+
     // 1. 尝试从注册表读取已有 token
     HKEY hKey = nullptr;
     LONG lr = ::RegOpenKeyExW(HKEY_CURRENT_USER, kRegPath, 0, KEY_READ | KEY_WRITE, &hKey);
@@ -582,6 +586,8 @@ std::string Config::GetAuthToken() {
     lr = ::RegCreateKeyExW(HKEY_CURRENT_USER, kRegPath, 0, nullptr,
                            REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr);
     if (lr == ERROR_SUCCESS) {
+        // Token 内容始终为 ASCII（UUID/十六进制），逐字节拓宽安全；
+        // 若未来 Token 包含非 ASCII 字符，需改用 MultiByteToWideChar(CP_UTF8)。
         std::wstring wtoken(token.begin(), token.end());
         ::RegSetValueExW(hKey, kValueName, 0, REG_SZ,
                          reinterpret_cast<const BYTE*>(wtoken.c_str()),
@@ -590,6 +596,7 @@ std::string Config::GetAuthToken() {
         Log("[AUTH] Token persisted to registry\n");
     }
 
+    s_cachedToken = token;
     return token;
 }
 

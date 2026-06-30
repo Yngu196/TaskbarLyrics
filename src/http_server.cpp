@@ -15,19 +15,38 @@
 
 // cpp-httplib header-only (no OpenSSL - local HTTP API only, no HTTPS needed)
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
 namespace moekoe {
 
 namespace {
 
-// Validate shutdown command from JSON body
+// 恒定时间字符串比较：逐字节异或累加，防止本机其他进程通过计时差异爆破 Token。
+bool ConstantTimeEquals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    int diff = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        diff |= static_cast<unsigned char>(a[i]) ^ static_cast<unsigned char>(b[i]);
+    }
+    return diff == 0;
+}
+
+// Validate shutdown command from JSON body，使用 nlohmann::json 替代手工 strstr 解析，
+// 对字段顺序、空格、嵌套结构更健壮。
 // Compatible with: {"command":"shutdown"} and {"type":"control","data":{"command":"shutdown"}}
 bool IsValidShutdownCommand(const std::string& bodyStr) {
-    const char* cmdKey = strstr(bodyStr.c_str(), "\"command\"");
-    if (!cmdKey) return false;
-    const char* p = cmdKey + 9;
-    while (*p == ' ' || *p == ':' || *p == '\t') ++p;
-    return (strncmp(p, "\"shutdown\"", 10) == 0);
+    try {
+        auto j = nlohmann::json::parse(bodyStr);
+        if (j.contains("command") && j["command"].is_string() && j["command"] == "shutdown")
+            return true;
+        if (j.contains("data") && j["data"].is_object() &&
+            j["data"].contains("command") && j["data"]["command"].is_string() &&
+            j["data"]["command"] == "shutdown")
+            return true;
+    } catch (const std::exception&) {
+        // malformed JSON — not a valid shutdown command
+    }
+    return false;
 }
 
 } // namespace
@@ -115,7 +134,7 @@ void HttpServer::ServerLoop(int port) {
             return httplib::Server::HandlerResponse::Handled;
         }
         const std::string token = req.get_header_value(moekoe::constants::LOCAL_AUTH_HEADER_NAME);
-        if (token != moekoe::Config::GetAuthToken()) {
+        if (!ConstantTimeEquals(token, moekoe::Config::GetAuthToken())) {
             res.status = 403;
             res.set_content("{\"error\":\"invalid auth token\"}", "application/json");
             return httplib::Server::HandlerResponse::Handled;
