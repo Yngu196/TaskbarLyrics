@@ -10,9 +10,11 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <sstream>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -183,6 +185,69 @@ LyricsData WebSocketClient::ParseKrcString(const std::string& krcText) {
 
         data.lines.push_back(std::move(lyricLine));
         ++parsedLines;
+    }
+
+    // 解析 [language:...] 标签提取翻译
+    std::string langLine;
+    {
+        std::istringstream langStream(normalized);
+        std::string l;
+        while (std::getline(langStream, l)) {
+            if (l.size() > 10 && l[0] == '[' && l[1] == 'l' && l.substr(0, 10) == "[language:") {
+                langLine = l;
+                break;
+            }
+        }
+    }
+    if (!langLine.empty()) {
+        // 提取 Base64 内容: [language:xxxx]
+        auto colonPos = langLine.find(':');
+        auto closePos = langLine.find(']', colonPos);
+        if (colonPos != std::string::npos && closePos != std::string::npos) {
+            std::string b64 = langLine.substr(colonPos + 1, closePos - colonPos - 1);
+            // 补齐 padding
+            while (b64.size() % 4 != 0) b64 += '=';
+            // URL-safe Base64 还原
+            for (auto& c : b64) {
+                if (c == '-') c = '+';
+                else if (c == '_') c = '/';
+            }
+            // 手动 Base64 解码
+            static const char* kBase64Table = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            std::vector<uint8_t> decoded;
+            decoded.reserve(b64.size() * 3 / 4);
+            for (size_t i = 0; i < b64.size(); i += 4) {
+                int vals[4] = {-1, -1, -1, -1};
+                for (int j = 0; j < 4 && (i + j) < b64.size(); ++j) {
+                    const char* p = strchr(kBase64Table, b64[i + j]);
+                    if (p) vals[j] = (int)(p - kBase64Table);
+                }
+                if (vals[0] >= 0 && vals[1] >= 0) decoded.push_back((uint8_t)((vals[0] << 2) | (vals[1] >> 4)));
+                if (vals[1] >= 0 && vals[2] >= 0) decoded.push_back((uint8_t)((vals[1] << 4) | (vals[2] >> 2)));
+                if (vals[2] >= 0 && vals[3] >= 0) decoded.push_back((uint8_t)((vals[2] << 6) | vals[3]));
+            }
+            // 解析 JSON
+            std::string jsonStr(decoded.begin(), decoded.end());
+            try {
+                json langJson = json::parse(jsonStr);
+                if (langJson.contains("content") && langJson["content"].is_array()) {
+                    for (const auto& section : langJson["content"]) {
+                        if (section.value("type", -1) == 1 && section.contains("lyricContent") && section["lyricContent"].is_array()) {
+                            const auto& lc = section["lyricContent"];
+                            size_t maxIdx = (std::min)(lc.size(), data.lines.size());
+                            for (size_t idx = 0; idx < maxIdx; ++idx) {
+                                if (lc[idx].is_array() && !lc[idx].empty() && lc[idx][0].is_string()) {
+                                    data.lines[idx].translated = lc[idx][0].get<std::string>();
+                                }
+                            }
+                            break; // 只取第一个 type=1 的翻译
+                        }
+                    }
+                }
+            } catch (...) {
+                // 解析失败，忽略翻译数据
+            }
+        }
     }
 
     data.valid = !data.lines.empty();

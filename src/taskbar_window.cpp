@@ -154,11 +154,18 @@ void TaskbarWindow::ShowLyricsContextMenu() {
 
     ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
-    // 翻译模式子菜单
+    // 翻译模式子菜单（根据显示模式显示不同选项）
     HMENU hTransMenu = ::CreatePopupMenu();
-    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE,     L"仅原文");
-    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 1, L"原文+翻译");
-    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 2, L"仅翻译");
+    if (displayMode_ == "card") {
+        // 卡片模式：三态翻译选项
+        ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE,     L"仅原文");
+        ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 1, L"仅翻译");
+        ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 2, L"原文+翻译");
+    } else {
+        // 卡拉OK模式：仅"原/译"切换
+        ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE,     L"原（显示原文）");
+        ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 1, L"译（显示译文）");
+    }
     ::AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hTransMenu), L"翻译模式");
 
     ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);

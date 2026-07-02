@@ -31,6 +31,7 @@ enum TrayMenuId : UINT {
     ID_MENU_OPEN_MOEKOE       = ID_TRAY_MENU_BASE + 9,
     ID_MENU_TOGGLE_TRANSLATION = ID_TRAY_MENU_BASE + 10,
     ID_MENU_TRANSLATION_MODE   = ID_TRAY_MENU_BASE + 11, // 子菜单基址
+    ID_MENU_CARD_TRANS_MODE   = ID_TRAY_MENU_BASE + 12,  // 卡片翻译模式：原/译 或 原-译
 };
 
 class TrayIcon {
@@ -68,6 +69,10 @@ public:
     // 设置绑定模式（影响是否显示"解除绑定"菜单项）
     void SetBoundMode(bool bound) { boundMode_ = bound; if (hMenu_) RebuildMenu(); }
 
+    // 设置显示模式和卡片翻译模式（影响右键菜单翻译选项）
+    void SetDisplayMode(const std::string& mode) { displayMode_ = mode; if (hMenu_) RebuildMenu(); }
+    void SetCardTranslationMode(const std::string& mode) { cardTranslationMode_ = mode; if (hMenu_) RebuildMenu(); }
+
     // 弹出右键菜单
     void ShowContextMenu(HWND hwnd);
 
@@ -93,6 +98,8 @@ private:
     bool checkedLockPos_{false};
     bool checkedLockFull_{false};
     bool boundMode_{false};
+    std::string displayMode_{"karaoke"};
+    std::string cardTranslationMode_{"dual"};
     std::wstring labelEnable_{L"启用歌词显示"};
     std::wstring lastTooltip_;  // 缓存上一次 tooltip，避免每帧 NIM_MODIFY 导致闪烁
 

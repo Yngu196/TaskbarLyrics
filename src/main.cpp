@@ -316,14 +316,26 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_COMMAND: {
         const UINT id = LOWORD(wParam);
-        // 翻译模式子菜单命令
+        // 翻译模式子菜单命令（根据显示模式区分处理）
         if (id >= moekoe::ID_MENU_TRANSLATION_MODE && id <= moekoe::ID_MENU_TRANSLATION_MODE + 2) {
-            const char* modes[] = {"off", "below", "replace"};
             const int idx = static_cast<int>(id - moekoe::ID_MENU_TRANSLATION_MODE);
-            app->config->MutableAppearance().translationMode = modes[idx];
-            app->config->MutableAppearance().enableTranslation = (idx != 0);
+            const auto& dispMode = app->config->Appearance().displayMode;
+            if (dispMode == "card") {
+                // 卡片模式：ID+0=原(off), ID+1=译(replace), ID+2=原-译(dual)
+                const char* modes[] = {"off", "replace", "dual"};
+                app->config->MutableAppearance().cardTranslationMode = modes[idx];
+                app->config->MutableAppearance().enableTranslation = (idx != 0);
+            } else {
+                // 卡拉OK模式：ID+0=原(off), ID+1=译(replace)
+                const char* modes[] = {"off", "replace"};
+                app->config->MutableAppearance().translationMode = modes[idx];
+                app->config->MutableAppearance().enableTranslation = (idx == 1);
+            }
             app->config->Save();
             ApplyRendererSettings(*app);
+            // 刷新托盘菜单以反映翻译模式变更
+            app->tray->SetDisplayMode(dispMode);
+            app->tray->SetCardTranslationMode(app->config->Appearance().cardTranslationMode);
             return 0;
         }
         OnTrayCommand(*app, id);
@@ -670,12 +682,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // 注册歌词窗口右键菜单回调
     taskbarWindow.OnContextMenuCommand([&app, hMsgWnd](UINT menuId) {
-        // 翻译模式子菜单项
+        // 翻译模式子菜单项（根据显示模式区分处理）
         if (menuId >= moekoe::ID_MENU_TRANSLATION_MODE && menuId <= moekoe::ID_MENU_TRANSLATION_MODE + 2) {
-            const char* modes[] = {"off", "below", "replace"};
             const int idx = static_cast<int>(menuId - moekoe::ID_MENU_TRANSLATION_MODE);
-            app.config->MutableAppearance().translationMode = modes[idx];
-            app.config->MutableAppearance().enableTranslation = (idx != 0);
+            const auto& dispMode = app.config->Appearance().displayMode;
+            if (dispMode == "card") {
+                const char* modes[] = {"off", "replace", "dual"};
+                app.config->MutableAppearance().cardTranslationMode = modes[idx];
+                app.config->MutableAppearance().enableTranslation = (idx != 0);
+            } else {
+                const char* modes[] = {"off", "replace"};
+                app.config->MutableAppearance().translationMode = modes[idx];
+                app.config->MutableAppearance().enableTranslation = (idx == 1);
+            }
             app.config->Save();
             ApplyRendererSettings(app);
             return;

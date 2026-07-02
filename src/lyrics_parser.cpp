@@ -139,9 +139,10 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     out.currentLine      = line.text;
     out.currentTranslated= line.translated;
 
-    // 卡片模式：输出下一行歌词预览
+    // 卡片模式：输出下一行歌词预览 + 翻译
     if (idx + 1 < static_cast<int>(lyrics_.lines.size())) {
         out.nextLine = lyrics_.lines[idx + 1].text;
+        out.nextTranslated = lyrics_.lines[idx + 1].translated;
     }
 
     // 传递封面 URL 和歌曲名（来自 PlayerState）

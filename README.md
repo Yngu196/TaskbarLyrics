@@ -10,14 +10,26 @@
 
 </p>
 
-<p align="center">在 Windows 任务栏上显示歌词，支持卡拉OK效果、双行显示歌词封面和播放控制</p>
+<p align="center">在 Windows 任务栏上显示歌词，支持卡拉OK效果、双行显示歌词封面、播放控制和歌词翻译</p>
+
+## gif及图片演示
+
+|             卡片模式             |             卡拉OK模式             |             卡片模式（歌词双语切换）             |
+| :--------------------------: | :----------------------------: | :----------------------------------: |
+| ![卡片模式](Samples/sample1.gif) | ![卡拉OK模式](Samples/sample2.gif) | ![卡片模式（歌词双语切换）](Samples/sample3.gif) |
+
+|             设置页面             |             菜单             |
+| :--------------------------: | :------------------------: |
+| ![设置页面](Samples/sample4.png) | ![菜单](Samples/sample6.png) |
+| ![设置页面](Samples/sample5.png) | ![菜单](Samples/sample7.png) |
 
 ***
 
 ## 功能特性
->本项目可能与一些桌面/任务栏美化工具不兼容。
->目前已知与`腾讯桌面整理`存在一定的兼容问题，在与桌面交互时可能会导致歌词被任务栏覆盖。
->本项目与TranslucentTB、Wallpaper不存在兼容问题，可放心使用。
+
+> 本项目可能与一些桌面/任务栏美化工具不兼容。
+> 目前已知与`腾讯桌面整理`存在一定的兼容问题，在与桌面交互时可能会导致歌词被任务栏覆盖。
+> 本项目与TranslucentTB、Wallpaper不存在兼容问题，可放心使用。
 
 - **Native Host 托管** — 随 MoeKoeMusic 自动启动/关闭，无需手动管理
 - **卡拉 OK 效果** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
@@ -32,9 +44,13 @@
 - **跑马灯滚动** — 长歌词自动滚动（bounce / loop / off 三种模式）
 - **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面，实时预览，零外部依赖
 - **自定义字体** — 可使用本地已安装的字体
+- **歌词翻译支持** — 自动解析 KRC `[language:...]` 标签提取翻译数据
+- **卡拉OK模式翻译** — 右键菜单切换"原（原文）"/"译（译文）"，单行逐字高亮
+- **卡片模式翻译** — 右键菜单三种双行显示：仅原文 / 仅翻译 / 原文+翻译，无翻译时自动回退
 
 ## 使用方式
->本插件会自动开启 MoeKoeMusic 的API模式
+
+> 本插件会自动开启 MoeKoeMusic 的API模式
 
 ### 作为 MoeKoeMusic 插件（推荐）
 
@@ -77,6 +93,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
+
 
 ## v0.5.1 变更
 

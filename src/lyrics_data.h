@@ -68,6 +68,7 @@ struct RenderState {
 
     // 卡片模式专用
     std::string nextLine;             // 下一行歌词文本（预览）
+    std::string nextTranslated;       // 下一行翻译（卡片"仅翻译"模式用）
     std::string coverArtUrl;          // 专辑封面 URL（可能为空）
     std::string songName;             // 歌曲名称（用于封面降级显示）
 

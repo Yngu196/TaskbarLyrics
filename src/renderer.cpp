@@ -240,6 +240,7 @@ void TaskbarRenderer::CreateRenderTarget() {
 
 void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
     settings_ = s;
+    cardTranslationMode_ = s.cardTranslationMode;
     if (initialized_) {
         textFormat_.Reset();
         translationFormat_.Reset();
@@ -500,10 +501,29 @@ void TaskbarRenderer::Render(const RenderState& state) {
     if (settings_.displayMode == "card") {
         // ═════ 卡片样式渲染路径 ═════
         if (state.hasLyrics && !state.currentLine.empty()) {
+            // 卡片模式翻译处理
+            RenderState cardState = state;
+            if (settings_.enableTranslation) {
+                if (cardTranslationMode_ == "replace") {
+                    // 仅翻译：第1行=译文当前行，第2行=译文下一行
+                    if (!state.currentTranslated.empty()) {
+                        cardState.currentLine = state.currentTranslated;
+                        cardState.nextLine = state.nextTranslated;
+                    }
+                } else if (cardTranslationMode_ == "dual") {
+                    // 原文+翻译：第1行=原文当前行，第2行=译文当前行
+                    // 若当前行无翻译，回退为原文下一行
+                    if (!state.currentTranslated.empty()) {
+                        cardState.nextLine = state.currentTranslated;
+                    }
+                    // 无翻译时 cardState.nextLine 保持原值（原文下一行），无需额外处理
+                }
+                // "off"（仅原文）：不修改，cardState 保持原始双行
+            }
             if (isVerticalTaskbar_) {
-                RenderCardStyleVertical(state);
+                RenderCardStyleVertical(cardState);
             } else {
-                RenderCardStyle(state);
+                RenderCardStyle(cardState);
             }
         } else if (state.isPlaying) {
             // 纯音乐：封面 + 频谱

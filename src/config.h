@@ -25,6 +25,9 @@ struct AppearanceConfig {
     // 翻译显示模式: "off"=不显示翻译 | "below"=原文下方显示(默认) | "replace"=替换原文
     std::string translationMode{"below"};
 
+    // 卡片模式翻译显示: "off"=仅原文(不翻译) | "replace"=仅译文 | "dual"=双行显示(原-译)
+    std::string cardTranslationMode{"off"};
+
     // 显示模式: "karaoke" (默认,现有单行卡拉OK) | "card" (卡片样式)
     std::string displayMode{"karaoke"};
 

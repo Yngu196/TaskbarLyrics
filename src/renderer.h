@@ -126,6 +126,7 @@ private:
     RenderState lastState_;
 
     AppearanceConfig settings_;
+    std::string cardTranslationMode_{"dual"};  // 卡片模式翻译显示模式
 
     // ═══════════════════════════════
     // 跑马灯状态机成员
