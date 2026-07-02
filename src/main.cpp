@@ -22,6 +22,9 @@
 
 #include <nlohmann/json.hpp>
 #include <windows.h>
+#include <psapi.h>
+
+#pragma comment(lib, "psapi.lib")
 
 #include <algorithm>
 #include <atomic>
@@ -223,6 +226,72 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         app.running = false;
         break;
     }
+    case ID_MENU_OPEN_MOEKOE: {
+        // 尝试查找并激活 MoeKoeMusic 主窗口
+        // MoeKoeMusic 是 Electron 应用，窗口类名为 Chrome_WidgetWin_1
+        HWND hMoeKoe = ::FindWindowW(L"Chrome_WidgetWin_1", nullptr);
+        if (hMoeKoe) {
+            // 检查进程名是否为 MoeKoeMusic
+            DWORD pid = 0;
+            ::GetWindowThreadProcessId(hMoeKoe, &pid);
+            bool isMoeKoe = false;
+            HANDLE hProc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if (hProc) {
+                wchar_t procName[MAX_PATH] = {};
+                if (::GetModuleFileNameExW(hProc, nullptr, procName, MAX_PATH)) {
+                    std::wstring name(procName);
+                    // 不区分大小写检查进程名是否包含 MoeKoeMusic
+                    std::transform(name.begin(), name.end(), name.begin(), ::towlower);
+                    isMoeKoe = (name.find(L"moekoemusic") != std::wstring::npos);
+                }
+                ::CloseHandle(hProc);
+            }
+            if (isMoeKoe) {
+                if (::IsIconic(hMoeKoe)) {
+                    ::ShowWindow(hMoeKoe, SW_RESTORE);
+                }
+                ::SetForegroundWindow(hMoeKoe);
+            } else {
+                // 找到的不是 MoeKoeMusic，继续枚举
+                hMoeKoe = nullptr;
+                // 使用 EnumWindows 枚举所有 Chrome_WidgetWin_1 窗口
+                struct EnumData { HWND result; } data{nullptr};
+                ::EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
+                    auto* d = reinterpret_cast<EnumData*>(lParam);
+                    wchar_t cls[256] = {};
+                    ::GetClassNameW(hwnd, cls, 256);
+                    if (wcscmp(cls, L"Chrome_WidgetWin_1") != 0) return TRUE;
+                    if (!::IsWindowVisible(hwnd)) return TRUE;
+                    DWORD pid2 = 0;
+                    ::GetWindowThreadProcessId(hwnd, &pid2);
+                    HANDLE hP = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid2);
+                    if (hP) {
+                        wchar_t pn[MAX_PATH] = {};
+                        if (::GetModuleFileNameExW(hP, nullptr, pn, MAX_PATH)) {
+                            std::wstring nm(pn);
+                            std::transform(nm.begin(), nm.end(), nm.begin(), ::towlower);
+                            if (nm.find(L"moekoemusic") != std::wstring::npos) {
+                                d->result = hwnd;
+                                ::CloseHandle(hP);
+                                return FALSE;
+                            }
+                        }
+                        ::CloseHandle(hP);
+                    }
+                    return TRUE;
+                }, reinterpret_cast<LPARAM>(&data));
+                if (data.result) {
+                    if (::IsIconic(data.result)) ::ShowWindow(data.result, SW_RESTORE);
+                    ::SetForegroundWindow(data.result);
+                } else {
+                    Log("[OPEN-MOEKOE] MoeKoeMusic window not found\n");
+                }
+            }
+        } else {
+            Log("[OPEN-MOEKOE] MoeKoeMusic window not found\n");
+        }
+        break;
+    }
     default:
         break;
     }
@@ -247,6 +316,16 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     case WM_COMMAND: {
         const UINT id = LOWORD(wParam);
+        // 翻译模式子菜单命令
+        if (id >= moekoe::ID_MENU_TRANSLATION_MODE && id <= moekoe::ID_MENU_TRANSLATION_MODE + 2) {
+            const char* modes[] = {"off", "below", "replace"};
+            const int idx = static_cast<int>(id - moekoe::ID_MENU_TRANSLATION_MODE);
+            app->config->MutableAppearance().translationMode = modes[idx];
+            app->config->MutableAppearance().enableTranslation = (idx != 0);
+            app->config->Save();
+            ApplyRendererSettings(*app);
+            return 0;
+        }
         OnTrayCommand(*app, id);
         return 0;
     }
@@ -587,6 +666,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 注册悬停状态变化回调
     taskbarWindow.OnHoverChanged([&]() {
         ::PostMessageW(hMsgWnd, WM_RENDER_UPDATE, 0, 0);
+    });
+
+    // 注册歌词窗口右键菜单回调
+    taskbarWindow.OnContextMenuCommand([&app, hMsgWnd](UINT menuId) {
+        // 翻译模式子菜单项
+        if (menuId >= moekoe::ID_MENU_TRANSLATION_MODE && menuId <= moekoe::ID_MENU_TRANSLATION_MODE + 2) {
+            const char* modes[] = {"off", "below", "replace"};
+            const int idx = static_cast<int>(menuId - moekoe::ID_MENU_TRANSLATION_MODE);
+            app.config->MutableAppearance().translationMode = modes[idx];
+            app.config->MutableAppearance().enableTranslation = (idx != 0);
+            app.config->Save();
+            ApplyRendererSettings(app);
+            return;
+        }
+
+        // 其他命令复用托盘菜单处理逻辑
+        ::PostMessageW(hMsgWnd, WM_COMMAND, menuId, 0);
     });
 
 

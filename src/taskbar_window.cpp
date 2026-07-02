@@ -6,6 +6,7 @@
 // v0.5.x: Shell 层逻辑已迁移至 shell_companion.cpp
 #include "taskbar_window.h"
 #include "constants.h"
+#include "tray_icon.h"
 
 #include <shellapi.h>
 #include <windows.h>
@@ -136,6 +137,98 @@ void TaskbarWindow::SnapToEmptySpace() {
 
     // 更新拖动偏移量（SnapToEmptySpace 不修改偏移量，
     // 偏移量更新在 WndProc WM_LBUTTONUP 中完成）
+}
+
+void TaskbarWindow::ShowLyricsContextMenu() {
+    if (!hwnd_) return;
+
+    HMENU hMenu = ::CreatePopupMenu();
+    if (!hMenu) return;
+
+    ::AppendMenuW(hMenu, MF_STRING, ID_MENU_OPEN_MOEKOE, L"打开 MoeKoeMusic");
+    ::AppendMenuW(hMenu, MF_STRING, ID_MENU_SETTINGS, L"设置...");
+
+    ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    ::AppendMenuW(hMenu, MF_STRING, ID_MENU_RECONNECT, L"重新连接");
+
+    ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    // 翻译模式子菜单
+    HMENU hTransMenu = ::CreatePopupMenu();
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE,     L"仅原文");
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 1, L"原文+翻译");
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 2, L"仅翻译");
+    ::AppendMenuW(hMenu, MF_POPUP, reinterpret_cast<UINT_PTR>(hTransMenu), L"翻译模式");
+
+    ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    UINT lockPosFlags = MF_STRING | (positionLocked_ ? MF_CHECKED : MF_UNCHECKED);
+    ::AppendMenuW(hMenu, lockPosFlags, ID_MENU_LOCK_POS, L"锁定位置");
+
+    UINT lockFullFlags = MF_STRING | (fullyLocked_ ? MF_CHECKED : MF_UNCHECKED);
+    ::AppendMenuW(hMenu, lockFullFlags, ID_MENU_LOCK_FULL, L"完全锁定");
+
+    ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
+
+    ::AppendMenuW(hMenu, MF_STRING, ID_MENU_EXIT, L"退出");
+
+    // 计算菜单位置：菜单紧贴任务栏外侧
+    POINT pt{};
+    const RECT tbRect = companion_.GetTaskbarRect();
+    const TaskbarPosition tbPos = companion_.GetTaskbarInfo().position;
+    switch (tbPos) {
+    case TaskbarPosition::BOTTOM:
+        pt.x = tbRect.left;
+        pt.y = tbRect.top; // 菜单底部紧贴任务栏顶部
+        break;
+    case TaskbarPosition::TOP:
+        pt.x = tbRect.left;
+        pt.y = tbRect.bottom; // 菜单顶部紧贴任务栏底部
+        break;
+    case TaskbarPosition::LEFT:
+        pt.x = tbRect.right; // 菜单左边紧贴任务栏右边
+        pt.y = tbRect.top;
+        break;
+    case TaskbarPosition::RIGHT:
+        pt.x = tbRect.left; // 菜单右边紧贴任务栏左边
+        pt.y = tbRect.top;
+        break;
+    default:
+        ::GetCursorPos(&pt);
+        break;
+    }
+
+    ::SetForegroundWindow(hwnd_);
+
+    UINT trackFlags = TPM_RIGHTBUTTON | TPM_RETURNCMD;
+    // 根据任务栏方向选择菜单展开方向
+    switch (tbPos) {
+    case TaskbarPosition::BOTTOM:
+        trackFlags |= TPM_BOTTOMALIGN | TPM_HORNEGANIMATION;
+        break;
+    case TaskbarPosition::TOP:
+        trackFlags |= TPM_TOPALIGN | TPM_HORNEGANIMATION;
+        break;
+    case TaskbarPosition::LEFT:
+        trackFlags |= TPM_LEFTALIGN | TPM_VERNEGANIMATION;
+        break;
+    case TaskbarPosition::RIGHT:
+        trackFlags |= TPM_RIGHTALIGN | TPM_VERNEGANIMATION;
+        break;
+    default:
+        trackFlags |= TPM_VERNEGANIMATION;
+        break;
+    }
+
+    const auto cmd = ::TrackPopupMenuEx(
+        hMenu, trackFlags, pt.x, pt.y, hwnd_, nullptr);
+
+    ::DestroyMenu(hMenu);
+
+    if (cmd != 0 && onContextMenuCmd_) {
+        onContextMenuCmd_(static_cast<UINT>(cmd));
+    }
 }
 
 // ═════════════════════════════════════════
@@ -315,6 +408,10 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 self->onHoverChanged_();
             }
         }
+        return 0;
+    }
+    case WM_RBUTTONUP: {
+        self->ShowLyricsContextMenu();
         return 0;
     }
     case WM_DPICHANGED: {

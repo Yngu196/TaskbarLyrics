@@ -133,6 +133,7 @@ bool Config::Load() {
             appearance_.fontSize          = a.value("font_size",         appearance_.fontSize);
             appearance_.enableKaraoke     = a.value("enable_karaoke",    appearance_.enableKaraoke);
             appearance_.enableTranslation = a.value("enable_translation", appearance_.enableTranslation);
+            appearance_.translationMode   = a.value("translation_mode",   appearance_.translationMode);
             appearance_.enableMarquee     = a.value("enable_marquee",    appearance_.enableMarquee);
             appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
             appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
@@ -216,6 +217,7 @@ bool Config::Save() const {
         {"font_size",          appearance_.fontSize},
         {"enable_karaoke",     appearance_.enableKaraoke},
         {"enable_translation", appearance_.enableTranslation},
+        {"translation_mode",   appearance_.translationMode},
         {"enable_marquee",     appearance_.enableMarquee},
         {"display_mode",       appearance_.displayMode},
         {"card_font_size_current", appearance_.cardFontSizeCurrent},

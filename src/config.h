@@ -22,6 +22,8 @@ struct AppearanceConfig {
     int         fontSize{20};
     bool        enableKaraoke{true};
     bool        enableTranslation{true};
+    // 翻译显示模式: "off"=不显示翻译 | "below"=原文下方显示(默认) | "replace"=替换原文
+    std::string translationMode{"below"};
 
     // 显示模式: "karaoke" (默认,现有单行卡拉OK) | "card" (卡片样式)
     std::string displayMode{"karaoke"};

@@ -249,6 +249,39 @@ TEST_CASE("ParseLRC - lyrics with translated lines", "[ParseLRC]") {
     REQUIRE(result[1].text == "World");
 }
 
+TEST_CASE("ParseLRC - bilingual with same timestamp (dual-line)", "[ParseLRC]") {
+    // 相同时间戳的相邻行：第一行原文，第二行翻译
+    auto result = LyricsParser::ParseLRC(
+        "[00:15.00]Hello\n[00:15.00]你好\n[00:20.00]World\n[00:20.00]世界\n");
+    REQUIRE(result.size() == 2);
+    REQUIRE(result[0].text == "Hello");
+    REQUIRE(result[0].translated == "你好");
+    REQUIRE(result[1].text == "World");
+    REQUIRE(result[1].translated == "世界");
+}
+
+TEST_CASE("ParseLRC - bilingual with slash separator", "[ParseLRC]") {
+    // 斜杠分隔格式: "原文 / 翻译"
+    auto result = LyricsParser::ParseLRC(
+        "[00:10.00]Hello / 你好\n[00:20.00]World / 世界\n");
+    REQUIRE(result.size() == 2);
+    REQUIRE(result[0].text == "Hello");
+    REQUIRE(result[0].translated == "你好");
+    REQUIRE(result[1].text == "World");
+    REQUIRE(result[1].translated == "世界");
+}
+
+TEST_CASE("ParseLRC - bilingual mixed modes", "[ParseLRC]") {
+    // 混合格式：斜杠分隔 + 无翻译
+    auto result = LyricsParser::ParseLRC(
+        "[00:10.00]Hello / 你好\n[00:20.00]No translation\n");
+    REQUIRE(result.size() == 2);
+    REQUIRE(result[0].text == "Hello");
+    REQUIRE(result[0].translated == "你好");
+    REQUIRE(result[1].text == "No translation");
+    REQUIRE(result[1].translated.empty());
+}
+
 // ──── GetCurrentRenderState 集成测试 ────
 
 TEST_CASE("GetCurrentRenderState - no lyrics returns empty state", "[GetCurrentRenderState]") {

@@ -201,13 +201,21 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     return out;
 }
 
-// ---- LRC 解析(备用方案) ----
+// ---- LRC 解析(备用方案，支持双语) ----
 std::vector<LyricsParser::LrcLine> LyricsParser::ParseLRC(const std::string& lrcContent) {
     std::vector<LrcLine> result;
     static const std::regex pattern(R"(\[(\d{2}):(\d{2})\.(\d{2,3})\](.*))");
     std::istringstream stream(lrcContent);
     std::string line;
     std::smatch match;
+
+    // 临时存储：先收集所有行，再合并同时间戳的行（双语 LRC）
+    struct TempLine {
+        double      timeSec;
+        std::string text;
+    };
+    std::vector<TempLine> temp;
+
     while (std::getline(stream, line)) {
         if (std::regex_match(line, match, pattern)) {
             int    minutes = std::stoi(match[1].str());
@@ -219,9 +227,40 @@ std::vector<LyricsParser::LrcLine> LyricsParser::ParseLRC(const std::string& lrc
             } else {
                 frac = std::stoi(msStr) / 100.0;
             }
-            result.push_back({minutes * 60 + seconds + frac, match[4].str()});
+            std::string content = match[4].str();
+
+            // 检测斜杠分隔的双语格式: "原文 / 翻译"
+            // 使用 " / " (前后空格) 作为分隔符以避免误切
+            auto slashPos = content.find(" / ");
+            if (slashPos != std::string::npos) {
+                std::string original  = content.substr(0, slashPos);
+                std::string trans     = content.substr(slashPos + 3);
+                double t = minutes * 60 + seconds + frac;
+                result.push_back({t, original, trans});
+                continue;
+            }
+
+            temp.push_back({minutes * 60 + seconds + frac, content});
         }
     }
+
+    // 对临时行排序后合并同时间戳的行（原文+翻译配对）
+    std::sort(temp.begin(), temp.end(),
+              [](const TempLine& a, const TempLine& b) { return a.timeSec < b.timeSec; });
+
+    for (size_t i = 0; i < temp.size(); ++i) {
+        // 检查下一行是否有相同时间戳（双语 LRC 的常见格式）
+        if (i + 1 < temp.size() &&
+            std::abs(temp[i].timeSec - temp[i + 1].timeSec) < 0.001) {
+            // 相同时间戳：第一行为原文，第二行为翻译
+            result.push_back({temp[i].timeSec, temp[i].text, temp[i + 1].text});
+            ++i; // 跳过翻译行
+        } else {
+            result.push_back({temp[i].timeSec, temp[i].text, ""});
+        }
+    }
+
+    // 最终按时间排序
     std::sort(result.begin(), result.end(),
               [](const LrcLine& a, const LrcLine& b) { return a.timeSec < b.timeSec; });
     return result;

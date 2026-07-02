@@ -435,8 +435,14 @@ void TaskbarRenderer::Render(const RenderState& state) {
     const double now = GetCurrentTimeSeconds();
     double smoothProgress = state.progress; // 默认值：弹簧未启动时直接用原始进度
     if (settings_.displayMode != "card" && state.hasLyrics && !state.currentLine.empty()) {
-        const std::wstring lineW = Utf8ToWide(state.currentLine);
-        if (UpdateLyricFade(lineW)) {
+        // 翻译替换模式下，歌词切换动画应使用替换后的文本
+        const bool isReplaceEarly = (settings_.translationMode == "replace" &&
+                                     settings_.enableTranslation &&
+                                     !state.currentTranslated.empty());
+        const std::wstring fadeLineW = isReplaceEarly
+            ? Utf8ToWide(state.currentTranslated)
+            : Utf8ToWide(state.currentLine);
+        if (UpdateLyricFade(fadeLineW)) {
             kP3NeedsRedraw = true;
         }
         if (UpdateProgressSpring(state.progress, now)) {
@@ -529,6 +535,13 @@ void TaskbarRenderer::Render(const RenderState& state) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
             const float* padPtr = isVerticalTaskbar_ ? &vertPaddingX : nullptr;
 
+            // 翻译替换模式：用翻译文本替换原文显示
+            const bool isReplaceMode = (settings_.translationMode == "replace" &&
+                                        settings_.enableTranslation &&
+                                        !state.currentTranslated.empty());
+            const std::wstring displayLine = isReplaceMode
+                ? Utf8ToWide(state.currentTranslated) : lineW;
+
             // P3-①: 歌词行切换 fade 过渡 —— 旧行淡出 + 新行淡入，EaseOut 交叉
             if (lyricFadeActive_) {
                 const double elapsed = now - lyricFadeStartTime_;
@@ -541,23 +554,23 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 DrawHighlightedTextPerCharacter(lyricFadeOldText_, 1.0, false, 0.0f,
                                                padPtr, 1.0f - fadeT);
                 // 旧行翻译（同步渐隐）
-                if (settings_.enableTranslation && !lyricFadeOldTrans_.empty()) {
+                if (settings_.enableTranslation && settings_.translationMode == "below" && !lyricFadeOldTrans_.empty()) {
                     DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT);
                 }
 
                 // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
-                DrawHighlightedTextPerCharacter(lineW, smoothProgress, settings_.enableKaraoke,
+                DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
                                                scrollOffset, padPtr, fadeT);
-                if (settings_.enableTranslation && !state.currentTranslated.empty()) {
+                if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
                     DrawTranslatedText(trW, padPtr, fadeT);
                 }
             } else {
                 // 非 fade：正常渲染（使用弹簧平滑进度）
-                DrawHighlightedTextPerCharacter(lineW, smoothProgress, settings_.enableKaraoke,
+                DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
                                                scrollOffset, padPtr);
 
-                if (settings_.enableTranslation && !state.currentTranslated.empty()) {
+                if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
                     DrawTranslatedText(trW, padPtr);
                 }

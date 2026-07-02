@@ -99,6 +99,10 @@ public:
     using ButtonCallback = std::function<void(HoverButton)>;
     void OnButtonClicked(ButtonCallback cb) { onButtonClicked_ = std::move(cb); }
 
+    // 右键菜单回调（菜单项命令 ID）
+    using ContextMenuCallback = std::function<void(UINT menuId)>;
+    void OnContextMenuCommand(ContextMenuCallback cb) { onContextMenuCmd_ = std::move(cb); }
+
     // 悬停状态变化回调（用于立即触发重绘）
     using HoverChangedCallback = std::function<void()>;
     void OnHoverChanged(HoverChangedCallback cb) { onHoverChanged_ = std::move(cb); }
@@ -121,6 +125,7 @@ private:
     void InternalPosition();
     HoverButton HitTestButton(int x, int y) const;
     void SnapToEmptySpace();
+    void ShowLyricsContextMenu();
 
     // 状态
     HINSTANCE     hInstance_{nullptr};
@@ -141,6 +146,7 @@ private:
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"
 
     ButtonCallback onButtonClicked_;
+    ContextMenuCallback onContextMenuCmd_;
     HoverChangedCallback onHoverChanged_;
 
     // ── v0.5.x: ShellCompanion 封装 Shell 层逻辑 ──

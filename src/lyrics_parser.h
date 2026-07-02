@@ -36,6 +36,7 @@ public:
     struct LrcLine {
         double      timeSec{0.0};
         std::string text;
+        std::string translated; // 翻译文本（双语 LRC）
     };
     static std::vector<LrcLine> ParseLRC(const std::string& lrcContent);
 

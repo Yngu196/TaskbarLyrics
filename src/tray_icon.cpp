@@ -102,18 +102,30 @@ void TrayIcon::RebuildMenu() {
 
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
+    // 打开 MoeKoeMusic
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_OPEN_MOEKOE, L"打开 MoeKoeMusic");
+
+    // 设置
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_SETTINGS, L"设置...");
+
+    ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
+
     // 开机自启
     UINT autoFlags = MF_STRING | (checkedAutoStart_ ? MF_CHECKED : MF_UNCHECKED);
     ::AppendMenuW(hMenu_, autoFlags, ID_MENU_AUTOSTART, L"开机自动启动");
 
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
-    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_RECONNECT, L"重新连接");
-
-    // 设置
-    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_SETTINGS, L"设置...");
+    // 翻译模式子菜单
+    HMENU hTransMenu = ::CreatePopupMenu();
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE,     L"仅原文");
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 1, L"原文+翻译");
+    ::AppendMenuW(hTransMenu, MF_STRING, ID_MENU_TRANSLATION_MODE + 2, L"仅翻译");
+    ::AppendMenuW(hMenu_, MF_POPUP, reinterpret_cast<UINT_PTR>(hTransMenu), L"翻译模式");
 
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
+
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_RECONNECT, L"重新连接");
 
     // 锁定位置
     UINT lockPosFlags = MF_STRING | (checkedLockPos_ ? MF_CHECKED : MF_UNCHECKED);
