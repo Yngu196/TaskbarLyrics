@@ -140,6 +140,7 @@ bool Config::Load() {
             appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
             appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
             appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
+            appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
             appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
@@ -222,6 +223,7 @@ bool Config::Save() const {
         {"card_font_family",       appearance_.cardFontFamily},
         {"card_current_color",     appearance_.cardCurrentColor},
         {"card_next_color",        appearance_.cardNextColor},
+        {"card_background_mode",  appearance_.cardBackgroundMode},
         {"marquee_mode",       appearance_.marqueeMode},
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},
         {"marquee_pause_ms",   appearance_.marqueePauseMs},

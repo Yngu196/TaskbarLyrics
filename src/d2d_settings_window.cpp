@@ -388,6 +388,9 @@ void D2DSettingsWindow::BuildControls(const Config& cfg) {
     addLabelRow("cardFontFamily", "字体", a.cardFontFamily.empty() ? "(与主模式相同)" : a.cardFontFamily, /*readOnly*/true);
     addColor("cardCurrentColor", "当前行颜色", a.cardCurrentColor);
     addColor("cardNextColor", "下一行颜色", a.cardNextColor);
+    addDropdown("cardBackgroundMode", "卡片背景",
+                {"半透明毛玻璃", "纯透明"},
+                a.cardBackgroundMode == "transparent" ? 1 : 0);
 
     // ===== 位置 =====
     addSection("位置");
@@ -451,7 +454,8 @@ void D2DSettingsWindow::UpdateControlVisibility() {
         "marquee", "marqueeMode", "marqueeDelay", "marqueePause", "marqueeSpeed"
     };
     static const std::vector<std::string> cardOnly = {
-        "cardFontSizeCurrent", "cardFontSizeNext", "cardFontFamily", "cardCurrentColor", "cardNextColor"
+        "cardFontSizeCurrent", "cardFontSizeNext", "cardFontFamily", "cardCurrentColor", "cardNextColor",
+        "cardBackgroundMode"
     };
 
     // 跟踪「长歌词滚动（跑马灯）」和「卡片样式设置」两个 section 的范围。
@@ -1401,6 +1405,8 @@ void D2DSettingsWindow::ApplyAndSave() {
             ap.cardCurrentColor = ColorFToHex(c.colorValue);
         } else if (c.id == "cardNextColor") {
             ap.cardNextColor = ColorFToHex(c.colorValue);
+        } else if (c.id == "cardBackgroundMode") {
+            ap.cardBackgroundMode = (c.dropdownSelected == 1) ? "transparent" : "frosted";
         } else if (c.id == "wsPort") {
             adv.websocketPort = atoi(c.textValue.c_str());
         } else if (c.id == "refreshRate") {

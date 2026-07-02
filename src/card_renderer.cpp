@@ -23,7 +23,8 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     const float paddingX = constants::TEXT_PADDING_X;
 
     // ═════ P1-①+P1-④: 卡片背景（柔焦封面 + 主题色叠加） ═════
-    if (cardBackgroundBrush_) {
+    // [原: if (cardBackgroundBrush_)]
+    if (settings_.cardBackgroundMode != "transparent" && cardBackgroundBrush_) {
         D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
         D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
             constants::CARD_COVER_RADIUS_DP * dpiScale,
@@ -142,7 +143,8 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
         w - paddingX * 2.0f);
 
     // ═════ P1-①+P1-④: 绘制卡片背景（柔焦封面 + 主题色叠加） ═════
-    if (cardBackgroundBrush_) {
+    // 纯透明模式下跳过背景绘制
+    if (settings_.cardBackgroundMode != "transparent" && cardBackgroundBrush_) {
         D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, w, h);
         D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
             constants::CARD_COVER_RADIUS_DP * dpiScale,

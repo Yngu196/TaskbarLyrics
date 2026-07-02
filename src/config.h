@@ -47,6 +47,9 @@ struct AppearanceConfig {
     // 卡片模式布局参数（供渲染器使用）
     int         cardCoverSize{34};             // 封面尺寸 (dp, 会按 DPI 缩放)
     int         cardGap{8};                    // 封面与文字间距 (dp)
+
+    // 卡片背景模式: "frosted" (默认,半透明毛玻璃) | "transparent" (纯透明)
+    std::string cardBackgroundMode{"frosted"};
 };
 
 struct AdvancedConfig {

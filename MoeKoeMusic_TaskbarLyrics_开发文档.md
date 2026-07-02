@@ -35,13 +35,13 @@ MoeKoeMusic 是一款基于 Electron + Vue 3 的开源音乐播放器，其 Wind
 
 ### 1.3 设计原则
 
-| 原则        | 说明                                        |
-| --------- | ----------------------------------------- |
-| **零侵入**   | 不修改 MoeKoeMusic 本体任何文件，独立 EXE 运行          |
-| **独立维护**  | 插件可脱离主程序版本独立迭代                            |
-| **轻量高效**  | CPU 占用 < 2%，内存占用 < 20MB                   |
+| 原则        | 说明                                 |
+| --------- | ---------------------------------- |
+| **零侵入**   | 不修改 MoeKoeMusic 本体任何文件，独立 EXE 运行   |
+| **独立维护**  | 插件可脱离主程序版本独立迭代                     |
+| **轻量高效**  | CPU 占用 < 2%，内存占用 < 20MB            |
 | **用户友好**  | 即开即用，系统托盘右键菜单控制锁定/设置/退出，D2D 原生设置界面 |
-| **覆盖任务栏** | 独立浮动窗口 + WS\_EX\_TOPMOST，视觉上与任务栏融合        |
+| **覆盖任务栏** | 独立浮动窗口 + WS\_EX\_TOPMOST，视觉上与任务栏融合 |
 
 ### 1.4 数据获取策略
 
@@ -67,13 +67,28 @@ MoeKoeMusic-TaskbarLyrics/
 │   ├── http_server.cpp/h       # HTTP 服务器（端口可配置，默认6523，含本地Token鉴权）
 │   ├── lyrics_parser.cpp/h     # 歌词 JSON 解析 & LRC/KRC 同步
 │   ├── taskbar_window.cpp/h    # 任务栏浮动窗口管理 + Z-order 三重防护 + APPBAR 自动隐藏适配 + 位置锁定
+│   ├── taskbar_embedder.cpp/h  # 任务栏嵌入逻辑
+│   ├── taskbar_geometry.cpp/h  # 任务栏几何信息查询（高度、位置、副显示器等）
+│   ├── fullscreen_detector.cpp/h # 全屏应用检测（自动隐藏歌词）
 │   ├── renderer.cpp/h          # Direct2D 渲染引擎 + 跑马灯状态机
+│   ├── renderer_utils.h        # 渲染器通用辅助工具
+│   ├── card_renderer.cpp       # 卡片式歌词渲染（QQ音乐风格）
+│   ├── lyric_renderer.cpp      # 传统行式歌词渲染
+│   ├── lyrics_data.h           # 歌词数据结构定义
+│   ├── marquee_engine.cpp      # 跑马灯滚动引擎
+│   ├── spring_animation.cpp    # 弹簧物理动画（平滑过渡）
+│   ├── spectrum_capture.cpp/h  # 音频频谱采集（kiss_fftr）
 │   ├── config.cpp/h            # 配置管理（JSON + 注册表自启，含httpServerPort）
 │   ├── api_enabler.cpp/h       # MoeKoeMusic API 模式自动检测与开启（v0.3.1 新增）
 │   ├── tray_icon.cpp/h         # 系统托盘图标+菜单（含锁定位置/完全锁定）
 │   ├── logger.cpp/h            # 统一日志系统（v0.3.8 新增，替代 6 处分散 DebugLog）
+│   ├── shell_companion.cpp/h   # Shell 伴生管理（启动/停止/重启/状态）
+│   ├── process_monitor.cpp/h   # 进程监控
 │   ├── d2d_settings_window.cpp/h # Direct2D 自绘设置窗口（v0.5 新增，唯一设置界面）
 │   ├── config_dialog.cpp/h     # Win32 回退设置对话框
+│   ├── color_picker.cpp/h      # D2D 颜色选择器弹窗组件（从 d2d_settings_window 拆出）
+│   ├── color_utils.h           # HSL↔RGB 转换、Hex 工具、D2D 颜色辅助
+│   ├── settings_draw_utils.h   # D2D 设置界面绘制原语（圆角矩形、文本行等）
 │   └── app_icon.rc             # EXE 图标资源
 ├── resources/
 │   ├── icon.ico                # 托盘/程序图标
@@ -623,17 +638,17 @@ ApiEnabler::TryEnableApi()
 #### 触发时机
 
 - **启动时检测**：在 [main.cpp](src/main.cpp) 中 WebSocket 连接前主动调用 `TryEnableApi()`，先于连接确保 API 已就绪
-- **重连失败检测**：集成在 [websocket_client.cpp](src/websocket_client.cpp) 的 `ReconnectLoop()` 中，当第 3 次连接失败（约已等待 3 秒）时触发，避免首次启动时的正常连接延迟误触
+- **重连失败检测**：集成在 [websocket\_client.cpp](src/websocket_client.cpp) 的 `ReconnectLoop()` 中，当第 3 次连接失败（约已等待 3 秒）时触发，避免首次启动时的正常连接延迟误触
 
 ### 3.11 CMakeLists.txt 构建系统
 
 #### 依赖
 
-| 依赖             | 来源                               | 用途             |
-| -------------- | -------------------------------- | -------------- |
-| ixwebsocket    | vcpkg                            | WebSocket 客户端  |
-| nlohmann\_json | vcpkg                            | JSON 解析        |
-| zlib           | vcpkg (z.dll)                    | ixwebsocket 依赖 |
+| 依赖             | 来源            | 用途             |
+| -------------- | ------------- | -------------- |
+| ixwebsocket    | vcpkg         | WebSocket 客户端  |
+| nlohmann\_json | vcpkg         | JSON 解析        |
+| zlib           | vcpkg (z.dll) | ixwebsocket 依赖 |
 
 #### 构建后操作
 
@@ -794,7 +809,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 | 勾选"完全锁定"     | 禁止所有鼠标交互（含悬停和按钮），同时隐含锁定位置    |
 | 取消勾选"开机自动启动" | 删除注册表 Run key                |
 | 点击"重新连接"     | 断开并重新连接 WebSocket            |
-| 点击"设置"       | 打开 D2D 原生设置窗口（GUI 配置界面）   |
+| 点击"设置"       | 打开 D2D 原生设置窗口（GUI 配置界面）      |
 | 点击"退出"       | 进程退出                         |
 
 ### 5.4 卸载
@@ -841,7 +856,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 | ----------------------------------------- | -- | --- | ------------------------ |
 | 绑定模式接入 main.cpp                           | 低  | ⭐⭐  | ⚠️ ProcessMonitor 待接入    |
 | Chrome Extension 开关 UI                    | 中  | ⭐⭐  | ✅ 已实现                    |
-| 歌词搜索（当 WebSocket 无数据时）                    | 高  | ⭐   | ❌ 未实现                    |
 | 支持其他播放器（Foobar2000 等）                     | 高  | ⭐   | ❌ 未实现(需要调整架构，后续考虑新开一个项目) |
 | 硬编码颜色提取到 constants.h                      | 低  | ⭐   | 🔜 低优先级                  |
 | 统一 logging 系统（合并 DebugLog/ConfigDebugLog） | 低  | ⭐   | 🔜 低优先级                  |
