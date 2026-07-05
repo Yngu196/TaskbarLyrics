@@ -106,6 +106,9 @@ void HttpServer::Stop() {
 void HttpServer::ServerLoop(int port) {
     httplib::Server svr;
 
+    // 限制请求体大小，防御异常大 payload（本机场景正常歌词数据远小于此）
+    svr.set_payload_max_length(4 * 1024 * 1024); // 4 MB
+
     // ===========================================
     // Middleware: CORS headers + auth check
     // ===========================================

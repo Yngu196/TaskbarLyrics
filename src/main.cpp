@@ -729,7 +729,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             // 提取并更新播放器状态（封面 URL、歌曲名等）
             moekoe::PlayerState st;
             if (j.contains("isPlaying") && j["isPlaying"].is_boolean()) {
-                st.isPlaying = j["is"].get<bool>();
+                st.isPlaying = j["isPlaying"].get<bool>();
             }
             if (j.contains("currentTime") && j["currentTime"].is_number()) {
                 st.currentTime = j["currentTime"].get<double>();
