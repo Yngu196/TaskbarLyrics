@@ -79,6 +79,13 @@ public:
     void OnRepositionNeeded(RepositionCallback cb);
     void RequestReposition(HWND lyricsWnd);  // Post WM_DELAYED_REPOSITION
 
+    // ── 任务栏句柄访问 ──
+    HWND GetTaskbarHandle() const { return hTaskbar_; }
+    void RefreshTaskbarHandle(HWND hNew) {
+        hTaskbar_ = hNew;
+        ::OutputDebugStringW(L"[ShellCompanion] Taskbar handle refreshed\n");
+    }
+
     // ── 静态：查找任务栏句柄 ──
     static HWND FindTaskbarHandle();
 

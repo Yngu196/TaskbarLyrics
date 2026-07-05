@@ -437,9 +437,32 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_DISPLAYCHANGE: {
-        self->dragOffsetX_ = 0;
-        self->dragOffsetY_ = 0;
+        // 仅当任务栏方位真正变化时才重置偏移，避免睡眠唤醒误清零
+        const TaskbarPosition prevPos = self->companion_.GetTaskbarInfo().position;
+        self->companion_.Geometry().Detect(self->companion_.GetTaskbarHandle());
+        const TaskbarPosition newPos = self->companion_.GetTaskbarInfo().position;
+
+        if (prevPos != newPos && prevPos != TaskbarPosition::UNKNOWN) {
+            self->dragOffsetX_ = 0;
+            self->dragOffsetY_ = 0;
+            ::OutputDebugStringW(L"[TaskbarLyrics] WM_DISPLAYCHANGE: orientation changed, resetting offsets\n");
+        } else {
+            ::OutputDebugStringW(L"[TaskbarLyrics] WM_DISPLAYCHANGE: same orientation, preserving offsets\n");
+        }
         self->InternalPosition();
+        return 0;
+    }
+    case WM_POWERBROADCAST: {
+        if (wParam == PBT_APMRESUMEAUTOMATIC) {
+            ::OutputDebugStringW(L"[TaskbarLyrics] PBT_APMRESUMEAUTOMATIC: refreshing taskbar\n");
+            HWND hNewTaskbar = ShellCompanion::FindTaskbarHandle();
+            if (hNewTaskbar && hNewTaskbar != self->companion_.GetTaskbarHandle()) {
+                ::SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hNewTaskbar));
+                self->companion_.RefreshTaskbarHandle(hNewTaskbar);
+            }
+            self->InvalidatePositionCache();
+            self->InternalPosition();
+        }
         return 0;
     }
     case WM_DESTROY: {

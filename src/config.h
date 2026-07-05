@@ -120,7 +120,7 @@ private:
     bool SetAutoStartStartupFolder(bool enable);
 
     bool             enabled_{true};
-    bool             autoStart_{true};
+    bool             autoStart_{false};
     AppearanceConfig appearance_;
     AdvancedConfig   advanced_;
     PositionConfig   position_;

@@ -548,8 +548,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     tray.Initialize(hInstance, hMsgWnd);
     tray.SetMenuCheckedAutoStart(config.IsAutoStart());
 
-    // 7) 查找任务栏
-    HWND hTaskbar = moekoe::TaskbarWindow::FindTaskbarHandle();
+    // 7) 查找任务栏（开机时 Explorer 可能尚未就绪，重试等待最多 5 秒）
+    HWND hTaskbar = nullptr;
+    for (int retry = 0; retry < 10; ++retry) {
+        hTaskbar = moekoe::TaskbarWindow::FindTaskbarHandle();
+        if (hTaskbar) break;
+        wchar_t dbg[64];
+        _snwprintf_s(dbg, _TRUNCATE, L"[TaskbarLyrics] FindTaskbarHandle retry %d/10: not found, waiting 500ms\n", retry + 1);
+        ::OutputDebugStringW(dbg);
+        ::Sleep(500);
+    }
     Log("[STARTUP] FindTaskbar hTaskbar=%p\n", hTaskbar);
     if (!hTaskbar) {
         ::MessageBoxW(nullptr,

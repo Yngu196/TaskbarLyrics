@@ -122,7 +122,7 @@ bool Config::Load() {
         in >> j;
 
         enabled_   = j.value("enabled",   true);
-        autoStart_ = j.value("auto_start", true);
+        autoStart_ = j.value("auto_start", false);
 
         if (j.contains("appearance")) {
             const auto& a = j["appearance"];
@@ -370,8 +370,10 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
         return false;
     }
 
-    // 先删除旧任务（无论存在与否都先尝试，避免冲突）
+    // 先删除旧任务（无论存在与否都先尝试，避免冲突），并捕获退出码
     std::wstring deleteCmd = std::wstring(L"schtasks /Delete /TN \"") + kTaskName + L"\" /F";
+    DWORD deleteExitCode = 1;
+    bool  deleteRan = false;
     {
         STARTUPINFOW si{}; si.cb = sizeof(si);
         PROCESS_INFORMATION pi{};
@@ -379,15 +381,23 @@ bool Config::SetAutoStartTaskScheduler(bool enable) {
         if (::CreateProcessW(nullptr, deleteCmdLine.data(), nullptr, nullptr,
                              FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
             ::WaitForSingleObject(pi.hProcess, 5000);
+            ::GetExitCodeProcess(pi.hProcess, &deleteExitCode);
+            deleteRan = true;
             ::CloseHandle(pi.hProcess);
             ::CloseHandle(pi.hThread);
         }
     }
 
     if (!enable) {
-        // 关闭自启：只要成功删除了"任务"就算成功（如果原本就不存在也算 ok）
-        // 简化处理：直接返回 true
-        moekoe::Log("[AUTOSTART] TaskScheduler: task deleted (or never existed)\n");
+        if (!deleteRan) {
+            moekoe::Log("[AUTOSTART] TaskScheduler: CreateProcessW for delete failed: %lu\n", GetLastError());
+            return false;
+        }
+        if (deleteExitCode != 0) {
+            moekoe::Log("[AUTOSTART] TaskScheduler: schtasks /Delete failed with exit code %lu\n", deleteExitCode);
+            return false;
+        }
+        moekoe::Log("[AUTOSTART] TaskScheduler: task deleted successfully\n");
         return true;
     }
 
