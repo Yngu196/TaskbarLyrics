@@ -107,6 +107,10 @@ public:
     using HoverChangedCallback = std::function<void()>;
     void OnHoverChanged(HoverChangedCallback cb) { onHoverChanged_ = std::move(cb); }
 
+    // 拖动结束回调（用于持久化拖动偏移）
+    using DragEndCallback = std::function<void()>;
+    void OnDragEnd(DragEndCallback cb) { onDragEnd_ = std::move(cb); }
+
     // 窗口类名
     static constexpr const wchar_t* kWindowClass = L"MoeKoeTaskbarLyricsClass";
 
@@ -148,6 +152,7 @@ private:
     ButtonCallback onButtonClicked_;
     ContextMenuCallback onContextMenuCmd_;
     HoverChangedCallback onHoverChanged_;
+    DragEndCallback onDragEnd_;
 
     // ── v0.5.x: ShellCompanion 封装 Shell 层逻辑 ──
     ShellCompanion companion_;

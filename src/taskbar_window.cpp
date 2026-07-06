@@ -417,6 +417,9 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             if (self->onHoverChanged_) {
                 self->onHoverChanged_();
             }
+            if (self->onDragEnd_) {
+                self->onDragEnd_();
+            }
         }
         return 0;
     }

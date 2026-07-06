@@ -682,7 +682,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     tray.SetMenuCheckedLockFull(config.Position().lockFully);
 
     // 拖动结束时保存位置偏移到配置
-    taskbarWindow.OnHoverChanged([&]() {
+    taskbarWindow.OnDragEnd([&]() {
         if (app.taskbarWindow) {
             config.MutablePosition().offsetX = app.taskbarWindow->GetDragOffsetX();
             config.MutablePosition().offsetY = app.taskbarWindow->GetDragOffsetY();
