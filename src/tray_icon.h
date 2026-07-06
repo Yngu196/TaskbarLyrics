@@ -32,6 +32,7 @@ enum TrayMenuId : UINT {
     ID_MENU_TOGGLE_TRANSLATION = ID_TRAY_MENU_BASE + 10,
     ID_MENU_TRANSLATION_MODE   = ID_TRAY_MENU_BASE + 11, // 子菜单基址
     ID_MENU_CARD_TRANS_MODE   = ID_TRAY_MENU_BASE + 12,  // 卡片翻译模式：原/译 或 原-译
+    ID_MENU_EXPORT_LOG        = ID_TRAY_MENU_BASE + 14,  // 导出日志文件
 };
 
 class TrayIcon {

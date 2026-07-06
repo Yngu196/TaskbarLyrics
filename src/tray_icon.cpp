@@ -108,6 +108,9 @@ void TrayIcon::RebuildMenu() {
     // 设置
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_SETTINGS, L"设置...");
 
+    // 导出日志
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_EXPORT_LOG, L"导出日志...");
+
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
     // 开机自启

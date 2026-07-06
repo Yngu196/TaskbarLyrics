@@ -148,6 +148,9 @@ void TaskbarWindow::ShowLyricsContextMenu() {
     ::AppendMenuW(hMenu, MF_STRING, ID_MENU_OPEN_MOEKOE, L"打开 MoeKoeMusic");
     ::AppendMenuW(hMenu, MF_STRING, ID_MENU_SETTINGS, L"设置...");
 
+    // 导出日志
+    ::AppendMenuW(hMenu, MF_STRING, ID_MENU_EXPORT_LOG, L"导出日志...");
+
     ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     ::AppendMenuW(hMenu, MF_STRING, ID_MENU_RECONNECT, L"重新连接");

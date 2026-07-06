@@ -12,17 +12,6 @@
 
 <p align="center">在 Windows 任务栏上显示歌词，支持卡拉OK效果、双行显示歌词封面、播放控制和歌词翻译</p>
 
-## gif及图片演示
-
-|             卡片模式             |             卡拉OK模式             |             卡片模式（歌词双语切换）             |
-| :--------------------------: | :----------------------------: | :----------------------------------: |
-| ![卡片模式](Samples/sample1.gif) | ![卡拉OK模式](Samples/sample2.gif) | ![卡片模式（歌词双语切换）](Samples/sample3.gif) |
-
-|             设置页面             |             菜单             |
-| :--------------------------: | :------------------------: |
-| ![设置页面](Samples/sample4.png) | ![菜单](Samples/sample6.png) |
-| ![设置页面](Samples/sample5.png) | ![菜单](Samples/sample7.png) |
-
 ***
 
 ## 功能特性
@@ -40,29 +29,28 @@
 - **APPBAR 自动隐藏** — 任务栏自动隐藏时歌词窗口跟随显隐（此功能已放弃维护）
 - **高 DPI 适配** — Per-Monitor V2 DPI Awareness
 - **多方向任务栏** — 支持底部 / 顶部 / 左侧 / 右侧任务栏 (待测试)
-- **6 种预设主题色** — 一键切换高亮颜色和普通歌词颜色
 - **跑马灯滚动** — 长歌词自动滚动（bounce / loop / off 三种模式）
 - **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面，实时预览，零外部依赖
 - **自定义字体** — 可使用本地已安装的字体
 - **歌词翻译支持** — 自动解析 KRC `[language:...]` 标签提取翻译数据
-- **卡拉OK模式翻译** — 右键菜单切换"原（原文）"/"译（译文）"，单行逐字高亮
-- **卡片模式翻译** — 右键菜单三种双行显示：仅原文 / 仅翻译 / 原文+翻译，无翻译时自动回退
 
-## 使用方式
+## 使用说明
 
-> 本插件会自动开启 MoeKoeMusic 的API模式
+> (如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。)
+
+#### 本插件会自动开启 MoeKoeMusic 的API模式，但您需要重启MoeKoeMusic才会生效
 
 ### 作为 MoeKoeMusic 插件（推荐）
 
 将发布的压缩包解压后复制到 MoeKoeMusic 的插件目录：
 
 ```
-MoeKoeMusic/plugins/extensions/moeKoe-taskbar-lyrics/
+C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 ```
 
 或者直接在 MoeKoeMusic 的 插件市场 安装此插件。
 
-然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，程序将随 MoeKoeMusic 自动启动/关闭（此功能需MoeKoeMusic版本>1.6.5）。
+然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，需重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭（此功能需MoeKoeMusic版本>1.6.5）。
 
 ### 独立运行
 
@@ -94,88 +82,28 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
 
+***
 
-## v0.5.1 变更
+## gif及图片演示
 
-### 修复与改进
+|                 卡片模式                |                  卡拉OK模式                 |                     卡片模式（歌词双语切换）                    |
+| :---------------------------------: | :-------------------------------------: | :-------------------------------------------------: |
+| ![卡片模式](Samples/sample1.gif "卡片模式") | ![卡拉OK模式](Samples/sample2.gif "卡拉OK模式") | ![卡片模式（歌词双语切换）](Samples/sample3.gif "卡片模式（歌词双语切换）") |
 
-- 版本号统一更新至 0.5.1（CMakeLists.txt / manifest.json / vcpkg.json）
-- 新增单元测试框架：集成 Catch2 v3 + CMake CTest，覆盖 `lyrics_parser` 核心逻辑（LRC/KRC 解析、二分查找）
-- 清理废弃的 WebView2 铃声残留引用，简化构建流程
+|                 设置页面                |                菜单               |
+| :---------------------------------: | :-----------------------------: |
+| ![设置页面](Samples/sample4.png "设置页面") | ![菜单](Samples/sample6.png "菜单") |
+| ![设置页面](Samples/sample5.png "设置页面") | ![菜单](Samples/sample7.png "菜单") |
 
-## v0.5.0 变更
+***
 
-### 架构重构
+## 有关文档
 
-- 拆分 TaskbarWindow 为 ShellCompanion（全屏检测 + 歌词窗口管理）+ TaskbarWindow（纯任务栏子窗口操作）
-- ShellCompanion 管理歌词 HWND 生命周期与全屏显隐逻辑，TaskbarWindow 专注 `SetParent` / `SetWindowPos` / 位置缓存
-
-新增：封面渲染增强、歌词切换动画、频谱、D2D 原生设置界面（替代 WebView2）...
-
-修复：全屏隐藏失效、退出全屏后位置偏移、插件无法开启MoeKoeMusic的api模式、不支持垂直任务栏等问题
-
-<details>
-<summary>展开历史版本（v0.4.1 / v0.4.0）</summary>
-
-## v0.4.1 变更
-
-### 优化：卡片模式歌词切换动画
-
-重新设计卡片模式的歌词切换动画，从"三行卷轴式 + 字号缩放"改为**双轨淡入淡出 + 独立位移**：
-
-- **旧当前行**：直接消失（无淡出），避免同位置重影
-- **旧下一行**：向上滑入当前行位置 + 淡出（`EaseInOutQuad`）
-- **新当前行**：从下方滑入 + 淡入（`EaseOutBack` 带轻微回弹 + `EaseOutCubic`）
-- **新下一行**：同步淡入
-- 新增 `DrawCardLyricsSingle` 单行绘制方法（独立控制透明度/偏移/字号/颜色）
-- 新增 `EaseInOutQuad` / `EaseOutBack` 缓动函数
-- 动画时长调整为 500ms（更流畅不拖沓）
-
-### 新增：卡片样式显示模式
-
-参考 [ANYNC/TaskbarLyrics](https://github.com/ANYNC/TaskbarLyrics) 以及酷狗音乐的任务栏歌词的视觉风格，新增可切换的卡片样式显示模式：
-
-- **双行歌词布局** — 当前行 + 下一行预览，无卡拉OK逐字效果
-- **封面图标区域** — 左侧显示专辑封面（支持异步下载）或音乐符号降级图标
-- **独立字号配置** — 当前行（10\~20pt）和下一行（8\~18pt）字号独立可调
-- **独立颜色配置** — 当前行/下一行文字颜色分别可自定义
-- **无文字阴影** — 卡片模式使用纯色绘制，避免黑边问题
-- **设置界面分组** — 切换显示模式时，仅显示当前模式的选项
-
-### 修复
-
-- 修复切换显示模式后保存导致位置重置的问题
-- 修复 `display_mode` 等字段未在 C++ 配置同步中传递的 bug
-- 封面图下载改为异步（`std::thread`），不再阻塞渲染线程
-- 移除位置偏移滑块（拖动窗口直接调整更直观），保留重置按钮
-
-## v0.4.0 变更
-
-### 核心变更：Native Host 托管模式
-
-从 Chrome 标准 Native Messaging 迁移到 MoeKoeMusic 自定义 `moekoe_native_hosts` 机制：
-
-- manifest.json 新增 `moekoe_permissions: ["moekoe:nativeHost"]` + `moekoe_native_hosts` 声明
-- 支持 `auto_start: true` 实现随 MoeKoeMusic 自动启动
-- 新增 `native-bridge.html` / `native-bridge.js` 隐藏桥接页
-- JSON Lines 通信协议替代 Chrome NMH 4 字节前缀协议
-- 移除旧版 `native_launcher` 字段和 Chrome NMH 注册表配置
-
-### 其他变更
-
-- manifest 最低版本要求更新为 `1.6.6`
-- popup 界面移除启动/停止按钮，更新为授权流程说明
-- background.js 新增 Native Host Bridge Port 管理层
-- C++ EXE 新增 `NativeMessagingHost` 类封装协议层
-- stdin EOF 不再触发退出，支持独立运行模式
-
-</details>
-
-## 开发文档
-
-- [MoeKoeMusic\_TaskbarLyrics\_开发文档.md](MoeKoeMusic_TaskbarLyrics_开发文档.md)
-- [项目状态文档.md](项目状态文档.md)
-- [计划书.md](计划书.md)
+- [MoeKoeMusic\_TaskbarLyrics\_开发文档.md](Docs/MoeKoeMusic_TaskbarLyrics_开发文档.md)
+- [项目状态文档.md](Docs/项目状态文档.md)
+- [版本更新日志.md](Docs/版本更新日志.md)
+- [常见问题自查.md](Docs/常见问题自查.md)
+- [计划书.md](Docs/计划书.md)
 
 ## 许可证
 

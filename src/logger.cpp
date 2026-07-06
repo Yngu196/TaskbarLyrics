@@ -66,6 +66,10 @@ void SetLogEnabled(bool enabled) {
     g_enabled = enabled;
 }
 
+std::string GetLogPath() {
+    return g_logPath;
+}
+
 void Log(const char* fmt, ...) {
     if (!g_enabled || g_logPath.empty()) return;
 

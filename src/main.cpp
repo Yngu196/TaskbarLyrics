@@ -23,6 +23,7 @@
 #include <nlohmann/json.hpp>
 #include <windows.h>
 #include <psapi.h>
+#include <shobjidl.h>
 
 #pragma comment(lib, "psapi.lib")
 
@@ -290,6 +291,93 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         } else {
             Log("[OPEN-MOEKOE] MoeKoeMusic window not found\n");
         }
+        break;
+    }
+    case ID_MENU_EXPORT_LOG: {
+        // 生成默认文件名：MoeKoeTaskbarLyrics_debug_YYYYMMDD_HHMMSS.log
+        SYSTEMTIME st;
+        ::GetLocalTime(&st);
+        wchar_t defaultName[128];
+        _snwprintf_s(defaultName, _TRUNCATE,
+            L"MoeKoeTaskbarLyrics_debug_%04d%02d%02d_%02d%02d%02d.log",
+            st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+        // 获取 debug.log 路径
+        std::string logPath = moekoe::GetLogPath();
+        if (logPath.empty()) {
+            ::MessageBoxW(app.hwnd,
+                L"日志文件路径未知，无法导出。",
+                L"导出日志", MB_OK | MB_ICONWARNING);
+            break;
+        }
+
+        // 检查 debug.log 是否存在
+        DWORD attr = ::GetFileAttributesA(logPath.c_str());
+        if (attr == INVALID_FILE_ATTRIBUTES) {
+            ::MessageBoxW(app.hwnd,
+                L"debug.log 文件不存在，可能尚未产生日志。",
+                L"导出日志", MB_OK | MB_ICONWARNING);
+            break;
+        }
+
+        // 使用 IFileSaveDialog 弹出"另存为"对话框
+        IFileSaveDialog* pSaveDlg = nullptr;
+        HRESULT hr = ::CoCreateInstance(CLSID_FileSaveDialog, nullptr,
+            CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pSaveDlg));
+        if (FAILED(hr) || !pSaveDlg) {
+            ::MessageBoxW(app.hwnd,
+                L"无法创建文件保存对话框。",
+                L"导出日志", MB_OK | MB_ICONERROR);
+            break;
+        }
+
+        pSaveDlg->SetFileName(defaultName);
+        pSaveDlg->SetDefaultExtension(L"log");
+
+        COMDLG_FILTERSPEC rgSpec[] = {
+            {L"日志文件 (*.log)", L"*.log"},
+            {L"所有文件 (*.*)", L"*.*"}
+        };
+        pSaveDlg->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+        pSaveDlg->SetFileTypeIndex(0);
+
+        hr = pSaveDlg->Show(app.hwnd);
+        if (SUCCEEDED(hr)) {
+            IShellItem* pItem = nullptr;
+            hr = pSaveDlg->GetResult(&pItem);
+            if (SUCCEEDED(hr) && pItem) {
+                PWSTR pszPath = nullptr;
+                hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+                if (SUCCEEDED(hr) && pszPath) {
+                    // UTF-8 → 宽字符，供 CopyFileW 使用
+                    int srcLen = ::MultiByteToWideChar(CP_UTF8, 0,
+                        logPath.c_str(), -1, nullptr, 0);
+                    std::wstring srcWide(static_cast<size_t>(srcLen), L'\0');
+                    ::MultiByteToWideChar(CP_UTF8, 0,
+                        logPath.c_str(), -1, &srcWide[0], srcLen);
+
+                    if (::CopyFileW(srcWide.c_str(), pszPath, FALSE)) {
+                        std::wstring msg = L"日志已成功导出到：\n";
+                        msg += pszPath;
+                        ::MessageBoxW(app.hwnd, msg.c_str(),
+                            L"导出日志", MB_OK | MB_ICONINFORMATION);
+                        Log("[EXPORT] Log exported to: %ls\n", pszPath);
+                    } else {
+                        wchar_t errBuf[320];
+                        _snwprintf_s(errBuf, _TRUNCATE,
+                            L"导出失败（错误码：%lu）。\n目标路径：%s",
+                            ::GetLastError(), pszPath);
+                        ::MessageBoxW(app.hwnd, errBuf,
+                            L"导出日志", MB_OK | MB_ICONERROR);
+                        Log("[EXPORT] CopyFile failed: error=%lu\n", ::GetLastError());
+                    }
+                    ::CoTaskMemFree(pszPath);
+                }
+                pItem->Release();
+            }
+        }
+        // 用户取消无需提示
+        pSaveDlg->Release();
         break;
     }
     default:

@@ -886,17 +886,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 | ixwebsocket           | <https://github.com/machinezone/IXWebSocket>                                                                |
 | nlohmann/json         | <https://github.com/nlohmann/json>                                                                          |
 
-### 7.2 代码审查
-
-项目经过两轮代码审查：
-
-| 报告              | 内容                                                           |
-| --------------- | ------------------------------------------------------------ |
-| `代码审查报告.md`     | 基础审查：常量提取、注释规范、日志路径等                                         |
-| `代码审查报告_进阶版.md` | 深度审查（评分 7.8/10）：TerminateThread 安全、WS 大小检查、按钮格式缓存、配置验证、异常恢复等 |
-
-高/中优先级建议已全部修复完成。
-
 ***
 
 > **本文档为开发草案，将在实现过程中持续更新。**\

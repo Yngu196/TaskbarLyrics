@@ -23,6 +23,9 @@ void InitLogger();
 // 设置日志开关（由 config.debugLog 驱动）
 void SetLogEnabled(bool enabled);
 
+// 获取当前 debug.log 的绝对路径（UTF-8 编码）
+std::string GetLogPath();
+
 // 格式化日志（printf 风格，自动追加换行如需）
 void Log(const char* fmt, ...);
 
