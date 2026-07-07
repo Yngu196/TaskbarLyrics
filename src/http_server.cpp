@@ -114,14 +114,11 @@ void HttpServer::ServerLoop(int port) {
     // ===========================================
     svr.set_pre_routing_handler([port](const httplib::Request& req, httplib::Response& res) {
         // CORS headers (localhost-only origin)
-        char origin[64];
-        snprintf(origin, sizeof(origin), "http://127.0.0.1:%d", port);
-        res.set_header("Access-Control-Allow-Origin", origin);
+        std::string origin = "http://127.0.0.1:" + std::to_string(port);
+        res.set_header("Access-Control-Allow-Origin", origin.c_str());
         res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        char allowHeaders[128];
-        snprintf(allowHeaders, sizeof(allowHeaders), "Content-Type, %s",
-                 moekoe::constants::LOCAL_AUTH_HEADER_NAME);
-        res.set_header("Access-Control-Allow-Headers", allowHeaders);
+        std::string allowHeaders = std::string("Content-Type, ") + moekoe::constants::LOCAL_AUTH_HEADER_NAME;
+        res.set_header("Access-Control-Allow-Headers", allowHeaders.c_str());
 
         // OPTIONS preflight - skip auth check
         if (req.method == "OPTIONS") {

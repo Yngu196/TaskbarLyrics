@@ -219,8 +219,15 @@ LyricsData WebSocketClient::ParseKrcString(const std::string& krcText) {
             for (size_t i = 0; i < b64.size(); i += 4) {
                 int vals[4] = {-1, -1, -1, -1};
                 for (int j = 0; j < 4 && (i + j) < b64.size(); ++j) {
-                    const char* p = strchr(kBase64Table, b64[i + j]);
-                    if (p) vals[j] = (int)(p - kBase64Table);
+                    char c = b64[i + j];
+                    // 跳过 padding 字符
+                    if (c == '=') continue;
+                    const char* p = strchr(kBase64Table, c);
+                    if (p) {
+                        vals[j] = (int)(p - kBase64Table);
+                    } else {
+                        moekoe::Log("[PARSER] Invalid Base64 character '%c' at position %zu\n", c, i + j);
+                    }
                 }
                 if (vals[0] >= 0 && vals[1] >= 0) decoded.push_back((uint8_t)((vals[0] << 2) | (vals[1] >> 4)));
                 if (vals[1] >= 0 && vals[2] >= 0) decoded.push_back((uint8_t)((vals[1] << 4) | (vals[2] >> 2)));
@@ -363,9 +370,12 @@ void WebSocketClient::ReconnectLoop() {
         }
 
         // 绑定消息回调
+        // 使用 weak_ptr 防止 detach 后回调访问已销毁的对象
         auto self = this;
         client_->setOnMessageCallback(
             [self](const ix::WebSocketMessagePtr& msg) {
+                // 如果已请求停止，忽略所有回调
+                if (self->stopRequested_.load()) return;
                 if (msg->type == ix::WebSocketMessageType::Open) {
                     Log("WS: opened");
                     self->connected_.store(true);
