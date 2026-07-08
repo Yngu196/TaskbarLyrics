@@ -466,7 +466,7 @@ restoreState().then(() => {
     // 若上次已中止则不自动重连，等待用户手动触发
     if (!reconnectAborted) {
         connectWebSocket();
-        console.log(`[TaskbarLyrics] 插件已加载 (v0.5.1 Native Host 模式, WS端口: ${wsPort})`);
+        console.log(`[TaskbarLyrics] 插件已加载 (v1.0.0 Native Host 模式, WS端口: ${wsPort})`);
     } else {
         console.log(`[TaskbarLyrics] 插件已加载，但上次重连已中止，等待手动重连`);
         broadcastToPopup({

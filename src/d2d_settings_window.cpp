@@ -632,7 +632,7 @@ void D2DSettingsWindow::DrawAll() {
 
     // 绘制底部版本号（在控件之后，随内容滚动）
     {
-        const wchar_t* versionText = L"MoeKoe Taskbar Lyrics v0.5.1";
+        const wchar_t* versionText = L"MoeKoe Taskbar Lyrics v1.0.0";
         float verY = static_cast<float>(totalContentHeight_ - 24) - scrollOffset_;
         if (verY + 20.f > 0 && verY < static_cast<float>(clientH)) {
             float textWidth = 0;
