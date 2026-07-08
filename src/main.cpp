@@ -45,6 +45,9 @@ struct AppContext {
     HWND                     hwnd{nullptr};
     bool                     running{true};
 
+    // 动态卡片宽度缩回滞回计时器
+    ULONGLONG                shrinkStartTick_{0};
+
     // RAII 管理的组件（按依赖顺序声明：先声明后析构）
     std::unique_ptr<moekoe::NativeMessagingHost> nativeHost;
     std::unique_ptr<moekoe::D2DSettingsWindow>   d2dSettingsWindow;
@@ -483,6 +486,36 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 // 4. 同步任务栏方向（运行时位置变化适配）+ 执行渲染
                 app->renderer->SetVerticalTaskbar(app->taskbarWindow->IsVerticalTaskbar());
                 app->renderer->Render(state);
+
+                // 4.5. 卡片模式动态宽度：长歌词扩展，短歌词滞回缩回
+                if (app->config->Appearance().displayMode == "card" &&
+                    state.hasLyrics && !state.currentLine.empty()) {
+                    const float newWidthDip = app->renderer->MeasureCardLyricsWidth(
+                        state.currentLine, state.nextLine);
+                    const int newWidthInt = static_cast<int>(std::ceil(newWidthDip));
+                    const int currentDip = app->taskbarWindow->GetDynamicCardWidthDip();
+
+                    // 扩展：测量值更大时立即生效
+                    if (newWidthInt > currentDip) {
+                        app->taskbarWindow->SetDynamicCardWidthDip(newWidthInt);
+                        app->taskbarWindow->Reposition();
+                        app->shrinkStartTick_ = 0;
+                    }
+                    // 缩回：测量值 ≤ 默认宽度（360 DIPs）且当前处于扩展状态
+                    // 连续 2 秒无长歌词后才缩回，避免短暂切换导致抖动
+                    else if (newWidthInt <= CARD_MIN_WIDTH_BASE_DP * 2 &&
+                             currentDip > CARD_MIN_WIDTH_BASE_DP * 2) {
+                        if (app->shrinkStartTick_ == 0) {
+                            app->shrinkStartTick_ = ::GetTickCount64();
+                        } else if (::GetTickCount64() - app->shrinkStartTick_ >= 2000) {
+                            app->taskbarWindow->SetDynamicCardWidthDip(0);
+                            app->taskbarWindow->Reposition();
+                            app->shrinkStartTick_ = 0;
+                        }
+                    } else {
+                        app->shrinkStartTick_ = 0;
+                    }
+                }
 
                 // 5. 更新托盘提示文本（实时显示当前歌词）
                 if (app->tray && state.hasLyrics) {

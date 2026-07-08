@@ -16,6 +16,42 @@ using renderer_utils::Utf8ToWide;
 using renderer_utils::FirstUtf8CharAsWide;
 using renderer_utils::GetCurrentTimeSeconds;
 
+// ═══════════════════════════════════════
+// 卡片歌词宽度测量（动态宽度功能）
+// ═══════════════════════════════════════
+float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
+                                               const std::string& nextLine) const {
+    if (!cardCurrentFormat_ || !cardNextFormat_ || !dwriteFactory_) return 0.0f;
+
+    const float coverSizeDip = static_cast<float>(settings_.cardCoverSize);
+    const float gapDip = static_cast<float>(settings_.cardGap);
+    const float padding = constants::TEXT_PADDING_X;
+
+    auto measureLine = [this](const std::wstring& line, IDWriteTextFormat* format) -> float {
+        if (line.empty() || !format) return 0.0f;
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+        HRESULT hr = dwriteFactory_->CreateTextLayout(
+            line.c_str(), static_cast<UINT32>(line.size()),
+            format, 10000.0f, 10000.0f, layout.GetAddressOf());
+        if (FAILED(hr) || !layout) return 0.0f;
+        DWRITE_TEXT_METRICS metrics = {};
+        layout->GetMetrics(&metrics);
+        return metrics.width;  // metrics.width 已是 DIPs（TextFormat 字体大小以 DIPs 指定）
+    };
+
+    std::wstring curW = Utf8ToWide(curLine);
+    std::wstring nextW = Utf8ToWide(nextLine);
+
+    float curWidthDip = measureLine(curW, cardCurrentFormat_.Get());
+    float nextWidthDip = measureLine(nextW, cardNextFormat_.Get());
+
+    float maxTextWidthDip = std::max(curWidthDip, nextWidthDip);
+    if (maxTextWidthDip <= 0.0f) return 0.0f;
+
+    // 总宽 = 左内边距 + 封面 + 间距 + 文本 + 右内边距
+    return padding * 2.0f + coverSizeDip + gapDip + maxTextWidthDip;
+}
+
 void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float coverSize = static_cast<float>(settings_.cardCoverSize) * dpiScale;

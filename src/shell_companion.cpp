@@ -330,7 +330,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
     HWND lyricsWnd,
     const std::string& displayMode,
     int dragOffsetX, int dragOffsetY,
-    RECT& inOutLastPosRect) {
+    RECT& inOutLastPosRect,
+    int dynamicWidthDip) {
     if (!lyricsWnd || !hTaskbar_) return;
 
     // 全屏隐藏期间跳过定位
@@ -487,9 +488,12 @@ void ShellCompanion::PositionLyricsInTaskbar(
             rightEdge = tbRect.right - cachedRightEdgeOffset_;
         }
 
-        const int maxLyricWidth = ::MulDiv(
-            isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP,
-            info_.dpi, 96);
+        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展，上限 1.5x 默认（540 DIPs）
+        int cardMaxDip = isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP;
+        if (isCardMode && dynamicWidthDip > constants::CARD_MIN_WIDTH_BASE_DP * 2) {
+            cardMaxDip = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+        }
+        const int maxLyricWidth = ::MulDiv(cardMaxDip, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;
         if (foundTaskList) {
             availableWidth = rightEdge - taskListRect.right;
@@ -505,9 +509,12 @@ void ShellCompanion::PositionLyricsInTaskbar(
         int rightEdge = tbRect.right;
         if (foundTray) rightEdge = trayRect.left;
 
-        const int maxLyricWidth = ::MulDiv(
-            isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP,
-            info_.dpi, 96);
+        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展，上限 1.5x 默认（540 DIPs）
+        int cardMaxDip2 = isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP;
+        if (isCardMode && dynamicWidthDip > constants::CARD_MIN_WIDTH_BASE_DP * 2) {
+            cardMaxDip2 = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+        }
+        const int maxLyricWidth = ::MulDiv(cardMaxDip2, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;
         if (foundTaskList) {
             availableWidth = rightEdge - taskListRect.right;

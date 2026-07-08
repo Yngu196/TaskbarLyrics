@@ -40,6 +40,11 @@ public:
     void SetVerticalTaskbar(bool vertical) { isVerticalTaskbar_ = vertical; }
     bool IsVerticalTaskbar() const { return isVerticalTaskbar_; }
 
+    // 测量卡片模式下当前歌词 + 下一行歌词所需窗口宽度（DIPs）
+    // 仅在 displayMode == "card" 时有效，否则返回 0
+    // 返回值包含封面尺寸、间距和文本内边距，可直接用于窗口宽度决策
+    float MeasureCardLyricsWidth(const std::string& curLine, const std::string& nextLine) const;
+
 private:
     void CreateRenderTarget();
     void DrawHighlightedTextPerCharacter(const std::wstring& text,
