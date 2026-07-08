@@ -46,6 +46,41 @@ jobs:
       - name: Build
         run: cmake --build build --config Release -- /v:minimal
 
+      - name: Copy VC++ Redist DLLs
+        shell: powershell
+        run: |
+          # 从编译器路径推导 VC Redist CRT 目录
+          $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
+          if ($clPath) {
+            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
+            $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
+            $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
+            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\x64\Microsoft.VC143.CRT"
+            if (!(Test-Path $crtDir)) {
+              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\x64\Microsoft.VC143.CRT"
+            }
+            if (Test-Path $crtDir) {
+              Write-Host "Copying VC++ CRT DLLs from: $crtDir"
+              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
+              Write-Host "VC++ CRT DLLs copied successfully"
+            } else {
+              Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
+              # Fallback: search System32
+              $sys32 = "$env:SystemRoot\System32"
+              foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
+                $src = Join-Path $sys32 $dll
+                if (Test-Path $src) {
+                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\" -Force
+                  Write-Host "Copied $dll from System32"
+                }
+              }
+            }
+          } else {
+            Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
+          }
+
       - name: Package
         shell: powershell
         run: |
