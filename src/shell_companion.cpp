@@ -9,6 +9,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <cassert>
 #include <vector>
 
 namespace moekoe {
@@ -218,6 +219,7 @@ bool ShellCompanion::Initialize(HWND hTaskbar, HWND lyricsWnd) {
     embedder_.SetHandle(lyricsWnd);
 
     s_instance_ = this;
+    assert(s_instance_ && "ShellCompanion::Initialize called twice");
     return true;
 }
 

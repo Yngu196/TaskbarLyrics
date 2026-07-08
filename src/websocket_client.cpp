@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <random>
 #include <sstream>
 #include <thread>
 #include <utility>
@@ -26,14 +27,20 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// 重连退避时间
+// 重连退避时间（含随机抖动，防止多实例同步重连）
 int BackoffSeconds(int attempt) {
-    if (attempt <= 0) return 1;
-    if (attempt == 1) return 1;
-    if (attempt == 2) return 2;
-    if (attempt == 3) return 4;
-    if (attempt == 4) return 8;
-    return 15;
+    int base;
+    if (attempt <= 0) base = 1;
+    else if (attempt == 1) base = 1;
+    else if (attempt == 2) base = 2;
+    else if (attempt == 3) base = 4;
+    else if (attempt == 4) base = 8;
+    else base = 15;
+    // ±30% 抖动 (0.7x ~ 1.3x)
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(70, 130);
+    int jittered = base * dist(rng) / 100;
+    return (jittered < 1) ? 1 : jittered;
 }
 
 } // namespace
