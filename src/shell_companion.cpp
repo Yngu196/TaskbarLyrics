@@ -495,7 +495,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;
-        if (foundTaskList) {
+        // Win10 守卫：MSTaskListWClass 覆盖整个任务栏时忽略 taskListRect
+        if (foundTaskList && (taskListRect.right - taskListRect.left) < tbWidth * 0.9) {
             availableWidth = rightEdge - taskListRect.right;
         }
 
@@ -516,7 +517,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip2, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;
-        if (foundTaskList) {
+        // Win10 守卫：MSTaskListWClass 覆盖整个任务栏时忽略 taskListRect
+        if (foundTaskList && (taskListRect.right - taskListRect.left) < tbWidth * 0.9) {
             availableWidth = rightEdge - taskListRect.right;
         }
 

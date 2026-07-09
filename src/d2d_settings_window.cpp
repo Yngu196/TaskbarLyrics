@@ -727,6 +727,7 @@ void D2DSettingsWindow::DrawLabelRow(ID2D1RenderTarget* rt, const Control& c) {
     // 文字
     std::wstring wideVal = Utf8ToWide(c.textValue);;
     ComPtr<ID2D1SolidColorBrush> txtBr;
+    // 只读字段用 textSecondary，可编辑用 text；均创建本地画刷避免缓存失效
     rt->CreateSolidColorBrush(c.readOnly ? theme_.textSecondary : theme_.text, &txtBr);
     DrawTextLine(rt, valueFmt_.Get(), txtBr.Get(),
                  wideVal.c_str(), inputLeft + 8.f, mid - 7.f, inputW - 16.f);
@@ -845,7 +846,10 @@ void D2DSettingsWindow::DrawSliderRow(ID2D1RenderTarget* rt, const Control& c) {
         std::snprintf(valBuf, sizeof(valBuf), "%.0f", c.sliderValue);
 
     std::wstring wval(valBuf, valBuf + strlen(valBuf));
-    DrawTextLine(rt, valueFmt_.Get(), textSecondaryBrush_.Get(),
+    // 使用本地画刷（theme_.text），避免缓存画刷失效导致数值显示异常
+    ComPtr<ID2D1SolidColorBrush> valBr;
+    rt->CreateSolidColorBrush(theme_.text, &valBr);
+    DrawTextLine(rt, valueFmt_.Get(), valBr.Get(),
                  wval.c_str(), sl + sw + 10.f, mid - 7.f, 60.f);
 }
 
@@ -1450,9 +1454,8 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
 
     case WM_PAINT:
         if (self) self->DrawAll();
-        PAINTSTRUCT ps;
-        BeginPaint(hwnd, &ps);
-        EndPaint(hwnd, &ps);
+        // D2D 自绘窗口：ValidateRect 直接标记已绘制，避免 BeginPaint 的 GDI 背景画刷覆盖 D2D 内容
+        ValidateRect(hwnd, nullptr);
         return 0;
 
     case WM_ERASEBKGND:
