@@ -85,8 +85,11 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     // 5) 首次定位：记录 lastPosition_ 防止误判方位变化
     lastPosition_ = companion_.GetTaskbarInfo().position;
 
-    // 6) 定位歌词窗口
-    InternalPosition();
+    // 6) 延迟首次定位：不在 Create 中调用 InternalPosition，
+    //    由外部在 SetDragOffset + SetDisplayMode + SetPositionLocked 全部就绪后
+    //    通过 Reposition() 统一触发，避免 dragOffset=(0,0) 的无效定位，
+    //    以及 WinEvent 刚安装时 Explorer 瞬态事件导致冻结跳过。
+    //    参见 main.cpp WinMain 中 "应用配置中的位置偏移" 之后的 Reposition() 调用。
 
     created_ = true;
     return true;

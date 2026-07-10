@@ -733,12 +733,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 1;
     }
 
+    // 应用配置中的显示模式（必须在 Reposition 之前，影响宽度计算）
+    taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
+
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);
-    taskbarWindow.Reposition();
 
-    // 应用配置中的显示模式
-    taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
+    // 首次定位：全部配置就绪后统一触发（TaskbarWindow::Create 不再内部定位）
+    taskbarWindow.Reposition();
 
     // 应用配置中的锁定状态
     taskbarWindow.SetPositionLocked(config.Position().lockPosition);
