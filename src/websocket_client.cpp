@@ -453,7 +453,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
     const std::string type = j.value("type", "");
 
     if (type == "lyrics") {
-        if (debugLog_) Log("[WS] Received lyrics message, size=%zu\n", raw.size());
+        // if (debugLog_) Log("[WS] Received lyrics message, size=%zu\n", raw.size());
         LyricsData data;
         // 实际格式: data = { currentSong, currentTime, duration, lyricsData: [...] }
         // lyricsData 可能是数组，也可能是 JSON 字符串化的数组
@@ -465,7 +465,7 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             if (ld.is_array()) {
                 lyricsArray = ld;
                 hasLD = true;
-                if (debugLog_) Log("[WS] lyricsData is array, count=%zu\n", lyricsArray.size());
+                // if (debugLog_) Log("[WS] lyricsData is array, count=%zu\n", lyricsArray.size());
             } else if (ld.is_string()) {
                 std::string ldStr = ld.get<std::string>();
                 data = ParseKrcString(ldStr);
@@ -474,13 +474,14 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 Log("Dispatch: lyricsData unexpected type=" + std::to_string(static_cast<int>(ld.type())));
             }
         } else {
-            if (debugLog_) {
-                Log("[WS] lyrics message has NO lyricsData field, data keys present: ");
-                if (j.contains("data") && j["data"].is_object()) {
-                    for (auto& el : j["data"].items()) Log("%s ", el.key().c_str());
-                }
-                Log("\n");
-            }
+            // 已注释：缺少 lyricsData 字段的诊断日志太噪
+            // if (debugLog_) {
+            //     Log("[WS] lyrics message has NO lyricsData field, data keys present: ");
+            //     if (j.contains("data") && j["data"].is_object()) {
+            //         for (auto& el : j["data"].items()) Log("%s ", el.key().c_str());
+            //     }
+            //     Log("\n");
+            // }
         }
 
         if (hasLD)
@@ -493,8 +494,8 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 // currentSong 可能是 string 或 object，安全提取
                 if (j["data"].contains("currentSong")) {
                     const auto& cs = j["data"]["currentSong"];
-                    if (debugLog_) Log("[WS] lyrics has currentSong, type=%d null=%d\n",
-                        cs.type(), cs.is_null() ? 1 : 0);
+                    // if (debugLog_) Log("[WS] lyrics has currentSong, type=%d null=%d\n",
+                    //     cs.type(), cs.is_null() ? 1 : 0);
                     if (cs.is_string()) {
                         st.songTitle = cs.get<std::string>();
                     } else if (cs.is_object()) {
@@ -510,8 +511,8 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                         for (const auto& key : {"pic", "cover", "albumArt", "image", "poster", "img", "album_pic"}) {
                             if (cs.contains(key) && cs[key].is_string()) {
                                 st.coverArtUrl = cs[key].get<std::string>();
-                                if (debugLog_) Log("[WS] Extracted coverArtUrl from currentSong.%s: %s\n",
-                                    key, st.coverArtUrl.substr(0, 80).c_str());
+                                // if (debugLog_) Log("[WS] Extracted coverArtUrl from currentSong.%s: %s\n",
+                                //     key, st.coverArtUrl.substr(0, 80).c_str());
                                 break;
                             }
                         }

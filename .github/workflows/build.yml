@@ -80,8 +80,13 @@ jobs:
             Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
           }
 
+      - name: Package
+        shell: powershell
+        run: |
+          python scripts/pack_zip.py moeKoe-taskbar-lyrics moeKoe-taskbar-lyrics.zip
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: MoeKoeTaskbarLyrics-x64
-          path: moeKoe-taskbar-lyrics/
+          path: moeKoe-taskbar-lyrics.zip
