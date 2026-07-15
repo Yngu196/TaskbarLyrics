@@ -489,6 +489,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
                 // 4.5. 卡片模式动态宽度：长歌词扩展，短歌词滞回缩回
                 if (app->config->Appearance().displayMode == "card" &&
+                    app->config->Appearance().cardDynamicWidth &&
                     state.hasLyrics && !state.currentLine.empty()) {
                     const float newWidthDip = app->renderer->MeasureCardLyricsWidth(
                         state.currentLine, state.nextLine);
