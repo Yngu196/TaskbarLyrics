@@ -88,6 +88,10 @@ public:
     int GetDragOffsetY() const { return dragOffsetY_; }
     void SetDragOffset(int x, int y) { dragOffsetX_ = x; dragOffsetY_ = y; }
 
+    // 卡片模式动态宽度（由渲染器测量并写入，0 表示使用默认固定宽度）
+    void SetDynamicCardWidthDip(int widthDip) { dynamicCardWidthDip_ = widthDip; }
+    int GetDynamicCardWidthDip() const { return dynamicCardWidthDip_; }
+
     // 显示模式（影响窗口尺寸计算）
     std::string GetDisplayMode() const { return displayMode_; }
     void SetDisplayMode(const std::string& mode) { displayMode_ = mode; }
@@ -145,6 +149,7 @@ private:
     POINT         dragStartWinPos_{0, 0};  // 拖动开始时窗口屏幕坐标
     int           dragOffsetX_{0};         // 用户拖动产生的累积偏移
     int           dragOffsetY_{0};
+    int           dynamicCardWidthDip_{0};  // 卡片模式动态宽度（DIPs），0=使用默认
     TaskbarPosition lastPosition_{TaskbarPosition::UNKNOWN};  // 用于检测方位变化（重置拖动偏移）
 
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"

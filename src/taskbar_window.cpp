@@ -118,7 +118,7 @@ void TaskbarWindow::InternalPosition() {
     lastPosition_ = curPos;
 
     companion_.PositionLyricsInTaskbar(
-        hwnd_, displayMode_, dragOffsetX_, dragOffsetY_, lastPosRect_);
+        hwnd_, displayMode_, dragOffsetX_, dragOffsetY_, lastPosRect_, dynamicCardWidthDip_);
 }
 
 void TaskbarWindow::Reposition() {

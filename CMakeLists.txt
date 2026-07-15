@@ -360,21 +360,41 @@ if(MSVC)
 
     # 3) VC++ Redist CRT DLL（msvcp140 / vcruntime140 / vcruntime140_1）
     #    发布包中必须附带，避免用户机器缺失 VC Redist 导致启动失败
-    if(DEFINED ENV{VCToolsRedistDir})
-        set(_CRT_SRC_DIR "$ENV{VCToolsRedistDir}/x64/Microsoft.VC143.CRT")
-    else()
-        # 本地开发环境：从 CMake 推导 MSVC 工具链路径
-        set(_CRT_SRC_DIR "${VCToolsRedistDir}/x64/Microsoft.VC143.CRT")
+    #    从编译器路径向上推导到 VC 根目录：
+    #      cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
+    #      Redist:  .../VC/Redist/MSVC/<ver>/x64/Microsoft.VC143.CRT/*.dll
+    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _crt_path)          # .../bin/Hostx64/x64
+    cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../bin/Hostx64
+    cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../bin
+    cmake_path(GET _crt_path PARENT_PATH _msvc_ver_path)              # .../Tools/MSVC/<ver>
+    cmake_path(GET _msvc_ver_path FILENAME _msvc_ver)
+    cmake_path(GET _msvc_ver_path PARENT_PATH _crt_path)              # .../Tools/MSVC
+    cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../Tools
+    cmake_path(GET _crt_path PARENT_PATH _vc_root)                    # .../VC
+
+    set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/x64/Microsoft.VC143.CRT")
+
+    if(NOT EXISTS "${_CRT_SRC_DIR}")
+        # 备选：某些 VS 版本的 CRT 放在 onecore 子目录下
+        set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/onecore/x64/Microsoft.VC143.CRT")
     endif()
-    foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
-        if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
-            add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${_CRT_SRC_DIR}/${_CRT_DLL}"
-                    $<TARGET_FILE_DIR:${PROJECT_NAME}>/${_CRT_DLL}
-                COMMENT "Copying ${_CRT_DLL} to output directory")
-        endif()
-    endforeach()
+
+    if(NOT EXISTS "${_CRT_SRC_DIR}")
+        message(WARNING "Cannot locate VC++ CRT DLL directory. "
+                        "Expected: ${_vc_root}/Redist/MSVC/${_msvc_ver}/x64/Microsoft.VC143.CRT. "
+                        "Please manually copy msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll to output.")
+    else()
+        message(STATUS "Copying VC++ CRT DLLs from: ${_CRT_SRC_DIR}")
+        foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
+            if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
+                add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${_CRT_SRC_DIR}/${_CRT_DLL}"
+                        $<TARGET_FILE_DIR:${PROJECT_NAME}>/${_CRT_DLL}
+                    COMMENT "Copying ${_CRT_DLL} to output directory")
+            endif()
+        endforeach()
+    endif()
 
 endif()
 

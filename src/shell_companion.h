@@ -60,7 +60,8 @@ public:
     void PositionLyricsInTaskbar(HWND lyricsWnd,
                                   const std::string& displayMode,
                                   int dragOffsetX, int dragOffsetY,
-                                  RECT& inOutLastPosRect);
+                                  RECT& inOutLastPosRect,
+                                  int dynamicWidthDip = 0);
 
     // ── 拖动后吸附到空闲空间 ──
     void SnapToEmptySpace(HWND lyricsWnd);
