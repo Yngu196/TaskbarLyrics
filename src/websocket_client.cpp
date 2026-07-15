@@ -315,9 +315,21 @@ void WebSocketClient::Disconnect() {
         }
     }
 
-    // reconnectThread 已退出后再 stop client，避免锁争用
+    // reconnectThread 已退出后再关闭 client
+    // ix::WebSocket::stop() 在等待关闭握手时可能无限阻塞，
+    // 且与回调线程可能产生死锁。
+    // 解决方案：在独立线程中异步清理，不阻塞主线程。
+    // 进程退出后 OS 会自动回收所有资源。
     if (client_) {
-        try { client_->stop(); } catch (...) {}
+        auto wsPtr = std::move(client_);  // 取走所有权
+        client_.reset();
+        // 在独立线程中执行 stop + 析构，detach 让其自行完成
+        // 不等待：主线程必须继续执行后续关闭步骤
+        std::thread([wsPtr = std::move(wsPtr)]() mutable {
+            try { wsPtr->stop(); } catch (...) {}
+            // wsPtr 离开作用域自动析构
+        }).detach();
+        Log("[WS] WebSocket cleanup detached (async)\n");
     }
 
     if (connected_.exchange(false)) {

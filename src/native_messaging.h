@@ -53,6 +53,9 @@ public:
     // 是否已收到 shutdown 指令
     bool IsShutdown() const { return !running_; }
 
+    // 请求关闭：设置停止标志并关闭 stdin 句柄以解除 getline 阻塞
+    void RequestShutdown();
+
 private:
     MessageHandler handler_;
     bool running_ = true;

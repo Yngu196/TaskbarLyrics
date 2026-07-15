@@ -94,10 +94,9 @@ void ProcessMonitor::Stop() {
             monitorThread_.native_handle(),
             moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
         if (waitResult == WAIT_TIMEOUT) {
-            moekoe::Log("[PM] Monitor thread join timed out (%d ms), forcing exit\n",
+            moekoe::Log("[PM] Monitor thread join timed out (%d ms), detaching\n",
                        moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
             monitorThread_.detach();
-            ::ExitProcess(4);
         } else {
             monitorThread_.join();
         }
