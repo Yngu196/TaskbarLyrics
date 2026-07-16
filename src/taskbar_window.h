@@ -107,6 +107,9 @@ public:
     using ContextMenuCallback = std::function<void(UINT menuId)>;
     void OnContextMenuCommand(ContextMenuCallback cb) { onContextMenuCmd_ = std::move(cb); }
 
+    // 设置消息窗口句柄（用于右键菜单所有者，避免与 Shell_TrayWnd 产生死锁）
+    void SetMessageWindow(HWND hMsgWnd) { hMsgWnd_ = hMsgWnd; }
+
     // 悬停状态变化回调（用于立即触发重绘）
     using HoverChangedCallback = std::function<void()>;
     void OnHoverChanged(HoverChangedCallback cb) { onHoverChanged_ = std::move(cb); }
@@ -138,6 +141,7 @@ private:
     // 状态
     HINSTANCE     hInstance_{nullptr};
     HWND          hwnd_{nullptr};
+    HWND          hMsgWnd_{nullptr};    // 消息窗口句柄，用于右键菜单所有者
     bool          created_{false};
     bool          isHovering_{false};
     bool          trackingMouse_{false};

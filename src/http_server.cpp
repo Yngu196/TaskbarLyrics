@@ -89,14 +89,18 @@ void HttpServer::Stop() {
     }
 
     if (serverThread_.joinable()) {
+        // 分阶段等待：先等 500ms（正常关闭通常很快），再等 2s
         DWORD waitResult = ::WaitForSingleObject(
-            serverThread_.native_handle(),
-            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            serverThread_.native_handle(), 500);
         if (waitResult == WAIT_TIMEOUT) {
-            moekoe::Log("[SERVER] Thread join timed out (%d ms), forcing exit\n",
-                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+            moekoe::Log("[SERVER] Thread join: first 500ms timeout, waiting 2s more...\n");
+            waitResult = ::WaitForSingleObject(
+                serverThread_.native_handle(),
+                moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
+        }
+        if (waitResult == WAIT_TIMEOUT) {
+            moekoe::Log("[SERVER] Thread still running after timeout, detaching (may leak)\n");
             serverThread_.detach();
-            ::ExitProcess(2);
         } else {
             serverThread_.join();
         }

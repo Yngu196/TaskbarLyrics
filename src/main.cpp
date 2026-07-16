@@ -489,6 +489,7 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
                 // 4.5. 卡片模式动态宽度：长歌词扩展，短歌词滞回缩回
                 if (app->config->Appearance().displayMode == "card" &&
+                    app->config->Appearance().cardDynamicWidth &&
                     state.hasLyrics && !state.currentLine.empty()) {
                     const float newWidthDip = app->renderer->MeasureCardLyricsWidth(
                         state.currentLine, state.nextLine);
@@ -733,12 +734,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 1;
     }
 
+    // 应用配置中的显示模式（必须在 Reposition 之前，影响宽度计算）
+    taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
+
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);
-    taskbarWindow.Reposition();
 
-    // 应用配置中的显示模式
-    taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
+    // 首次定位：全部配置就绪后统一触发（TaskbarWindow::Create 不再内部定位）
+    taskbarWindow.Reposition();
 
     // 应用配置中的锁定状态
     taskbarWindow.SetPositionLocked(config.Position().lockPosition);
@@ -842,6 +845,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     });
 
     // 注册歌词窗口右键菜单回调
+    // 设置消息窗口句柄，供歌词窗口右键菜单作为所有者
+    taskbarWindow.SetMessageWindow(hMsgWnd);
+
     taskbarWindow.OnContextMenuCommand([&app, hMsgWnd](UINT menuId) {
         // 翻译模式子菜单项（根据显示模式区分处理）
         if (menuId >= moekoe::ID_MENU_TRANSLATION_MODE && menuId <= moekoe::ID_MENU_TRANSLATION_MODE + 2) {
@@ -858,6 +864,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             }
             app.config->Save();
             ApplyRendererSettings(app);
+            return;
+        }
+
+        // 退出命令：直接设置标志，不通过 PostMessageW
+        // 原因：PostMessageW 投递的 WM_COMMAND 需要主消息循环取出，
+        // 但歌词窗口的 TrackPopupMenuEx 可能仍在处理后续消息，
+        // 导致退出延迟或与窗口销毁产生竞争
+        if (menuId == moekoe::ID_MENU_EXIT) {
+            app.running = false;
             return;
         }
 
@@ -1027,7 +1042,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             Log("[NATIVE-HOST] Run() returned true (standalone mode, continuing)\n");
         }
     });
-    stdinThread.detach();
+    // 注意：不再 detach，改为在关闭阶段 join + 超时
     Log("[STARTUP] Native Host stdin reader started\n");
 
     // 启动帧定时器
@@ -1036,10 +1051,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // ═══════ 第 4 阶段：业务逻辑循环 ═══════
     // 目的：处理消息和事件，直到应用关闭
+    // 使用 PeekMessageW 替代 GetMessageW，确保 app.running=false 后循环能立即退出，
+    // 不必等待下一条消息到达
     MSG msg{};
-    while (app.running && ::GetMessageW(&msg, nullptr, 0, 0)) {
-        ::TranslateMessage(&msg);
-        ::DispatchMessageW(&msg);
+    while (app.running) {
+        if (::PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) {
+                Log("[SHUTDOWN] WM_QUIT received\n");
+                break;
+            }
+            ::TranslateMessage(&msg);
+            ::DispatchMessageW(&msg);
+        } else {
+            // 无消息时短暂让出 CPU，防止忙等待
+            ::Sleep(1);
+        }
     }
     Log("[SHUTDOWN] Message loop ended\n");
 
@@ -1054,14 +1080,36 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     }
     config.Save();
 
+    // 关闭 Native Host stdin 线程
+    // 注意：getline 在 stdin 上阻塞，无法可靠中断，
+    // 设置 running_=false 后给 500ms 优雅退出时间，超时则 detach
+    Log("[SHUTDOWN] Stopping Native Host stdin thread...\n");
+    nativeHost.RequestShutdown();
+    if (stdinThread.joinable()) {
+        DWORD waitResult = ::WaitForSingleObject(stdinThread.native_handle(), 500);
+        if (waitResult == WAIT_TIMEOUT) {
+            Log("[SHUTDOWN] stdin thread did not exit in 500ms, detaching\n");
+            stdinThread.detach();
+        } else {
+            stdinThread.join();
+            Log("[SHUTDOWN] stdin thread joined\n");
+        }
+    }
+
     ::KillTimer(hMsgWnd, 1);
     if (app.spectrumCapture) {
+        Log("[SHUTDOWN] Stopping spectrum capture...\n");
         app.spectrumCapture->Stop();
     }
+    Log("[SHUTDOWN] Stopping HTTP server...\n");
     httpServer.Stop();
+    Log("[SHUTDOWN] Disconnecting WebSocket...\n");
     wsClient.Disconnect();
+    Log("[SHUTDOWN] Shutting down renderer...\n");
     renderer.Shutdown();
+    Log("[SHUTDOWN] Destroying taskbar window...\n");
     taskbarWindow.Destroy();
+    Log("[SHUTDOWN] Shutting down tray...\n");
     tray.Shutdown();
     ::DestroyWindow(hMsgWnd);
 

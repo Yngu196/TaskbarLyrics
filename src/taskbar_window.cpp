@@ -85,8 +85,11 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     // 5) 首次定位：记录 lastPosition_ 防止误判方位变化
     lastPosition_ = companion_.GetTaskbarInfo().position;
 
-    // 6) 定位歌词窗口
-    InternalPosition();
+    // 6) 延迟首次定位：不在 Create 中调用 InternalPosition，
+    //    由外部在 SetDragOffset + SetDisplayMode + SetPositionLocked 全部就绪后
+    //    通过 Reposition() 统一触发，避免 dragOffset=(0,0) 的无效定位，
+    //    以及 WinEvent 刚安装时 Explorer 瞬态事件导致冻结跳过。
+    //    参见 main.cpp WinMain 中 "应用配置中的位置偏移" 之后的 Reposition() 调用。
 
     created_ = true;
     return true;
@@ -95,6 +98,10 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
 void TaskbarWindow::Destroy() {
     companion_.Shutdown();
     if (hwnd_) {
+        // 先解除与任务栏的父子关系，避免 DestroyWindow 影响任务栏
+        ::SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, 0);
+        // 先隐藏窗口，避免销毁过程中闪烁
+        ::ShowWindow(hwnd_, SW_HIDE);
         ::DestroyWindow(hwnd_);
         hwnd_ = nullptr;
     }
@@ -209,7 +216,12 @@ void TaskbarWindow::ShowLyricsContextMenu() {
         break;
     }
 
-    ::SetForegroundWindow(hwnd_);
+    // 使用消息窗口（而非歌词窗口）作为菜单所有者
+    // 原因：歌词窗口通过 GWLP_HWNDPARENT 绑定到 Shell_TrayWnd，
+    // 若用歌词窗口做 TrackPopupMenuEx 的所有者，其内部模态消息循环
+    // 可能与任务栏的消息处理产生死锁，导致程序卡死
+    HWND hMenuOwner = hMsgWnd_ ? hMsgWnd_ : hwnd_;
+    ::SetForegroundWindow(hMenuOwner);
 
     UINT trackFlags = TPM_RIGHTBUTTON | TPM_RETURNCMD;
     // 根据任务栏方向选择菜单展开方向
@@ -232,7 +244,7 @@ void TaskbarWindow::ShowLyricsContextMenu() {
     }
 
     const auto cmd = ::TrackPopupMenuEx(
-        hMenu, trackFlags, pt.x, pt.y, hwnd_, nullptr);
+        hMenu, trackFlags, pt.x, pt.y, hMenuOwner, nullptr);
 
     ::DestroyMenu(hMenu);
 

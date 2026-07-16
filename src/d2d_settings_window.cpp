@@ -391,6 +391,7 @@ void D2DSettingsWindow::BuildControls(const Config& cfg) {
     addDropdown("cardBackgroundMode", "卡片背景",
                 {"半透明毛玻璃", "纯透明"},
                 a.cardBackgroundMode == "transparent" ? 1 : 0);
+    addToggle("cardDynamicWidth", "歌词显示扩展", a.cardDynamicWidth);
 
     // ===== 位置 =====
     addSection("位置");
@@ -455,7 +456,7 @@ void D2DSettingsWindow::UpdateControlVisibility() {
     };
     static const std::vector<std::string> cardOnly = {
         "cardFontSizeCurrent", "cardFontSizeNext", "cardFontFamily", "cardCurrentColor", "cardNextColor",
-        "cardBackgroundMode"
+        "cardBackgroundMode", "cardDynamicWidth"
     };
 
     // 跟踪「长歌词滚动（跑马灯）」和「卡片样式设置」两个 section 的范围。
@@ -632,7 +633,7 @@ void D2DSettingsWindow::DrawAll() {
 
     // 绘制底部版本号（在控件之后，随内容滚动）
     {
-        const wchar_t* versionText = L"MoeKoe Taskbar Lyrics v1.0.0";
+        const wchar_t* versionText = L"MoeKoe Taskbar Lyrics v1.0.1";
         float verY = static_cast<float>(totalContentHeight_ - 24) - scrollOffset_;
         if (verY + 20.f > 0 && verY < static_cast<float>(clientH)) {
             float textWidth = 0;
@@ -1411,6 +1412,8 @@ void D2DSettingsWindow::ApplyAndSave() {
             ap.cardNextColor = ColorFToHex(c.colorValue);
         } else if (c.id == "cardBackgroundMode") {
             ap.cardBackgroundMode = (c.dropdownSelected == 1) ? "transparent" : "frosted";
+        } else if (c.id == "cardDynamicWidth") {
+            ap.cardDynamicWidth = c.toggleValue;
         } else if (c.id == "wsPort") {
             adv.websocketPort = atoi(c.textValue.c_str());
         } else if (c.id == "refreshRate") {

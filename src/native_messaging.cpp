@@ -10,6 +10,9 @@
 #include "native_messaging.h"
 #include "logger.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+
 #include <iostream>
 #include <string>
 #include <thread>
@@ -85,6 +88,15 @@ void NativeMessagingHost::SendEvent(const NativeHostEvent& event) {
 
 void NativeMessagingHost::SendPayloadEvent(const nlohmann::json& payload) {
     SendEvent({ payload });
+}
+
+void NativeMessagingHost::RequestShutdown() {
+    running_ = false;
+    // 注意：不尝试关闭 stdin 句柄来解除 getline 阻塞。
+    // GetStdHandle 返回的伪句柄不能安全 CloseHandle，
+    // 而 DuplicateHandle + CloseHandle 副本不会影响原始管道。
+    // stdin 线程会在主进程退出后自动终止，或由主线程在 join 超时后 detach。
+    Log("[NATIVE-HOST] Shutdown requested (running_=false)\n");
 }
 
 } // namespace moekoe

@@ -55,6 +55,9 @@ struct AppearanceConfig {
 
     // 卡片背景模式: "frosted" (默认,半透明毛玻璃) | "transparent" (纯透明)
     std::string cardBackgroundMode{"frosted"};
+
+    // 卡片模式歌词显示扩展：长歌词自动加宽显示区域
+    bool        cardDynamicWidth{true};
 };
 
 struct AdvancedConfig {

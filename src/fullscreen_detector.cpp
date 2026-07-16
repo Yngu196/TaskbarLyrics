@@ -47,18 +47,19 @@ bool FullscreenDetector::IsForegroundFullscreen(bool debugLog) {
     const int winW = wr.right - wr.left;
     const int winH = wr.bottom - wr.top;
 
-    static int s_debugCounter = 0;
-    if (debugLog && ++s_debugCounter >= 60) {
-        s_debugCounter = 0;
-        LONG style = ::GetWindowLongW(fgw, GWL_STYLE);
-        LONG exStyle = ::GetWindowLongW(fgw, GWL_EXSTYLE);
-        char clsUtf8[128] = {};
-        ::WideCharToMultiByte(CP_UTF8, 0, cls, -1, clsUtf8, (int)sizeof(clsUtf8), nullptr, nullptr);
-        Log("[FullscreenDetect] cls=%s pid=%lu win=(%d,%d,%d,%d) mon=(%d,%d,%d,%d) style=0x%08lX => %s\n",
-            clsUtf8, pid, wr.left, wr.top, wr.right, wr.bottom,
-            mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
-            style, (winW >= monW && winH >= monH) ? "FULLSCREEN" : "normal");
-    }
+    // 已注释：逐帧全屏检测日志太噪，影响 bug 定位
+    // static int s_debugCounter = 0;
+    // if (debugLog && ++s_debugCounter >= 60) {
+    //     s_debugCounter = 0;
+    //     LONG style = ::GetWindowLongW(fgw, GWL_STYLE);
+    //     LONG exStyle = ::GetWindowLongW(fgw, GWL_EXSTYLE);
+    //     char clsUtf8[128] = {};
+    //     ::WideCharToMultiByte(CP_UTF8, 0, cls, -1, clsUtf8, (int)sizeof(clsUtf8), nullptr, nullptr);
+    //     Log("[FullscreenDetect] cls=%s pid=%lu win=(%d,%d,%d,%d) mon=(%d,%d,%d,%d) style=0x%08lX => %s\n",
+    //         clsUtf8, pid, wr.left, wr.top, wr.right, wr.bottom,
+    //         mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right, mi.rcMonitor.bottom,
+    //         style, (winW >= monW && winH >= monH) ? "FULLSCREEN" : "normal");
+    // }
 
     if (winW >= monW && winH >= monH) return true;
 
