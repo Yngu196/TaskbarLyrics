@@ -80,13 +80,17 @@ jobs:
             Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
           }
 
-      - name: Package
+      - name: Package for artifact
         shell: powershell
         run: |
-          python scripts/pack_zip.py moeKoe-taskbar-lyrics moeKoe-taskbar-lyrics.zip
+          # upload-artifact@v4 会多包一层 zip，所以需要把插件目录塞进中间父目录
+          # 这样 artifact zip 内部就是: moeKoe-taskbar-lyrics/manifest.json (深度=2)
+          # 恰好符合 MoeKoeMusic installPluginFromZip 的检测规则
+          New-Item -ItemType Directory -Path artifact -Force
+          Copy-Item -Path moeKoe-taskbar-lyrics -Destination artifact/moeKoe-taskbar-lyrics -Recurse -Force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: MoeKoeTaskbarLyrics-x64
-          path: moeKoe-taskbar-lyrics.zip
+          path: artifact/
