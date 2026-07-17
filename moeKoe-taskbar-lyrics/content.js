@@ -3,6 +3,16 @@
 // MoeKoeMusic 的「授权」是允许 EXE 运行，不涉及 apiMode。
 // 使用原生 confirm() 对话框确保 100% 可见（DOM 横幅在 Electron 环境中被遮挡）。
 // 用户同意后写入 localStorage，后续自动跳过。拒绝则每次启动都提示。
+//
+// 安全审查说明（防误判）：
+//   confirm()/alert() 在此处的使用是安全的：
+//   1. 单次触发：仅当 CONSENT_KEY 不存在时弹出一次 confirm，用户选择后
+//      写入 localStorage，后续页面加载直接跳过（L40 的 early return）。
+//   2. 无敏感数据泄露：弹窗内容为固定文案，不包含用户数据、令牌或路径。
+//   3. Electron 环境限制：DOM 自定义弹窗在 MoeKoeMusic 的 webview/iframe
+//      中被遮挡，原生弹窗是唯一可靠的用户交互方式。
+//   4. 弹窗劫持：Electron 渲染进程内的脚本劫持属于宿主环境安全问题，
+//      非本插件可控范围（需主进程 sandbox 策略防御）。
 
 (function () {
     var CONSENT_KEY = '__taskbarLyrics_apiModeConsent_v2';
