@@ -24,7 +24,7 @@ using renderer_utils::Utf8ToWide;
 using renderer_utils::FirstUtf8CharAsWide;
 using renderer_utils::GetCurrentTimeSeconds;
 
-TaskbarRenderer::TaskbarRenderer() = default;
+TaskbarRenderer::TaskbarRenderer() : coverCtx_(std::make_shared<CoverDownloadCtx>()) {}
 
 TaskbarRenderer::~TaskbarRenderer() {
     Shutdown();
@@ -262,12 +262,12 @@ void TaskbarRenderer::Shutdown() {
     blurredBgBrush_.Reset();
     blurredBgBitmapW_ = 0.0f;
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
-    coverLoadInProgress_.store(false, std::memory_order_release);
-    coverDownloadGen_.store(0, std::memory_order_release);  // 重置代际计数器
+    coverCtx_->coverLoadInProgress.store(false, std::memory_order_release);
+    coverCtx_->coverDownloadGen.store(0, std::memory_order_release);  // 重置代际计数器
     {
         // 排空无锁队列中可能残留的封面数据
         std::vector<uint8_t> stale;
-        while (pendingCoverQueue_.try_dequeue(stale)) { }
+        while (coverCtx_->pendingCoverQueue.try_dequeue(stale)) { }
     }
     coverLayer_.Reset();
     coverClipGeo_.Reset();

@@ -81,6 +81,10 @@ public:
     Config();
     ~Config() = default;
 
+    // 配置文件 schema 版本：当字段重命名/删除时递增，
+    // Load 时据此判断是否需要执行迁移逻辑。
+    static constexpr int kSchemaVersion = 1;
+
     // 加载配置文件（不存在时使用默认值并写盘）
     bool Load();
 

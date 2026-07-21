@@ -90,6 +90,34 @@ static std::wstring ResolveAutoStartExePath() {
 
 using json = nlohmann::json;
 
+// ── 配置文件迁移 ──
+// 当字段重命名或结构变更时，在此函数中添加迁移逻辑。
+// fromVersion < 1 表示全新配置或无 schema_version 标记的旧配置文件。
+//
+// 迁移规则：
+//   - 仅当旧字段存在且新字段不存在时，将旧字段值复制到新字段
+//   - Save() 构建全新 JSON，仅写入已知字段，因此废弃字段会在下次保存时自动清除
+//   - 每次递增 kSchemaVersion 时，在此添加对应的迁移分支
+//
+// 示例（未来字段重命名时添加）：
+//   if (fromVersion < 2) {
+//       if (j.contains("appearance") && j["appearance"].contains("old_name") &&
+//           !j["appearance"].contains("new_name")) {
+//           j["appearance"]["new_name"] = j["appearance"]["old_name"];
+//       }
+//   }
+//
+void MigrateConfig(json& j, int fromVersion) {
+    if (fromVersion >= Config::kSchemaVersion) return;
+
+    // v0 → v1：初始版本，无历史字段重命名需要迁移
+    // 旧配置文件（无 schema_version 字段）会落入此分支，
+    // 所有已知字段通过 j.value() 用默认值兜底，无需额外处理。
+
+    // 未来迁移在此追加：
+    // if (fromVersion < 2) { ... }
+}
+
 Config::Config() = default;
 
 std::string Config::GetConfigPath() {
@@ -120,6 +148,14 @@ bool Config::Load() {
     try {
         json j;
         in >> j;
+
+        // 配置文件迁移：根据 schema_version 判断是否需要执行字段重命名等迁移
+        const int loadedVersion = j.value("schema_version", 0);
+        if (loadedVersion < Config::kSchemaVersion) {
+            moekoe::Log("[CONFIG] Migrating schema from v%d to v%d\n",
+                        loadedVersion, Config::kSchemaVersion);
+            MigrateConfig(j, loadedVersion);
+        }
 
         enabled_   = j.value("enabled",   true);
         autoStart_ = j.value("auto_start", false);
@@ -208,6 +244,7 @@ bool Config::Save() const {
     if (!out.is_open()) return false;
 
     json j;
+    j["schema_version"] = Config::kSchemaVersion;
     j["enabled"]    = enabled_;
     j["auto_start"] = autoStart_;
 

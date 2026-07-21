@@ -215,6 +215,18 @@ constexpr size_t MAX_CHARS_PER_LINE = 1000;
 constexpr int THREAD_JOIN_TIMEOUT_MS = 2000;
 
 // ═══════════════════════════════════════
+// 性能监控（debug 模式）
+// ═══════════════════════════════════════
+
+/// debug 模式下性能统计输出间隔（毫秒）
+/// 仅当 config.debugLog == true 时启用，向 debug.log 写入一行汇总：
+///   [PERF] FPS=60.0 wsMsgRate=0.0/s wsConn=1 mem=15.3MB
+/// 帧率（FPS）通过统计区间内 WM_TIMER 触发次数计算，
+/// WS 消息频率通过统计 OnLyrics 回调次数计算，
+/// 内存占用通过 GetProcessMemoryInfo 获取工作集大小。
+constexpr int PERF_STATS_INTERVAL_MS = 5000;
+
+// ═══════════════════════════════════════
 // 频谱渲染常量
 // ═══════════════════════════════════════
 

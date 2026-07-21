@@ -126,14 +126,27 @@ endforeach()
 
 set(IXWEBSOCKET_SOURCE_DIR "" CACHE PATH "ixwebsocket source directory (optional, for source build)")
 if(NOT IXWEBSOCKET_SOURCE_DIR)
-    find_path(IXWEBSOCKET_SOURCE_DIR ixwebsocket/IXWebSocket.h
-        PATHS "${CMAKE_SOURCE_DIR}/third_party/ixwebsocket"
-              ${_IXWS_BUILDTREE_PATHS}
-              # 硬编码路径作为最后 fallback
-              "D:/vcpkg/buildtrees/ixwebsocket"
-              "C:/vcpkg/buildtrees/ixwebsocket"
-              "${VCPKG_INSTALLED_DIR}/include"
-        PATH_SUFFIXES src)
+    # 注意：third_party/ixwebsocket 的目录布局为 ixwebsocket/IXWebSocket.h（无 src/ 前缀），
+    # vcpkg buildtrees 的布局为 src/ixwebsocket/IXWebSocket.h。
+    # 直接用 EXISTS 检查路径，避免 find_path 对含子目录的 NAMES 处理不一致。
+    set(_IXWS_THIRDPARTY "${CMAKE_SOURCE_DIR}/third_party/ixwebsocket")
+    if(EXISTS "${_IXWS_THIRDPARTY}/ixwebsocket/IXWebSocket.h" AND EXISTS "${_IXWS_THIRDPARTY}/CMakeLists.txt")
+        set(IXWEBSOCKET_SOURCE_DIR "${_IXWS_THIRDPARTY}" CACHE PATH "ixwebsocket source directory" FORCE)
+    else()
+        foreach(_root IN LISTS _IXWS_VCPKG_ROOTS)
+            set(_candidate "${_root}/buildtrees/ixwebsocket/src")
+            if(EXISTS "${_candidate}/ixwebsocket/IXWebSocket.h" AND EXISTS "${_candidate}/CMakeLists.txt")
+                set(IXWEBSOCKET_SOURCE_DIR "${_candidate}" CACHE PATH "ixwebsocket source directory" FORCE)
+                break()
+            endif()
+            # buildtrees 下可能直接是 src 子目录外的布局
+            set(_candidate "${_root}/buildtrees/ixwebsocket")
+            if(EXISTS "${_candidate}/ixwebsocket/IXWebSocket.h" AND EXISTS "${_candidate}/CMakeLists.txt")
+                set(IXWEBSOCKET_SOURCE_DIR "${_candidate}" CACHE PATH "ixwebsocket source directory" FORCE)
+                break()
+            endif()
+        endforeach()
+    endif()
 endif()
 if(EXISTS "${IXWEBSOCKET_SOURCE_DIR}/CMakeLists.txt")
     message(STATUS "Building ixwebsocket from source: ${IXWEBSOCKET_SOURCE_DIR}")
@@ -144,6 +157,16 @@ if(EXISTS "${IXWEBSOCKET_SOURCE_DIR}/CMakeLists.txt")
     add_subdirectory("${IXWEBSOCKET_SOURCE_DIR}" "third_party/ixwebsocket_build")
 else()
     # Fallback: use pre-built lib
+    # ixwebsocket 可能仅安装在某个 triplet（如 x64-windows）而未安装在选定的
+    # VCPKG_INSTALLED_DIR（如 x64-windows-142）中，因此搜索时需覆盖多个 triplet。
+    set(_IXWS_INSTALLED_CANDIDATES "${VCPKG_INSTALLED_DIR}")
+    foreach(_root IN LISTS _IXWS_VCPKG_ROOTS)
+        foreach(_TRIPLET x64-windows-142 x64-windows)
+            list(APPEND _IXWS_INSTALLED_CANDIDATES "${_root}/installed/${_TRIPLET}")
+        endforeach()
+    endforeach()
+    list(REMOVE_DUPLICATES _IXWS_INSTALLED_CANDIDATES)
+
     if(NOT DEFINED IXWEBSOCKET_BUILD_DIR)
         if(DEFINED ENV{IXWEBSOCKET_BUILD_DIR})
             set(IXWEBSOCKET_BUILD_DIR "$ENV{IXWEBSOCKET_BUILD_DIR}")
@@ -158,7 +181,10 @@ else()
     if(EXISTS "${IXWEBSOCKET_RELEASE_LIB}")
         message(STATUS "Using manually built ixwebsocket: ${IXWEBSOCKET_RELEASE_LIB}")
     else()
-        find_library(IXWEBSOCKET_LIBRARY ixwebsocket PATHS "${VCPKG_INSTALLED_DIR}/lib" NO_DEFAULT_PATH)
+        find_library(IXWEBSOCKET_LIBRARY ixwebsocket
+            PATHS ${_IXWS_INSTALLED_CANDIDATES}
+            PATH_SUFFIXES lib
+            NO_DEFAULT_PATH)
         set(IXWEBSOCKET_RELEASE_LIB "${IXWEBSOCKET_LIBRARY}")
     endif()
 
@@ -170,17 +196,21 @@ else()
     endif()
 
     find_path(IXWEBSOCKET_INCLUDE_DIR ixwebsocket/IXWebSocket.h
-        PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
+        PATHS ${_IXWS_INSTALLED_CANDIDATES}
+        PATH_SUFFIXES include
+        NO_DEFAULT_PATH)
     if(NOT IXWEBSOCKET_INCLUDE_DIR)
         message(FATAL_ERROR "ixwebsocket include dir not found")
     endif()
+    message(STATUS "Found ixwebsocket include: ${IXWEBSOCKET_INCLUDE_DIR}")
+    message(STATUS "Found ixwebsocket lib: ${IXWEBSOCKET_RELEASE_LIB}")
 
     add_library(ixwebsocket::ixwebsocket STATIC IMPORTED)
     set_target_properties(ixwebsocket::ixwebsocket PROPERTIES
         IMPORTED_LOCATION_RELEASE "${IXWEBSOCKET_RELEASE_LIB}"
         IMPORTED_LOCATION_DEBUG "${IXWEBSOCKET_DEBUG_LIB}"
         IMPORTED_LOCATION "${IXWEBSOCKET_RELEASE_LIB}"
-        INTERFACE_INCLUDE_DIRECTORIES "${VCPKG_INSTALLED_DIR}/include"
+        INTERFACE_INCLUDE_DIRECTORIES "${IXWEBSOCKET_INCLUDE_DIR}"
         INTERFACE_COMPILE_DEFINITIONS "IXWEBSOCKET_USE_TLS;IXWEBSOCKET_USE_MBED_TLS;IXWEBSOCKET_USE_ZLIB"
         INTERFACE_LINK_LIBRARIES
             "${MBEDTLS_LIBRARY};${MBEDX509_LIBRARY};${MBEDCRYPTO_LIBRARY};ZLIB::ZLIB;wsock32;ws2_32;shlwapi;Crypt32"
@@ -406,20 +436,83 @@ if(BUILD_TESTING)
 
     # 使用 FetchContent 获取 Catch2 v3（header + 轻量编译）
     include(FetchContent)
-    FetchContent_Declare(
-        Catch2
-        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-        GIT_TAG        v3.7.1
-        GIT_SHALLOW    TRUE
-    )
+    find_package(Git QUIET)  # 用于预检 Catch2 仓库可达性
+
+    # Catch2 源码获取策略（按优先级）：
+    #   1. 用户通过 -DCATCH2_SOURCE_DIR=<path> 显式指定本地源码目录
+    #   2. 复用其他 build 目录已下载的源码（避免重复下载）
+    #   3. 从 GitHub/gitee 克隆（网络受限环境下可能失败 → 优雅降级跳过测试）
+    set(CATCH2_SOURCE_DIR "" CACHE PATH "Catch2 source directory (optional, to avoid git download)")
+
+    # 检查本地已有的 Catch2 源码（复用 build/_deps 或 third_party 下的下载）
+    if(NOT CATCH2_SOURCE_DIR)
+        foreach(_candidate
+                "${CMAKE_SOURCE_DIR}/build/_deps/catch2-src"
+                "${CMAKE_SOURCE_DIR}/third_party/catch2")
+            if(EXISTS "${_candidate}/CMakeLists.txt" AND EXISTS "${_candidate}/src/catch2/catch_all.hpp")
+                set(CATCH2_SOURCE_DIR "${_candidate}")
+                message(STATUS "Reusing local Catch2 source: ${CATCH2_SOURCE_DIR}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
     # 最小化 Catch2 编译：只构建需要的组件
     set(CATCH_BUILD_TESTING OFF CACHE INTERNAL "")
     set(CATCH_BUILD_EXAMPLES OFF CACHE INTERNAL "")
     set(CATCH_BUILD_EXTRA_TESTS OFF CACHE INTERNAL "")
     set(CATCH_INSTALL_DOCS OFF CACHE INTERNAL "")
     set(CATCH_INSTALL_EXTRAS OFF CACHE INTERNAL "")
-    FetchContent_MakeAvailable(Catch2)
 
+    set(_catch2_ready FALSE)
+
+    if(CATCH2_SOURCE_DIR AND EXISTS "${CATCH2_SOURCE_DIR}/CMakeLists.txt")
+        # 使用本地源码目录（无需网络下载）
+        FetchContent_Declare(Catch2 SOURCE_DIR "${CATCH2_SOURCE_DIR}")
+        FetchContent_MakeAvailable(Catch2)
+        set(_catch2_ready TRUE)
+    else()
+        # 从 Git 克隆；GitHub 不通时尝试 gitee 镜像
+        if(GIT_FOUND)
+            foreach(_repo
+                    "https://github.com/catchorg/Catch2.git"
+                    "https://gitee.com/mirrors/Catch2.git")
+                message(STATUS "Trying to fetch Catch2 from: ${_repo}")
+                # FetchContent_Declare 不会立即下载，MakeAvailable 才触发
+                FetchContent_Declare(Catch2
+                    GIT_REPOSITORY "${_repo}"
+                    GIT_TAG        v3.7.1
+                    GIT_SHALLOW    TRUE)
+                # 用 execute_process 预检 git 可达性，避免 MakeAvailable 中断配置
+                execute_process(
+                    COMMAND ${GIT_EXECUTABLE} ls-remote --heads "${_repo}" v3.7.1
+                    RESULT_VARIABLE _git_probe_result
+                    OUTPUT_QUIET ERROR_QUIET TIMEOUT 15)
+                if(_git_probe_result EQUAL 0)
+                    FetchContent_MakeAvailable(Catch2)
+                    set(_catch2_ready TRUE)
+                    break()
+                else()
+                    message(STATUS "Catch2 repo unreachable: ${_repo}")
+                endif()
+            endforeach()
+        else()
+            message(STATUS "Git not found - cannot fetch Catch2 from remote")
+        endif()
+
+        if(NOT _catch2_ready)
+            set(BUILD_TESTING OFF CACHE BOOL "Build unit tests" FORCE)
+            message(WARNING
+                "Catch2 download failed (network unavailable or git not found). Skipping unit tests.\n"
+                "To enable tests:\n"
+                "  1. Pre-download Catch2 v3.7.1 and set -DCATCH2_SOURCE_DIR=<path>\n"
+                "  2. Or place it at third_party/catch2/\n"
+                "  3. Or ensure network access to GitHub/gitee")
+        endif()
+    endif()
+endif()
+
+if(BUILD_TESTING AND _catch2_ready)
     # 测试目标：lyrics_parser 核心逻辑
     add_executable(test_lyrics_parser
         tests/test_lyrics_parser.cpp

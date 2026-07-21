@@ -37,9 +37,14 @@ namespace {
 
 // 日志快捷方式（使用统一日志系统）
 using moekoe::Log;
+using moekoe::LogWarn;
+using moekoe::LogError;
+using moekoe::LogFatal;
 
-// 全局应用上下文（成员按析构顺序排列：后声明的先析构）
-// 依赖关系：taskbarWindow → renderer → config
+// 全局应用上下文（成员按声明顺序构造，按逆序析构）
+// 析构顺序设计：被依赖的对象最后析构。
+//   config 最先声明 → 最后析构（renderer/tray 等模块可能在其析构期间访问 config）
+//   taskbarWindow 须在 renderer 之后声明 → 先于 renderer 析构（释放对 renderer 的引用）
 struct AppContext {
     HINSTANCE                hInstance{nullptr};
     HWND                     hwnd{nullptr};
@@ -48,7 +53,14 @@ struct AppContext {
     // 动态卡片宽度缩回滞回计时器
     ULONGLONG                shrinkStartTick_{0};
 
-    // RAII 管理的组件（按依赖顺序声明：先声明后析构）
+    // debug 模式性能监控计数器（仅当 config.debugLog 时启用）
+    // 每隔 PERF_STATS_INTERVAL_MS 毫秒汇总一次并写入 debug.log
+    ULONGLONG                perfLastTick_{0};      // 上次统计的时间戳（GetTickCount64）
+    UINT                     perfFrameCount_{0};    // 区间内 WM_TIMER 触发次数
+    std::atomic<UINT>        perfWsMsgCount_{0};    // 区间内 OnLyrics 回调次数（跨线程累加）
+
+    // RAII 管理的组件（按声明顺序构造，按逆序析构）
+    std::unique_ptr<moekoe::Config>               config;          // 最先声明，最后析构
     std::unique_ptr<moekoe::NativeMessagingHost> nativeHost;
     std::unique_ptr<moekoe::D2DSettingsWindow>   d2dSettingsWindow;
     std::unique_ptr<moekoe::HttpServer>           httpServer;
@@ -56,9 +68,8 @@ struct AppContext {
     std::unique_ptr<moekoe::LyricsParser>         parser;
     std::unique_ptr<moekoe::SpectrumCapture>      spectrumCapture;
     std::unique_ptr<moekoe::TaskbarRenderer>      renderer;        // 依赖 taskbarWindow 的 HWND
-    std::unique_ptr<moekoe::TaskbarWindow>         taskbarWindow;   // 依赖 renderer
-    std::unique_ptr<moekoe::TrayIcon>             tray;
-    std::unique_ptr<moekoe::Config>               config;          // 最后声明，最先析构
+    std::unique_ptr<moekoe::TaskbarWindow>         taskbarWindow;   // 先于 renderer 析构
+    std::unique_ptr<moekoe::TrayIcon>             tray;            // 最后声明，最先析构
 };
 
 using namespace moekoe::constants;
@@ -436,6 +447,12 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case moekoe::TaskbarWindow::WM_FRAME_TICK:
     case WM_TIMER: {
         try {
+            // ═══════ 性能监控：帧计数累加 ═══════
+            // 仅在 debug 模式下累加（避免非 debug 模式下无意义的原子操作）
+            if (app->config && app->config->Advanced().debugLog) {
+                ++app->perfFrameCount_;
+            }
+
             // ═══════ 帧渲染流程 ═══════
             // 1. 检测任务栏尺寸变化（含 APPBAR 自动隐藏鼠标进出检测）
             if (app->taskbarWindow) app->taskbarWindow->CheckResize();
@@ -526,6 +543,39 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     }
                 }
             }
+
+            // ═══════ 6. 性能监控：定期汇总输出到日志 ═══════
+            // 仅在 debug 模式下启用，每 PERF_STATS_INTERVAL_MS 毫秒输出一次
+            //   FPS=区间内帧数 / 区间秒数
+            //   wsMsgRate=区间内 WS 消息数 / 区间秒数
+            //   wsConn=当前 WebSocket 连接状态
+            //   mem=进程工作集大小（MB）
+            if (app->config && app->config->Advanced().debugLog) {
+                const ULONGLONG nowTick = ::GetTickCount64();
+                if (app->perfLastTick_ == 0) {
+                    app->perfLastTick_ = nowTick;
+                } else if (nowTick - app->perfLastTick_ >= static_cast<ULONGLONG>(PERF_STATS_INTERVAL_MS)) {
+                    const double elapsedSec = static_cast<double>(nowTick - app->perfLastTick_) / 1000.0;
+                    const double fps = static_cast<double>(app->perfFrameCount_) / elapsedSec;
+                    const UINT wsMsgs = app->perfWsMsgCount_.exchange(0, std::memory_order_relaxed);
+                    const double wsMsgRate = static_cast<double>(wsMsgs) / elapsedSec;
+                    const int wsConn = app->wsClient ? (app->wsClient->IsConnected() ? 1 : 0) : -1;
+
+                    // 工作集（Working Set）大小，反映进程实际占用的物理内存
+                    double memMB = 0.0;
+                    PROCESS_MEMORY_COUNTERS pmc{};
+                    if (::GetProcessMemoryInfo(::GetCurrentProcess(), &pmc, sizeof(pmc))) {
+                        memMB = static_cast<double>(pmc.WorkingSetSize) / (1024.0 * 1024.0);
+                    }
+
+                    Log("[PERF] FPS=%.1f wsMsgRate=%.1f/s wsConn=%d mem=%.1fMB\n",
+                        fps, wsMsgRate, wsConn, memMB);
+
+                    // 重置统计窗口
+                    app->perfFrameCount_ = 0;
+                    app->perfLastTick_ = nowTick;
+                }
+            }
         } catch (const std::exception& e) {
             Log("[CRASH] WM_TIMER exception: %s\n", e.what());
             // 恢复策略：尝试重置渲染器状态
@@ -563,7 +613,11 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 state.isDragging = app->taskbarWindow->IsDragging();
                 app->renderer->Render(state);
             }
-        } catch (...) {}
+        } catch (const std::exception& e) {
+            LogError("[RENDER_UPDATE] exception: %s\n", e.what());
+        } catch (...) {
+            LogError("[RENDER_UPDATE] unknown exception suppressed\n");
+        }
         return 0;
     }
 
@@ -792,6 +846,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     wsClient.OnLyrics([&](const moekoe::LyricsData& data) {
         if (app.config->Advanced().debugLog) Log("[WS] OnLyrics: valid=%d lines=%zu\n", data.valid, data.lines.size());
+        // 性能监控：累加 WS 消息计数（仅 debug 模式有意义，但累加开销极低，无条件执行）
+        app.perfWsMsgCount_.fetch_add(1, std::memory_order_relaxed);
         parser.UpdateLyrics(data);
         if (app.taskbarWindow && data.valid) {
             HWND h = taskbarWindow.GetHandle();

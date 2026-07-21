@@ -54,7 +54,7 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 
 或者直接在 MoeKoeMusic 的 插件市场 安装此插件。
 
-然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，需重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭（此功能需MoeKoeMusic版本>1.6.5）。
+然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，需重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭（此功能需 MoeKoeMusic 版本 ≥ 1.6.6）。
 
 ### 独立运行
 

@@ -16,6 +16,7 @@ namespace {
 
 std::string g_logPath;
 bool      g_enabled = true;   // 默认开启，InitLogger 后由 config 覆盖
+LogLevel  g_minLevel = LogLevel::Info;  // 默认输出所有级别
 std::mutex g_logMutex;        // 线程安全：WebSocket 线程可能同时写日志
 
 // 日志轮转：超过此大小（字节）时备份旧日志
@@ -44,6 +45,24 @@ void RotateLogIfNeeded() {
     ::MoveFileExA(g_logPath.c_str(), backupPath.c_str(), MOVEFILE_REPLACE_EXISTING);
 }
 
+// 级别检查：低于 g_minLevel 的日志被丢弃
+inline bool ShouldOutput(LogLevel level) {
+    return static_cast<int>(level) >= static_cast<int>(g_minLevel);
+}
+
+// 带级别前缀的内部写入：先输出短前缀 [W]/[E]/[F]，再输出用户消息
+void WriteWithPrefix(const char* prefix, const char* fmt, va_list args) {
+    if (!g_enabled || g_logPath.empty()) return;
+
+    std::lock_guard<std::mutex> lock(g_logMutex);
+    RotateLogIfNeeded();
+    FILE* f = fopen(g_logPath.c_str(), "a");
+    if (!f) return;
+    fputs(prefix, f);
+    vfprintf(f, fmt, args);
+    fclose(f);
+}
+
 } // namespace
 
 void InitLogger() {
@@ -66,12 +85,16 @@ void SetLogEnabled(bool enabled) {
     g_enabled = enabled;
 }
 
+void SetLogLevel(LogLevel level) {
+    g_minLevel = level;
+}
+
 std::string GetLogPath() {
     return g_logPath;
 }
 
 void Log(const char* fmt, ...) {
-    if (!g_enabled || g_logPath.empty()) return;
+    if (!g_enabled || g_logPath.empty() || !ShouldOutput(LogLevel::Info)) return;
 
     std::lock_guard<std::mutex> lock(g_logMutex);
     RotateLogIfNeeded();
@@ -85,7 +108,7 @@ void Log(const char* fmt, ...) {
 }
 
 void Log(const std::string& msg) {
-    if (!g_enabled || g_logPath.empty()) return;
+    if (!g_enabled || g_logPath.empty() || !ShouldOutput(LogLevel::Info)) return;
 
     std::lock_guard<std::mutex> lock(g_logMutex);
     RotateLogIfNeeded();
@@ -93,6 +116,30 @@ void Log(const std::string& msg) {
     if (!f) return;
     fprintf(f, "%s", msg.c_str());
     fclose(f);
+}
+
+void LogWarn(const char* fmt, ...) {
+    if (!ShouldOutput(LogLevel::Warn)) return;
+    va_list args;
+    va_start(args, fmt);
+    WriteWithPrefix("[W] ", fmt, args);
+    va_end(args);
+}
+
+void LogError(const char* fmt, ...) {
+    if (!ShouldOutput(LogLevel::Error)) return;
+    va_list args;
+    va_start(args, fmt);
+    WriteWithPrefix("[E] ", fmt, args);
+    va_end(args);
+}
+
+void LogFatal(const char* fmt, ...) {
+    if (!ShouldOutput(LogLevel::Fatal)) return;
+    va_list args;
+    va_start(args, fmt);
+    WriteWithPrefix("[F] ", fmt, args);
+    va_end(args);
 }
 
 } // namespace moekoe

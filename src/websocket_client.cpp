@@ -326,7 +326,11 @@ void WebSocketClient::Disconnect() {
         // 在独立线程中执行 stop + 析构，detach 让其自行完成
         // 不等待：主线程必须继续执行后续关闭步骤
         std::thread([wsPtr = std::move(wsPtr)]() mutable {
-            try { wsPtr->stop(); } catch (...) {}
+            try { wsPtr->stop(); } catch (const std::exception& e) {
+                LogError("[WS] Exception during async stop: %s\n", e.what());
+            } catch (...) {
+                LogError("[WS] Unknown exception during async stop\n");
+            }
             // wsPtr 离开作用域自动析构
         }).detach();
         Log("[WS] WebSocket cleanup detached (async)\n");
@@ -433,7 +437,11 @@ void WebSocketClient::ReconnectLoop() {
         if (!connected_.load()) {
             Log("Reconnect: connection failed after 5s");
             // 启动失败,等待下个循环重连
-            try { client_->stop(); } catch (...) {}
+            try { client_->stop(); } catch (const std::exception& e) {
+                LogError("[WS] Exception during reconnect stop: %s\n", e.what());
+            } catch (...) {
+                LogError("[WS] Unknown exception during reconnect stop\n");
+            }
             client_.reset();
 
         } else {

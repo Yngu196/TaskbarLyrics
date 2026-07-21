@@ -12,12 +12,22 @@
 #include <wrl/client.h>
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <atomic>
 
 #include "concurrentqueue/concurrentqueue.h"
 
 namespace moekoe {
+
+// 封面下载共享上下文：被渲染线程和后台下载线程共同访问。
+// 使用 shared_ptr 管理，确保 detached 下载线程在 renderer 析构后
+// 仍能安全访问队列与状态标志，避免 use-after-free。
+struct CoverDownloadCtx {
+    moodycamel::ConcurrentQueue<std::vector<uint8_t>> pendingCoverQueue;
+    std::atomic<bool> coverLoadInProgress{false};
+    std::atomic<int>  coverDownloadGen{0};  // 代际计数器：URL 变化时递增，下载线程完成后比对以丢弃过期结果
+};
 
 class TaskbarRenderer {
 public:
@@ -159,11 +169,9 @@ private:
     Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
     std::string cachedCoverUrl_;
     // 封面数据缓冲：后台线程写入，渲染线程消费。
-    // 使用 moodycamel::ConcurrentQueue（lock-free MPMC queue）替代 mutex + shared_ptr，
-    // 消除 shared_ptr 引用计数跨线程竞争风险，且无锁设计提升生产者-消费者场景的吞吐。
-    moodycamel::ConcurrentQueue<std::vector<uint8_t>> pendingCoverQueue_;
-    std::atomic<bool> coverLoadInProgress_{false};
-    std::atomic<int> coverDownloadGen_{0};  // 代际计数器：URL 变化时递增，下载线程完成后比对以丢弃过期结果
+    // 使用 shared_ptr<CoverDownloadCtx> 持有队列与状态标志，detached 下载线程
+    // 捕获 shared_ptr 副本，确保 renderer 析构后队列仍存活直到线程结束（避免 use-after-free）。
+    std::shared_ptr<CoverDownloadCtx> coverCtx_;
 
     // 封面裁剪 Layer 缓存（避免每帧 CreateLayer 导致 D2D 资源耗尽）
     Microsoft::WRL::ComPtr<ID2D1Layer>                    coverLayer_;

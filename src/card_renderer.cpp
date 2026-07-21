@@ -268,7 +268,7 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
 
     // ═════ 异步下载封面图到内存（无磁盘 I/O） ═════
     // URL 变更时启动后台线程下载到 std::vector<uint8_t>，通过 atomic swap 交给渲染线程。
-    // 使用代际计数器 coverDownloadGen_ 解决切歌时旧下载未完成导致新封面被跳过的竞态：
+    // 使用代际计数器 coverDownloadGen 解决切歌时旧下载未完成导致新封面被跳过的竞态：
     // URL 变化时 gen++，下载线程完成后比对 gen——不匹配则丢弃过期结果。
     if (!url.empty() && url != cachedCoverUrl_) {
         cachedCoverUrl_ = url;
@@ -278,13 +278,17 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
         {
             // 排空无锁队列中可能残留的旧封面数据
             std::vector<uint8_t> stale;
-            while (pendingCoverQueue_.try_dequeue(stale)) { }
+            while (coverCtx_->pendingCoverQueue.try_dequeue(stale)) { }
         }
-        coverLoadInProgress_.store(true, std::memory_order_relaxed);
+        coverCtx_->coverLoadInProgress.store(true, std::memory_order_relaxed);
 
-        int gen = ++coverDownloadGen_;  // 递增代际，使可能还在跑的旧下载失效
+        int gen = ++coverCtx_->coverDownloadGen;  // 递增代际，使可能还在跑的旧下载失效
         std::string targetUrl = url;
-        std::thread([this, targetUrl, gen]() {
+        // 捕获 shared_ptr<CoverDownloadCtx> 副本与 debugLog 快照，
+        // detached 线程不再依赖 this——renderer 析构后仍可安全访问队列与状态。
+        std::shared_ptr<CoverDownloadCtx> ctx = coverCtx_;
+        bool debugLog = debugLog_;
+        std::thread([ctx, targetUrl, gen, debugLog]() {
             // 下载到临时文件，然后读入内存立即删除（避免磁盘持久化）
             wchar_t tempPath[MAX_PATH] = {0};
             ::GetTempPathW(MAX_PATH, tempPath);
@@ -294,12 +298,12 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
             std::wstring wUrl(targetUrl.begin(), targetUrl.end());
             HRESULT hr = ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, nullptr);
 
-            // 代际校验：若期间又切歌（gen != coverDownloadGen_），丢弃过期下载结果
-            int curGen = coverDownloadGen_.load(std::memory_order_relaxed);
+            // 代际校验：若期间又切歌（gen != ctx->coverDownloadGen），丢弃过期下载结果
+            int curGen = ctx->coverDownloadGen.load(std::memory_order_relaxed);
             if (gen != curGen) {
                 ::DeleteFileW(tempFile);
-                coverLoadInProgress_.store(false, std::memory_order_release);
-                if (debugLog_) Log("[COVER] Discard stale download (gen=%d, cur=%d)\n", gen, curGen);
+                ctx->coverLoadInProgress.store(false, std::memory_order_release);
+                if (debugLog) Log("[COVER] Discard stale download (gen=%d, cur=%d)\n", gen, curGen);
                 return;
             }
 
@@ -314,7 +318,7 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                         DWORD bytesRead = 0;
                         if (::ReadFile(hFile, data.data(), fileSize, &bytesRead, nullptr) && bytesRead == fileSize) {
                             // 通过无锁队列将封面数据发送给渲染线程（move 语义，零拷贝）
-                            pendingCoverQueue_.enqueue(std::move(data));
+                            ctx->pendingCoverQueue.enqueue(std::move(data));
                         }
                     }
                     ::CloseHandle(hFile);
@@ -324,15 +328,15 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                 ::DeleteFileW(tempFile);
             }
 
-            coverLoadInProgress_.store(false, std::memory_order_release);
-            if (debugLog_) Log("[COVER] Download %s, url='%.60s'\n",
+            ctx->coverLoadInProgress.store(false, std::memory_order_release);
+            if (debugLog) Log("[COVER] Download %s, url='%.60s'\n",
                 SUCCEEDED(hr) ? "OK" : "FAIL", targetUrl.c_str());
         }).detach();
     }
 
     // ═════ 消费后台下载结果：从内存直接解码 ═════
     std::vector<uint8_t> data;
-    pendingCoverQueue_.try_dequeue(data);
+    coverCtx_->pendingCoverQueue.try_dequeue(data);
     if (!data.empty()) {
 
         // 通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
