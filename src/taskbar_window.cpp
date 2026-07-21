@@ -190,26 +190,35 @@ void TaskbarWindow::ShowLyricsContextMenu() {
 
     ::AppendMenuW(hMenu, MF_STRING, ID_MENU_EXIT, L"退出");
 
-    // 计算菜单位置：菜单紧贴任务栏外侧
+    // 计算菜单位置：水平居中对齐到歌词窗口，垂直方向紧贴任务栏外侧
+    // - 水平：以歌词窗口中心为锚点，用 TPM_CENTERALIGN 让菜单水平居中
+    // - 垂直：菜单边缘紧贴任务栏外边缘（底任务栏→菜单底贴任务栏顶；顶任务栏→菜单顶贴任务栏底）
     POINT pt{};
     const RECT tbRect = companion_.GetTaskbarRect();
     const TaskbarPosition tbPos = companion_.GetTaskbarInfo().position;
+
+    // 取歌词窗口矩形作为水平锚点（fallback 到任务栏矩形）
+    RECT rcLyrics{};
+    if (!::GetWindowRect(hwnd_, &rcLyrics)) {
+        rcLyrics = tbRect;
+    }
+
     switch (tbPos) {
     case TaskbarPosition::BOTTOM:
-        pt.x = tbRect.left;
+        pt.x = (rcLyrics.left + rcLyrics.right) / 2;  // 歌词窗口水平中心
         pt.y = tbRect.top; // 菜单底部紧贴任务栏顶部
         break;
     case TaskbarPosition::TOP:
-        pt.x = tbRect.left;
+        pt.x = (rcLyrics.left + rcLyrics.right) / 2;
         pt.y = tbRect.bottom; // 菜单顶部紧贴任务栏底部
         break;
     case TaskbarPosition::LEFT:
         pt.x = tbRect.right; // 菜单左边紧贴任务栏右边
-        pt.y = tbRect.top;
+        pt.y = (rcLyrics.top + rcLyrics.bottom) / 2;  // 歌词窗口垂直中心
         break;
     case TaskbarPosition::RIGHT:
         pt.x = tbRect.left; // 菜单右边紧贴任务栏左边
-        pt.y = tbRect.top;
+        pt.y = (rcLyrics.top + rcLyrics.bottom) / 2;
         break;
     default:
         ::GetCursorPos(&pt);
@@ -227,16 +236,16 @@ void TaskbarWindow::ShowLyricsContextMenu() {
     // 根据任务栏方向选择菜单展开方向
     switch (tbPos) {
     case TaskbarPosition::BOTTOM:
-        trackFlags |= TPM_BOTTOMALIGN | TPM_HORNEGANIMATION;
+        trackFlags |= TPM_CENTERALIGN | TPM_BOTTOMALIGN | TPM_VERNEGANIMATION;
         break;
     case TaskbarPosition::TOP:
-        trackFlags |= TPM_TOPALIGN | TPM_HORNEGANIMATION;
+        trackFlags |= TPM_CENTERALIGN | TPM_TOPALIGN | TPM_VERNEGANIMATION;
         break;
     case TaskbarPosition::LEFT:
-        trackFlags |= TPM_LEFTALIGN | TPM_VERNEGANIMATION;
+        trackFlags |= TPM_CENTERALIGN | TPM_LEFTALIGN | TPM_HORNEGANIMATION;
         break;
     case TaskbarPosition::RIGHT:
-        trackFlags |= TPM_RIGHTALIGN | TPM_VERNEGANIMATION;
+        trackFlags |= TPM_CENTERALIGN | TPM_RIGHTALIGN | TPM_HORNEGANIMATION;
         break;
     default:
         trackFlags |= TPM_VERNEGANIMATION;
