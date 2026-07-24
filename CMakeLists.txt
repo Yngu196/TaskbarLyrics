@@ -255,6 +255,10 @@ message(STATUS "Found httplib: ${HTTPLIB_INCLUDE_DIR}")
 # 源文件
 set(SOURCES
     src/main.cpp
+    src/app_context.cpp
+    src/crash_handler.cpp
+    src/message_window.cpp
+    src/tray_commands.cpp
     src/logger.cpp
     src/websocket_client.cpp
     src/http_server.cpp
@@ -283,6 +287,10 @@ set(SOURCES
 
 # 头文件目录
 set(HEADERS
+    src/app_context.h
+    src/crash_handler.h
+    src/message_window.h
+    src/tray_commands.h
     src/logger.h
     src/lyrics_data.h
     src/websocket_client.h
