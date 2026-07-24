@@ -58,9 +58,6 @@ public:
     // 让外部驱动重连（不阻塞）
     void RequestReconnect();
 
-    // 公共静态方法：解析 KRC 格式歌词字符串（供 HTTP API 等外部调用）
-    static LyricsData ParseKrcString(const std::string& krcText);
-
 private:
     void ReconnectLoop();
     void DispatchWsMessage(const std::string& raw);

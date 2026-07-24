@@ -18,6 +18,7 @@
 #include "taskbar_window.h"
 #include "tray_icon.h"
 #include "websocket_client.h"
+#include "krc_parser.h"
 
 
 #include <nlohmann/json.hpp>
@@ -1023,7 +1024,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                     }
                 } else if (ld.is_string()) {
                     // KRC 字符串格式：使用公共解析方法
-                    data = moekoe::WebSocketClient::ParseKrcString(ld.get<std::string>());
+                    data = moekoe::ParseKrcString(ld.get<std::string>());
                 }
 
                 data.valid = !data.lines.empty();

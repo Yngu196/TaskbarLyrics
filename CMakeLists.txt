@@ -260,6 +260,7 @@ set(SOURCES
     src/http_server.cpp
     src/d2d_settings_window.cpp
     src/lyrics_parser.cpp
+    src/krc_parser.cpp
     src/shell_companion.cpp
     src/taskbar_window.cpp
     src/taskbar_embedder.cpp
@@ -524,10 +525,6 @@ if(BUILD_TESTING AND _catch2_ready)
         ${CMAKE_SOURCE_DIR}/third_party
     )
 
-    target_compile_definitions(test_lyrics_parser PRIVATE
-        MOEKOE_UNIT_TEST
-    )
-
     if(MSVC)
         target_compile_options(test_lyrics_parser PRIVATE
             /W4 /permissive- /utf-8 /EHsc
@@ -549,4 +546,55 @@ if(BUILD_TESTING AND _catch2_ready)
     # 注册 CTest
     include(CTest)
     add_test(NAME LyricsParser COMMAND $<TARGET_FILE:test_lyrics_parser> -s)
+
+    # 测试目标：krc_parser KRC 歌词解析逻辑
+    add_executable(test_krc_parser
+        tests/test_krc_parser.cpp
+        src/krc_parser.cpp
+        src/logger.cpp
+    )
+
+    target_include_directories(test_krc_parser PRIVATE
+        src
+        ${CMAKE_SOURCE_DIR}/third_party
+        ${NLOHMANN_JSON_INCLUDE_DIR}
+    )
+
+    if(MSVC)
+        target_compile_options(test_krc_parser PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_krc_parser PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        set_target_properties(test_krc_parser PROPERTIES
+            WIN32_EXECUTABLE OFF
+        )
+    endif()
+
+    target_link_libraries(test_krc_parser PRIVATE
+        Catch2::Catch2
+        Threads::Threads
+    )
+
+    add_test(NAME KrcParser COMMAND $<TARGET_FILE:test_krc_parser> -s)
+
+    # 复制 VC++ Redist CRT DLL 到测试可执行文件输出目录
+    # 测试 exe 用 /MD 动态链接运行时，需要 msvcp140.dll / vcruntime140.dll /
+    # vcruntime140_1.dll。主程序通过 POST_BUILD 已复制，但测试目标默认不会，
+    # 缺失时 Windows 会从 PATH 加载旧版本 msvcp140.dll，导致 std::mutex 等
+    # STL 同步原语在运行时崩溃（STATUS_ACCESS_VIOLATION）。
+    if(MSVC AND EXISTS "${_CRT_SRC_DIR}")
+        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser)
+            foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
+                if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
+                    add_custom_command(TARGET ${_TEST_TARGET} POST_BUILD
+                        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                            "${_CRT_SRC_DIR}/${_CRT_DLL}"
+                            $<TARGET_FILE_DIR:${_TEST_TARGET}>/${_CRT_DLL}
+                        COMMENT "Copying ${_CRT_DLL} to ${_TEST_TARGET} output dir")
+                endif()
+            endforeach()
+        endforeach()
+    endif()
 endif()

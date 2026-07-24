@@ -40,14 +40,11 @@ public:
     };
     static std::vector<LrcLine> ParseLRC(const std::string& lrcContent);
 
-#ifdef MOEKOE_UNIT_TEST
-public:
-#else
-private:
-#endif
     // 二分查找 currentTimeSec 对应的歌词行索引;未匹配返回 -1
+    // 单元测试需要白盒访问，始终声明为 public（const 方法，暴露无害）
     int FindLineIndex(double currentTimeSec) const;
 
+private:
     // 互斥:歌词数据 / 播放状态均可能被 WebSocket 线程更新
     mutable std::mutex   mutex_;
     LyricsData            lyrics_;
