@@ -14,8 +14,8 @@
 //
 #include <catch2/catch_all.hpp>
 
-#include "lyrics_data.h"
-#include "krc_parser.h"
+#include "lyrics/lyrics_data.h"
+#include "lyrics/krc_parser.h"
 
 #include <string>
 

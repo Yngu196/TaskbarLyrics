@@ -16,6 +16,8 @@ cmake-build-*/
 *.exe
 *.dll
 *.pch
+# VS 资源编辑器中间文件
+*.aps
 
 # IDE
 .vs/

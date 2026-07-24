@@ -252,65 +252,117 @@ set_target_properties(httplib::httplib PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${HTTPLIB_INCLUDE_DIR}")
 message(STATUS "Found httplib: ${HTTPLIB_INCLUDE_DIR}")
 
-# 源文件
+# ──── 源文件（按模块分组） ────
+
+# core/: 应用核心 — 入口、上下文、消息循环、崩溃处理、常量
 set(SOURCES
-    src/main.cpp
-    src/app_context.cpp
-    src/crash_handler.cpp
-    src/message_window.cpp
-    src/tray_commands.cpp
-    src/logger.cpp
-    src/websocket_client.cpp
-    src/http_server.cpp
-    src/d2d_settings_window.cpp
-    src/lyrics_parser.cpp
-    src/krc_parser.cpp
-    src/shell_companion.cpp
-    src/taskbar_window.cpp
-    src/taskbar_embedder.cpp
-    src/taskbar_geometry.cpp
-    src/fullscreen_detector.cpp
-    src/renderer.cpp
-    src/lyric_renderer.cpp
-    src/card_renderer.cpp
-    src/marquee_engine.cpp
-    src/spring_animation.cpp
-    src/spectrum_capture.cpp
-    src/config.cpp
-    src/tray_icon.cpp
-    src/config_dialog.cpp
-    src/native_messaging.cpp
-    src/api_enabler.cpp
-    src/color_picker.cpp
-    src/app_icon.rc
+    src/core/main.cpp
+    src/core/app_context.cpp
+    src/core/crash_handler.cpp
+    src/core/message_window.cpp
+)
+set(HEADERS
+    src/core/app_context.h
+    src/core/crash_handler.h
+    src/core/message_window.h
+    src/core/constants.h
 )
 
-# 头文件目录
-set(HEADERS
-    src/app_context.h
-    src/crash_handler.h
-    src/message_window.h
-    src/tray_commands.h
-    src/logger.h
-    src/lyrics_data.h
-    src/websocket_client.h
-    src/http_server.h
-    src/d2d_settings_window.h
-    src/color_picker.h
-    src/color_utils.h
-    src/settings_draw_utils.h
-    src/lyrics_parser.h
-    src/shell_companion.h
-    src/taskbar_window.h
-    src/taskbar_embedder.h
-    src/taskbar_geometry.h
-    src/fullscreen_detector.h
-    src/renderer.h
-    src/renderer_utils.h
-    src/config.h
-    src/tray_icon.h
-    src/config_dialog.h
-    src/api_enabler.h
+# config/: 配置管理
+list(APPEND SOURCES
+    src/config/config.cpp
+)
+list(APPEND HEADERS
+    src/config/config.h
+)
+
+# util/: 工具 — 日志、进程监控
+list(APPEND SOURCES
+    src/util/logger.cpp
+    src/util/process_monitor.cpp
+)
+list(APPEND HEADERS
+    src/util/logger.h
+    src/util/process_monitor.h
+)
+
+# net/: 网络通信 — WebSocket、HTTP、Native Messaging、API
+list(APPEND SOURCES
+    src/net/websocket_client.cpp
+    src/net/http_server.cpp
+    src/net/native_messaging.cpp
+    src/net/api_enabler.cpp
+)
+list(APPEND HEADERS
+    src/net/websocket_client.h
+    src/net/http_server.h
+    src/net/native_messaging.h
+    src/net/api_enabler.h
+)
+
+# lyrics/: 歌词处理 — 数据模型、LRC/KRC 解析
+list(APPEND SOURCES
+    src/lyrics/lyrics_parser.cpp
+    src/lyrics/krc_parser.cpp
+)
+list(APPEND HEADERS
+    src/lyrics/lyrics_data.h
+    src/lyrics/lyrics_parser.h
+    src/lyrics/krc_parser.h
+)
+
+# render/: 渲染引擎 — D2D/DWrite 管线、特效、频谱采集
+list(APPEND SOURCES
+    src/render/renderer.cpp
+    src/render/lyric_renderer.cpp
+    src/render/card_renderer.cpp
+    src/render/marquee_engine.cpp
+    src/render/spring_animation.cpp
+    src/render/spectrum_capture.cpp
+)
+list(APPEND HEADERS
+    src/render/renderer.h
+    src/render/renderer_utils.h
+    src/render/spectrum_capture.h
+)
+
+# taskbar/: 任务栏窗口 — 嵌入、定位、全屏检测、Shell 伴侣
+list(APPEND SOURCES
+    src/taskbar/taskbar_window.cpp
+    src/taskbar/taskbar_embedder.cpp
+    src/taskbar/taskbar_geometry.cpp
+    src/taskbar/fullscreen_detector.cpp
+    src/taskbar/shell_companion.cpp
+)
+list(APPEND HEADERS
+    src/taskbar/taskbar_window.h
+    src/taskbar/taskbar_embedder.h
+    src/taskbar/taskbar_geometry.h
+    src/taskbar/fullscreen_detector.h
+    src/taskbar/shell_companion.h
+)
+
+# ui/: 用户界面 — 设置窗口、托盘图标、颜色选择器、配置对话框
+list(APPEND SOURCES
+    src/ui/d2d_settings_window.cpp
+    src/ui/tray_icon.cpp
+    src/ui/tray_commands.cpp
+    src/ui/config_dialog.cpp
+    src/ui/color_picker.cpp
+)
+list(APPEND HEADERS
+    src/ui/d2d_settings_window.h
+    src/ui/color_picker.h
+    src/ui/color_utils.h
+    src/ui/settings_draw_utils.h
+    src/ui/tray_icon.h
+    src/ui/tray_commands.h
+    src/ui/config_dialog.h
+)
+
+# 资源文件
+list(APPEND SOURCES
+    src/app_icon.rc
 )
 
 # 可执行目标
@@ -525,7 +577,7 @@ if(BUILD_TESTING AND _catch2_ready)
     # 测试目标：lyrics_parser 核心逻辑
     add_executable(test_lyrics_parser
         tests/test_lyrics_parser.cpp
-        src/lyrics_parser.cpp
+        src/lyrics/lyrics_parser.cpp
     )
 
     target_include_directories(test_lyrics_parser PRIVATE
@@ -558,8 +610,8 @@ if(BUILD_TESTING AND _catch2_ready)
     # 测试目标：krc_parser KRC 歌词解析逻辑
     add_executable(test_krc_parser
         tests/test_krc_parser.cpp
-        src/krc_parser.cpp
-        src/logger.cpp
+        src/lyrics/krc_parser.cpp
+        src/util/logger.cpp
     )
 
     target_include_directories(test_krc_parser PRIVATE

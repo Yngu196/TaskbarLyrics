@@ -8,9 +8,8 @@
 
 #include <catch2/catch_all.hpp>
 
-#include "lyrics_data.h"
-
-#include "lyrics_parser.h"
+#include "lyrics/lyrics_data.h"
+#include "lyrics/lyrics_parser.h"
 
 #include <vector>
 #include <string>
