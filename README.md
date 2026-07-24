@@ -16,6 +16,8 @@
 
 <p align="center">在 Windows 任务栏上显示歌词，支持卡拉OK效果、双行显示歌词封面、播放控制和歌词翻译</p>
 
+> MoeKoeMusic TaskbarLyrics 正在收集用户反馈，欢迎在 [GitHub Issues](https://github.com/Yngu196/TaskbarLyrics/issues)/[Discussion](https://github.com/Yngu196/TaskbarLyrics/discussions/17) 提交问题/建议或填写兼容性反馈！
+
 ***
 
 ## 功能特性
@@ -26,21 +28,21 @@
 
 - **Native Host 托管** — 随 MoeKoeMusic 自动启动/关闭，无需手动管理
 - **卡拉 OK 效果** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
-- **卡片样式显示** — 双行歌词 + 封面图标，此模式无歌词高亮、长歌词滚动效果，独立字号和颜色配置
+- **卡片样式显示** — 双行歌词 + 封面图标，此模式无歌词高亮、长歌词滚动效果，但独立字号和颜色配置
 - **悬停控制按钮** — 鼠标悬停歌词时显示 ⏮ ⏸/▶ ⏭
 - **拖动定位** — 可在任务栏范围内自由拖动调整位置
 - **锁定模式** — 托盘菜单切换锁定位置 / 完全锁定
 - **APPBAR 自动隐藏** — 任务栏自动隐藏时歌词窗口跟随显隐（此功能已放弃维护）
-- **高 DPI 适配** — Per-Monitor V2 DPI Awareness
 - **多方向任务栏** — 支持底部 / 顶部 / 左侧 / 右侧任务栏 (待测试)
-- **跑马灯滚动** — 长歌词自动滚动（bounce / loop / off 三种模式）
-- **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面，实时预览，零外部依赖
+- **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面
 - **自定义字体** — 可使用本地已安装的字体
 - **歌词翻译支持** — 自动解析 KRC `[language:...]` 标签提取翻译数据
 
 ## 使用说明
 
-> (如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。)
+> 如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。
+>
+> 本项目暂不支持32位系统，如果你想在32位系统上使用，可自行修改配置然后构建。
 
 #### 本插件会自动开启 MoeKoeMusic 的API模式，但您需要重启MoeKoeMusic才会生效
 
@@ -56,7 +58,7 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 
 然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，需重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭（此功能需 MoeKoeMusic 版本 ≥ 1.6.6）。
 
-### 独立运行
+### 独立运行（不推荐）
 
 双击 `MoeKoeTaskbarLyrics.exe`，右键托盘图标操作，独立运行时建议开启开机自动启动。
 
