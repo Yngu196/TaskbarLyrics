@@ -11,6 +11,7 @@
 #include "core/app_context.h"
 
 #include <string>
+#include <vector>
 
 namespace moekoe {
 
@@ -51,6 +52,12 @@ struct DiagnosticInfo {
 
     // 日志路径
     std::string logFilePath;
+
+    // 第三方 Shell 修改工具
+    std::vector<std::string> shellModifications;
+
+    // 日志尾部（最后 N 行）
+    std::string logTail;
 };
 
 // 收集系统诊断信息

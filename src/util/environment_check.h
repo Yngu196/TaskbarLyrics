@@ -9,6 +9,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace moekoe {
 
@@ -29,6 +30,7 @@ struct EnvironmentStatus {
     bool shellTrayWndFound{false};
     bool dwmCompositionEnabled{false};
     bool explorerRunning{false};
+    std::vector<std::string> shellModifications;  // 检测到的第三方 Shell 修改工具
 };
 
 // 最低支持版本: Windows 10 2004 (Build 19041)
@@ -43,6 +45,9 @@ WindowsVersion GetWindowsVersion();
 
 // 检查运行环境依赖
 EnvironmentStatus CheckEnvironment();
+
+// 检测第三方 Shell 修改工具（StartAllBack / ExplorerPatcher / TranslucentTB / Windhawk）
+std::vector<std::string> DetectShellModifications();
 
 // 将环境状态写入日志
 // Info 级别输出正常项，Warn 级别输出异常项，Error 级别输出不支持版本

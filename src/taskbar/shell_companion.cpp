@@ -765,6 +765,42 @@ void ShellCompanion::SnapToEmptySpace(HWND lyricsWnd) {
 }
 
 // ═════════════════════════════════════════
+// Explorer 重启恢复
+// ═════════════════════════════════════════
+
+void ShellCompanion::Rebind(HWND hNewTaskbar, HWND lyricsWnd) {
+    if (!hNewTaskbar) return;
+
+    Log("[ShellCompanion] Rebind: old=%p new=%p\n", hTaskbar_, hNewTaskbar);
+
+    // 1) 更新句柄
+    hTaskbar_ = hNewTaskbar;
+
+    // 2) 重检测任务栏几何
+    info_ = geometry_.Detect(hTaskbar_);
+    taskbarAutoHide_ = info_.autoHide;
+
+    // 3) 重装 WinEvent 钩子
+    RemoveHooks();
+    InstallHooks(lyricsWnd);
+
+    // 4) 重置稳定跟踪状态
+    lastTaskbarRect_ = {0, 0, 0, 0};
+    stableTaskbarRect_ = {0, 0, 0, 0};
+    stableTaskListRect_ = {0, 0, 0, 0};
+    stableTaskListValid_ = false;
+    cachedRightEdgeOffset_ = 0;
+
+    // 5) 重置冻结锁
+    s_shellInteractionLocked_ = false;
+    s_lockedByStartMenuFg_ = false;
+    s_frozenTaskbarRect_ = {0, 0, 0, 0};
+    s_lastGoodTaskbarRect_ = {0, 0, 0, 0};
+
+    Log("[ShellCompanion] Rebind: complete, new handle=%p\n", hNewTaskbar);
+}
+
+// ═════════════════════════════════════════
 // Shell 交互锁定管理
 // ═════════════════════════════════════════
 

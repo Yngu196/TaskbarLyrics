@@ -93,12 +93,18 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     //    参见 main.cpp WinMain 中 "应用配置中的位置偏移" 之后的 Reposition() 调用。
 
     created_ = true;
+
+    // 启动 Explorer 重启监测定时器（每 2 秒检查 Shell_TrayWnd 有效性）
+    ::SetTimer(hwnd_, 5, 2000, nullptr);
+
     return true;
 }
 
 void TaskbarWindow::Destroy() {
     companion_.Shutdown();
     if (hwnd_) {
+        // 停止 Explorer 重启监测定时器
+        ::KillTimer(hwnd_, 5);
         // 先解除与任务栏的父子关系，避免 DestroyWindow 影响任务栏
         ::SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, 0);
         // 先隐藏窗口，避免销毁过程中闪烁
@@ -512,6 +518,42 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             ::KillTimer(hwnd, 4);
             self->companion_.UnlockShellInteraction(4);
             if (self) self->InternalPosition();
+        } else if (wParam == 5 && self) {
+            // Explorer 重启监测：检查 Shell_TrayWnd 句柄有效性
+            HWND hCurTaskbar = self->companion_.GetTaskbarHandle();
+            if (hCurTaskbar && ::IsWindow(hCurTaskbar)) {
+                return 0;  // 句柄有效，无需处理
+            }
+
+            LogWarn("[TASKBAR-WND] Explorer restart detected: Shell_TrayWnd handle %p invalid\n", hCurTaskbar);
+
+            // 恢复流程：循环尝试查找新的 Shell_TrayWnd，最多 10 秒
+            HWND hNewTaskbar = nullptr;
+            constexpr int kMaxRetries = 20;
+            constexpr int kRetryIntervalMs = 500;
+            for (int i = 0; i < kMaxRetries; ++i) {
+                ::Sleep(kRetryIntervalMs);
+                hNewTaskbar = ShellCompanion::FindTaskbarHandle();
+                if (hNewTaskbar && ::IsWindow(hNewTaskbar)) {
+                    break;
+                }
+                hNewTaskbar = nullptr;
+            }
+
+            if (hNewTaskbar) {
+                Log("[TASKBAR-WND] Explorer restart recovery: found new Shell_TrayWnd %p\n", hNewTaskbar);
+                // 重新绑定
+                ::SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hNewTaskbar));
+                self->companion_.Rebind(hNewTaskbar, hwnd);
+                // 重置位置缓存和方位，重新定位
+                self->lastPosRect_ = {-1, -1, -1, -1};
+                self->lastPosition_ = self->companion_.GetTaskbarInfo().position;
+                self->InternalPosition();
+                Log("[TASKBAR-WND] Explorer restart recovery: rebind complete\n");
+            } else {
+                LogWarn("[TASKBAR-WND] Explorer restart recovery: failed to find new Shell_TrayWnd after %dms\n",
+                         kMaxRetries * kRetryIntervalMs);
+            }
         }
         return 0;
     case TaskbarWindow::WM_DELAYED_REPOSITION:

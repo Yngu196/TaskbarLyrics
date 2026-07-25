@@ -15,6 +15,7 @@
 #include <tlhelp32.h>
 
 #include <cstdio>
+#include <fstream>
 #include <sstream>
 
 #pragma comment(lib, "dxgi.lib")
@@ -151,6 +152,59 @@ std::string BuildConfigSnapshot(const Config& config) {
     return ss.str();
 }
 
+// 读取日志文件尾部（最后 maxLines 行）
+std::string ReadLogTail(const std::string& path, int maxLines) {
+    if (path.empty()) return "(日志路径未初始化)";
+
+    // 优先尝试 debug.log，若不存在则尝试 debug.1.log（轮转备份）
+    std::string tryPath = path;
+    std::ifstream f(tryPath, std::ios::binary);
+    if (!f.is_open()) {
+        // 尝试轮转备份
+        size_t dotPos = tryPath.rfind('.');
+        if (dotPos != std::string::npos) {
+            std::string backup = tryPath;
+            backup.insert(dotPos, ".1");
+            f.open(backup, std::ios::binary);
+        }
+    }
+    if (!f.is_open()) return "(日志文件不存在)";
+
+    // 读取文件尾部：先定位到文件末尾，向前扫描换行符
+    f.seekg(0, std::ios::end);
+    const auto fileSize = static_cast<long long>(f.tellg());
+    if (fileSize <= 0) return "(日志文件为空)";
+
+    // 从文件末尾向前读取，最多 256KB
+    const auto readSize = static_cast<std::streamsize>(
+        std::min(static_cast<long long>(256 * 1024), fileSize));
+    f.seekg(-readSize, std::ios::end);
+
+    std::string content(readSize, '\0');
+    f.read(&content[0], readSize);
+    f.close();
+
+    // 统计换行符，截取最后 maxLines 行
+    int lineCount = 0;
+    auto it = content.end();
+    while (it != content.begin()) {
+        --it;
+        if (*it == '\n') {
+            ++lineCount;
+            if (lineCount >= maxLines) {
+                ++it;  // 跳过当前换行符
+                break;
+            }
+        }
+    }
+    std::string tail(it, content.end());
+    // 去掉末尾可能的空行
+    while (!tail.empty() && (tail.back() == '\n' || tail.back() == '\r')) {
+        tail.pop_back();
+    }
+    return tail;
+}
+
 } // namespace
 
 DiagnosticInfo CollectDiagnostics(const AppContext& app) {
@@ -189,6 +243,9 @@ DiagnosticInfo CollectDiagnostics(const AppContext& app) {
     // ── 进程 ──
     info.explorerRunning = envStatus.explorerRunning;
 
+    // ── 第三方 Shell 修改工具 ──
+    info.shellModifications = envStatus.shellModifications;
+
     // ── WebSocket ──
     info.wsConnected = app.wsClient ? app.wsClient->IsConnected() : false;
 
@@ -205,6 +262,9 @@ DiagnosticInfo CollectDiagnostics(const AppContext& app) {
 
     // ── 日志路径 ──
     info.logFilePath = GetLogPath();
+
+    // ── 日志尾部 ──
+    info.logTail = ReadLogTail(info.logFilePath, 200);
 
     return info;
 }
@@ -237,7 +297,18 @@ std::string FormatDiagnosticText(const DiagnosticInfo& info) {
 
     ss << "── 环境依赖 ──────────────────────────────────\n";
     ss << "  DWM 合成: " << (info.dwmCompositionEnabled ? "已启用" : "已禁用") << "\n";
-    ss << "  Explorer.exe: " << (info.explorerRunning ? "运行中" : "未运行") << "\n\n";
+    ss << "  Explorer.exe: " << (info.explorerRunning ? "运行中" : "未运行") << "\n";
+    ss << "  Shell 修改工具: ";
+    if (info.shellModifications.empty()) {
+        ss << "无\n";
+    } else {
+        for (size_t i = 0; i < info.shellModifications.size(); ++i) {
+            if (i > 0) ss << ", ";
+            ss << info.shellModifications[i];
+        }
+        ss << "\n";
+    }
+    ss << "\n";
 
     ss << "── 连接 ──────────────────────────────────────\n";
     ss << "  WebSocket: " << (info.wsConnected ? "已连接" : "未连接") << "\n\n";
@@ -260,6 +331,12 @@ std::string FormatDiagnosticText(const DiagnosticInfo& info) {
         ss << "⚠️ 支持但低于推荐版本\n";
     } else {
         ss << "❌ 低于最低支持版本\n";
+    }
+
+    // 日志尾部
+    if (!info.logTail.empty()) {
+        ss << "\n── 日志尾部（最近 200 行）────────────────────\n";
+        ss << info.logTail << "\n";
     }
 
     return ss.str();

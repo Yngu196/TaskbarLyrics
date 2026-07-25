@@ -87,6 +87,10 @@ public:
         ::OutputDebugStringW(L"[ShellCompanion] Taskbar handle refreshed\n");
     }
 
+    // ── Explorer 重启恢复：重新绑定到新的 Shell_TrayWnd ──
+    // 更新内部句柄、重检测任务栏几何、重装 WinEvent 钩子、重置稳定跟踪状态
+    void Rebind(HWND hNewTaskbar, HWND lyricsWnd);
+
     // ── 静态：查找任务栏句柄 ──
     static HWND FindTaskbarHandle();
 

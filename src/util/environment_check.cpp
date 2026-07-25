@@ -123,7 +123,46 @@ EnvironmentStatus CheckEnvironment() {
     // Explorer.exe 是否运行
     status.explorerRunning = IsProcessRunning(L"explorer.exe");
 
+    // 第三方 Shell 修改工具
+    status.shellModifications = DetectShellModifications();
+
     return status;
+}
+
+std::vector<std::string> DetectShellModifications() {
+    std::vector<std::string> found;
+
+    // StartAllBack：进程检测 + 注册表检测
+    bool startAllBack = IsProcessRunning(L"StartAllBackX64.exe") ||
+                        IsProcessRunning(L"StartAllBack.exe");
+    if (!startAllBack) {
+        // 备选：检查注册表
+        std::string val = ReadRegistryString(
+            HKEY_LOCAL_MACHINE, R"(SOFTWARE\StartAllBack)", "Path");
+        if (!val.empty()) startAllBack = true;
+    }
+    if (startAllBack) found.push_back("StartAllBack");
+
+    // ExplorerPatcher：注册表检测（存在 UPDATES_URL 值即认为安装）
+    {
+        std::string val = ReadRegistryString(
+            HKEY_LOCAL_MACHINE,
+            R"(SOFTWARE\Microsoft\Windows NT\CurrentVersion\ExplorerPatcher)",
+            "UPDATES_URL");
+        if (!val.empty()) found.push_back("ExplorerPatcher");
+    }
+
+    // TranslucentTB：进程检测
+    if (IsProcessRunning(L"TranslucentTB.exe")) {
+        found.push_back("TranslucentTB");
+    }
+
+    // Windhawk：进程检测
+    if (IsProcessRunning(L"windhawk.exe")) {
+        found.push_back("Windhawk");
+    }
+
+    return found;
 }
 
 void LogEnvironmentStatus(const EnvironmentStatus& status) {
