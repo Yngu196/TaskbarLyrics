@@ -192,9 +192,13 @@ private:
     // 标题栏
     RECT titleBarRect_{};      // 标题栏区域（用于拖动）
     RECT closeBtnRect_{};      // 关闭按钮区域
+    RECT maxBtnRect_{};        // 最大化/恢复按钮区域
     RECT minBtnRect_{};        // 最小化按钮区域
     bool hoverClose_{false};   // 关闭按钮悬停
+    bool hoverMax_{false};     // 最大化按钮悬停
     bool hoverMin_{false};     // 最小化按钮悬停
+    bool isMaximized_{false};  // 当前是否最大化
+    RECT restoreRect_{};       // 最大化前的窗口位置（用于恢复）
 
     // 滚动
     int scrollOffset_{0};
@@ -204,14 +208,18 @@ private:
     int sectionPadding_{10};
     int sliderWidth_{160};  // 滑块轨道宽度（像素）
 
-    // 窗口尺寸
-    static constexpr int kWinWidth  = 460;
-    static constexpr int kWinHeight = 580;
+    // 窗口尺寸（基准值，实际按 DPI 缩放）
+    static constexpr int kWinWidthBase  = 460;
+    static constexpr int kWinHeightBase = 580;
     static constexpr int kTitleBarHeight = 36;  // 自绘标题栏高度
 
     // 颜色选择器弹窗（已拆分至 color_picker.h/.cpp）
     ColorPickerPopup colorPicker_;
     Control* activeColorCtrl_{nullptr};  // 当前正在编辑颜色的控件
+
+    // DPI 缩放
+    UINT  dpi_{96};
+    float dpiScale_{1.0f};
 
     // 暗色模式检测
     bool isDarkMode_{false};

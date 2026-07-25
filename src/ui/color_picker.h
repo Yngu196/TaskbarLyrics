@@ -52,7 +52,8 @@ public:
 
     // ── 生命周期 ──
     // 激活弹窗：根据 hwnd 客户区计算布局，将 initialColor 转换为 HSL
-    void Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int titleBarHeight);
+    // dpiScale 用于将物理像素坐标转换为 DIP（逻辑像素）
+    void Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int titleBarHeight, float dpiScale = 1.0f);
     // 关闭弹窗（释放鼠标捕获）
     void Deactivate(HWND hwnd);
 

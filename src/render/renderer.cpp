@@ -98,13 +98,15 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
     }
 
     const std::wstring family = Utf8ToWide(settings_.fontFamily);
+    // DPI 缩放因子：将 DIP 字号转换为物理像素，因为渲染目标使用默认 96 DPI
+    const FLOAT dpiScale = static_cast<FLOAT>(dpi_) / 96.0f;
     if (dwriteFactory_ && !family.empty()) {
         dwriteFactory_->CreateTextFormat(
             family.c_str(), nullptr,
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            static_cast<FLOAT>(settings_.fontSize),
+            static_cast<FLOAT>(settings_.fontSize) * dpiScale,
             L"zh-CN",
             textFormat_.GetAddressOf());
         if (textFormat_) {
@@ -117,7 +119,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            std::max<FLOAT>(8.0f, static_cast<FLOAT>(settings_.fontSize) - constants::TRANSLATION_FONT_SIZE_DELTA),
+            std::max<FLOAT>(8.0f, static_cast<FLOAT>(settings_.fontSize) - constants::TRANSLATION_FONT_SIZE_DELTA) * dpiScale,
             L"zh-CN",
             translationFormat_.GetAddressOf());
         if (translationFormat_) {
@@ -148,7 +150,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             DWRITE_FONT_WEIGHT_SEMI_BOLD,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeCurrent)),
+            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeCurrent)) * dpiScale,
             L"zh-CN",
             cardCurrentFormat_.GetAddressOf());
         if (cardCurrentFormat_) {
@@ -161,7 +163,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             DWRITE_FONT_WEIGHT_NORMAL,
             DWRITE_FONT_STYLE_NORMAL,
             DWRITE_FONT_STRETCH_NORMAL,
-            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeNext)),
+            (std::max)(8.0f, static_cast<FLOAT>(settings_.cardFontSizeNext)) * dpiScale,
             L"zh-CN",
             cardNextFormat_.GetAddressOf());
         if (cardNextFormat_) {
@@ -233,8 +235,9 @@ void TaskbarRenderer::CreateRenderTarget() {
         wicBitmap_.Get(), props,
         reinterpret_cast<ID2D1RenderTarget**>(renderTarget_.GetAddressOf()));
     if (SUCCEEDED(hr)) {
-        renderTarget_->SetDpi(
-            static_cast<FLOAT>(dpi_), static_cast<FLOAT>(dpi_));
+        // 不设置自定义 DPI：保持默认 96 DPI，使 1 DIP = 1 物理像素。
+        // 这确保布局矩形中的 width_/height_（物理像素）直接对应 DIP 坐标。
+        // 字体大小在 CreateTextFormat 时手动乘以 dpiScale 以实现 DPI 缩放。
     }
 }
 

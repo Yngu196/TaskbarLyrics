@@ -102,6 +102,7 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     if (!classRegistered_) {
         WNDCLASSEXW wc{};
         wc.cbSize        = sizeof(wc);
+        wc.style         = CS_DBLCLKS;  // 支持双击标题栏最大化/恢复
         wc.lpfnWndProc   = &WndProc;
         wc.hInstance     = hInstance;
         wc.hCursor       = ::LoadCursorW(nullptr, IDC_ARROW);
@@ -111,12 +112,18 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
         classRegistered_ = (::RegisterClassExW(&wc) != 0);
     }
 
+    // DPI 缩放：确保高 DPI 下窗口足够大
+    dpi_ = ::GetDpiForWindow(parent ? parent : ::GetDesktopWindow());
+    dpiScale_ = dpi_ / 96.0f;
+    const int winW = ::MulDiv(kWinWidthBase, dpi_, 96);
+    const int winH = ::MulDiv(kWinHeightBase, dpi_, 96);
+
     // 创建窗口（不使用 WS_EX_LAYERED，避免 D2D 渲染异常）
     hwnd_ = CreateWindowExW(
         WS_EX_APPWINDOW,  // 显示在任务栏
         kWindowClass, L"任务栏歌词 - 设置",
         WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-        0, 0, kWinWidth, kWinHeight,  // 先创建在 (0,0)，下面再定位
+        0, 0, winW, winH,  // 先创建在 (0,0)，下面再定位
         parent, nullptr, hInstance, this);
 
     if (!hwnd_) return false;
@@ -126,9 +133,9 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     MONITORINFO mi{};
     mi.cbSize = sizeof(mi);
     GetMonitorInfo(hMon, &mi);
-    int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - kWinWidth) / 2;
-    int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - kWinHeight) / 2;
-    SetWindowPos(hwnd_, nullptr, x, y, kWinWidth, kWinHeight, SWP_NOZORDER);
+    int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - winW) / 2;
+    int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - winH) / 2;
+    SetWindowPos(hwnd_, nullptr, x, y, winW, winH, SWP_NOZORDER);
 
     // DWM 圆角
     DWM_WINDOW_CORNER_PREFERENCE cornerPref = DWMWCP_ROUND;
@@ -141,7 +148,7 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
         return false;
     }
 
-    // 构建控件
+    // 构建控件（布局使用 DIP 坐标，渲染目标 DPI 统一映射）
     BuildControls(currentConfig);
     LayoutControls(contentWidth_);
 
@@ -204,13 +211,19 @@ bool D2DSettingsWindow::InitD2D() {
         L"Segoe UI", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
         DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, 12.0f, L"zh-Hans", &btnFmt_);
 
-    // 创建渲染目标（使用固定窗口尺寸，确保非零）
+    // 创建渲染目标（使用实际窗口尺寸，确保非零）
+    RECT clientRc;
+    ::GetClientRect(hwnd_, &clientRc);
     hr = d2dFactory_->CreateHwndRenderTarget(
         D2D1::RenderTargetProperties(),
         D2D1::HwndRenderTargetProperties(hwnd_,
-            D2D1_SIZE_U{static_cast<UINT>(kWinWidth), static_cast<UINT>(kWinHeight)}),
+            D2D1_SIZE_U{static_cast<UINT>(clientRc.right), static_cast<UINT>(clientRc.bottom)}),
         &renderTarget_);
     if (FAILED(hr)) return false;
+
+    // 设置渲染目标 DPI 为系统 DPI，使内部坐标统一为 DIP（逻辑像素）。
+    // D2D 自动将 DIP 坐标映射到物理像素，所有布局/绘制/交互使用同一套逻辑坐标。
+    renderTarget_->SetDpi(static_cast<FLOAT>(dpi_), static_cast<FLOAT>(dpi_));
 
     // 创建预设画刷
     renderTarget_->CreateSolidColorBrush(theme_.bg, &bgBrush_);
@@ -243,7 +256,7 @@ void D2DSettingsWindow::ShutdownD2D() {
     renderTarget_.Reset();
     dwriteFactory_.Reset();
     d2dFactory_.Reset();
-    controls_.clear();
+    // 注意：不清理 controls_，控件是 UI 状态而非 D2D 资源
 }
 
 // ═══════════════════════════════
@@ -607,8 +620,9 @@ void D2DSettingsWindow::DrawAll() {
     accentHoverBrush_->SetColor(theme_.accentHover);
 
     RECT clientRc; GetClientRect(hwnd_, &clientRc);
-    const int clientW = clientRc.right;
-    const int clientH = clientRc.bottom;
+    // 渲染目标 DPI 已设为系统 DPI，绘制坐标使用 DIP（逻辑像素）
+    const int clientW = static_cast<int>(clientRc.right / dpiScale_);
+    const int clientH = static_cast<int>(clientRc.bottom / dpiScale_);
 
     // 绘制每个可见控件
     for (const auto& c : controls_) {
@@ -670,6 +684,10 @@ void D2DSettingsWindow::DrawAll() {
             D2D1::HwndRenderTargetProperties(hwnd_,
                 D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)}),
             &renderTarget_);
+        // 恢复渲染目标 DPI（DIP 坐标映射）
+        if (renderTarget_) {
+            renderTarget_->SetDpi(static_cast<FLOAT>(dpi_), static_cast<FLOAT>(dpi_));
+        }
         // 重建画刷
         if (renderTarget_) {
             renderTarget_->CreateSolidColorBrush(theme_.bg, &bgBrush_);
@@ -1031,7 +1049,8 @@ void D2DSettingsWindow::DrawHintText(ID2D1RenderTarget* rt, const Control& c) {
 
 void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
     RECT rc; GetClientRect(hwnd_, &rc);
-    float W = static_cast<float>(rc.right);
+    // 使用 DIP 坐标（渲染目标 DPI 已设为系统 DPI）
+    float W = static_cast<float>(rc.right) / dpiScale_;
     float H = static_cast<float>(kTitleBarHeight);
 
     // 标题栏背景（半透明毛玻璃效果）
@@ -1058,8 +1077,13 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
     closeBtnRect_ = {static_cast<int>(closeX), static_cast<int>(btnY),
                      static_cast<int>(closeX + btnSize), static_cast<int>(btnY + btnSize)};
 
-    // 最小化按钮 — （关闭按钮左侧）
-    float minX = closeX - btnSize - 2.f;
+    // 最大化/恢复按钮 □/⧉ （关闭按钮左侧）
+    float maxX = closeX - btnSize - 2.f;
+    maxBtnRect_ = {static_cast<int>(maxX), static_cast<int>(btnY),
+                   static_cast<int>(maxX + btnSize), static_cast<int>(btnY + btnSize)};
+
+    // 最小化按钮 — （最大化按钮左侧）
+    float minX = maxX - btnSize - 2.f;
     minBtnRect_ = {static_cast<int>(minX), static_cast<int>(btnY),
                    static_cast<int>(minX + btnSize), static_cast<int>(btnY + btnSize)};
 
@@ -1078,6 +1102,43 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
         float ly = btnY + btnSize / 2.f;
         rt->DrawLine(D2D1::Point2F(minX + 7.f, ly), D2D1::Point2F(minX + btnSize - 7.f, ly),
                      minIcon.Get(), 1.5f);
+    }
+
+    // 绘制最大化/恢复按钮
+    {
+        ComPtr<ID2D1SolidColorBrush> maxBg;
+        D2D1_COLOR_F c = hoverMax_ ? theme_.surface : bgColor;
+        c.a = hoverMax_ ? 0.8f : 0.f;
+        rt->CreateSolidColorBrush(c, &maxBg);
+        if (hoverMax_) {
+            FillRoundedRect(rt, maxBg.Get(), maxX, btnY, btnSize, btnSize, 4.f);
+        }
+        ComPtr<ID2D1SolidColorBrush> maxIcon;
+        rt->CreateSolidColorBrush(hoverMax_ ? theme_.text : theme_.textSecondary, &maxIcon);
+
+        if (isMaximized_) {
+            // 恢复图标：重叠的两个矩形 ⧉
+            float cx = maxX + btnSize / 2.f;
+            float cy = btnY + btnSize / 2.f;
+            float s = 5.f;  // 半尺寸
+            float off = 3.f; // 偏移
+            // 后方矩形（左上）
+            rt->DrawRectangle(D2D1::RectF(cx - s - off, cy - s - off, cx + s - off, cy + s - off),
+                              maxIcon.Get(), 1.4f);
+            // 前方矩形（右下）
+            rt->DrawRectangle(D2D1::RectF(cx - s + off, cy - s + off, cx + s + off, cy + s + off),
+                              maxIcon.Get(), 1.4f);
+        } else {
+            // 最大化图标：单个矩形 □
+            float cx = maxX + btnSize / 2.f;
+            float cy = btnY + btnSize / 2.f;
+            float s = 5.5f;
+            rt->DrawRectangle(D2D1::RectF(cx - s, cy - s, cx + s, cy + s),
+                              maxIcon.Get(), 1.4f);
+            // 顶部加粗线（模拟标题栏）
+            rt->DrawLine(D2D1::Point2F(cx - s, cy - s), D2D1::Point2F(cx + s, cy - s),
+                         maxIcon.Get(), 2.0f);
+        }
     }
 
     // 绘制关闭按钮
@@ -1101,8 +1162,8 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
         rt->DrawLine(D2D1::Point2F(cx + d, cy - d), D2D1::Point2F(cx - d, cy + d), xIcon.Get(), 1.6f);
     }
 
-    // 更新标题栏区域（用于拖动判定）
-    titleBarRect_ = {0, 0, rc.right, kTitleBarHeight};
+    // 更新标题栏区域（用于拖动判定，DIP 坐标）
+    titleBarRect_ = {0, 0, static_cast<int>(W), kTitleBarHeight};
 }
 
 // 颜色选择器弹窗已拆分至 color_picker.h/.cpp
@@ -1187,9 +1248,9 @@ void D2DSettingsWindow::OnMouseDown(int x, int y) {
         break;
 
     case CtrlType::ColorRow: {
-        // 激活 D2D 自定义颜色选择器弹窗
+        // 激活 D2D 自定义颜色选择器弹窗（传入 dpiScale 用于坐标转换）
         activeColorCtrl_ = hit;
-        colorPicker_.Activate(hwnd_, hit->colorValue, kTitleBarHeight);
+        colorPicker_.Activate(hwnd_, hit->colorValue, kTitleBarHeight, dpiScale_);
         break;
     }
 
@@ -1264,10 +1325,12 @@ void D2DSettingsWindow::OnMouseMove(int x, int y) {
 
     // 标题栏按钮悬停检测
     bool newHoverClose = PtInRect(&closeBtnRect_, {x, y});
+    bool newHoverMax   = PtInRect(&maxBtnRect_, {x, y});
     bool newHoverMin   = PtInRect(&minBtnRect_, {x, y});
-    if (newHoverClose != hoverClose_ || newHoverMin != hoverMin_) {
+    if (newHoverClose != hoverClose_ || newHoverMax != hoverMax_ || newHoverMin != hoverMin_) {
         hoverClose_ = newHoverClose;
-        hoverMin_ = newHoverMin;
+        hoverMax_   = newHoverMax;
+        hoverMin_   = newHoverMin;
         InvalidateRect(hwnd_, nullptr, FALSE);
         return; // 标题栏按钮悬停变化时优先处理
     }
@@ -1294,7 +1357,9 @@ void D2DSettingsWindow::OnMouseMove(int x, int y) {
 
 void D2DSettingsWindow::OnMouseWheel(int delta) {
     const int clientH = [this]() {
-        RECT rc; GetClientRect(hwnd_, &rc); return rc.bottom; }();
+        RECT rc; GetClientRect(hwnd_, &rc);
+        return static_cast<int>(rc.bottom / dpiScale_);  // DIP 坐标
+    }();
     int maxScroll = std::max(0, totalContentHeight_ - clientH);
     scrollOffset_ -= delta / WHEEL_DELTA * 48;
     scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
@@ -1467,31 +1532,66 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_LBUTTONDOWN: {
         if (self) {
             int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+            // DPI 转换：鼠标消息坐标为物理像素，控件布局使用逻辑像素（DIP）
+            int lx = static_cast<int>(x / self->dpiScale_);
+            int ly = static_cast<int>(y / self->dpiScale_);
 
-            // 标题栏关闭按钮
-            if (PtInRect(&self->closeBtnRect_, {x, y})) {
+            // 标题栏关闭按钮（使用逻辑坐标判定）
+            if (PtInRect(&self->closeBtnRect_, {lx, ly})) {
                 ::PostMessageW(hwnd, D2DSettingsWindow::kMsgCancel, 0, 0);
                 return 0;
             }
-            // 标题栏最小化按钮
-            if (PtInRect(&self->minBtnRect_, {x, y})) {
+            // 标题栏最大化/恢复按钮
+            if (PtInRect(&self->maxBtnRect_, {lx, ly})) {
+                if (self->isMaximized_) {
+                    // 恢复
+                    ::SetWindowPos(hwnd, nullptr,
+                                   self->restoreRect_.left, self->restoreRect_.top,
+                                   self->restoreRect_.right - self->restoreRect_.left,
+                                   self->restoreRect_.bottom - self->restoreRect_.top,
+                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    self->isMaximized_ = false;
+                } else {
+                    // 最大化：先保存当前位置
+                    ::GetWindowRect(hwnd, &self->restoreRect_);
+                    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
+                    ::GetMonitorInfo(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
+                    ::SetWindowPos(hwnd, nullptr,
+                                   mi.rcWork.left, mi.rcWork.top,
+                                   mi.rcWork.right - mi.rcWork.left,
+                                   mi.rcWork.bottom - mi.rcWork.top,
+                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    self->isMaximized_ = true;
+                }
+                // 调整渲染目标大小（无需完全重建）
+                RECT rc; ::GetClientRect(hwnd, &rc);
+                if (self->renderTarget_) {
+                    self->renderTarget_->Resize(
+                        D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
+                }
+                self->LayoutControls(self->contentWidth_);
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+            // 标题栏最小化按钮（使用逻辑坐标判定）
+            if (PtInRect(&self->minBtnRect_, {lx, ly})) {
                 ShowWindow(hwnd, SW_MINIMIZE);
                 return 0;
             }
-            // 标题栏拖动区域
-            if (PtInRect(&self->titleBarRect_, {x, y})) {
+            // 标题栏拖动区域（使用逻辑坐标判定）
+            if (PtInRect(&self->titleBarRect_, {lx, ly})) {
                 ::SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
                                MAKELPARAM(x, y));
                 return 0;
             }
 
-            Control* hit = self->HitTest(x, y);
+            Control* hit = self->HitTest(lx, ly);
             if (hit || self->colorPicker_.IsActive()) {
-                self->OnMouseDown(x, y); // 点击了控件或颜色选择器弹窗激活时，正常处理
+                self->OnMouseDown(lx, ly); // 点击了控件或颜色选择器弹窗激活时，正常处理
             } else {
                 // 点击空白区域，启动系统拖动
                 ::SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
-                               MAKELPARAM(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)));
+                               MAKELPARAM(x, y));
             }
         }
         return 0;
@@ -1499,14 +1599,57 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_LBUTTONUP: {
         if (self) {
             int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-            self->OnMouseUp(x, y);
+            // DPI 转换
+            self->OnMouseUp(static_cast<int>(x / self->dpiScale_),
+                            static_cast<int>(y / self->dpiScale_));
         }
         return 0;
+    }
+    case WM_LBUTTONDBLCLK: {
+        // 双击标题栏：最大化/恢复
+        if (self) {
+            int lx = static_cast<int>(GET_X_LPARAM(lParam) / self->dpiScale_);
+            int ly = static_cast<int>(GET_Y_LPARAM(lParam) / self->dpiScale_);
+            if (PtInRect(&self->titleBarRect_, {lx, ly}) &&
+                !PtInRect(&self->closeBtnRect_, {lx, ly}) &&
+                !PtInRect(&self->maxBtnRect_, {lx, ly}) &&
+                !PtInRect(&self->minBtnRect_, {lx, ly})) {
+                if (self->isMaximized_) {
+                    ::SetWindowPos(hwnd, nullptr,
+                                   self->restoreRect_.left, self->restoreRect_.top,
+                                   self->restoreRect_.right - self->restoreRect_.left,
+                                   self->restoreRect_.bottom - self->restoreRect_.top,
+                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    self->isMaximized_ = false;
+                } else {
+                    ::GetWindowRect(hwnd, &self->restoreRect_);
+                    MONITORINFO mi2{}; mi2.cbSize = sizeof(mi2);
+                    ::GetMonitorInfo(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi2);
+                    ::SetWindowPos(hwnd, nullptr,
+                                   mi2.rcWork.left, mi2.rcWork.top,
+                                   mi2.rcWork.right - mi2.rcWork.left,
+                                   mi2.rcWork.bottom - mi2.rcWork.top,
+                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    self->isMaximized_ = true;
+                }
+                RECT rc; ::GetClientRect(hwnd, &rc);
+                if (self->renderTarget_) {
+                    self->renderTarget_->Resize(
+                        D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
+                }
+                self->LayoutControls(self->contentWidth_);
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+        }
+        break;
     }
     case WM_MOUSEMOVE: {
         if (self) {
             int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-            self->OnMouseMove(x, y);
+            // DPI 转换
+            self->OnMouseMove(static_cast<int>(x / self->dpiScale_),
+                              static_cast<int>(y / self->dpiScale_));
         }
         return 0;
     }
@@ -1523,6 +1666,36 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
     case WM_KILLFOCUS:
         if (self) self->OnLoseFocus();
         return 0;
+
+    case WM_DPICHANGED: {
+        // 多显示器 DPI 变化时更新缩放因子、窗口大小和布局
+        if (self) {
+            self->dpi_ = HIWORD(wParam);
+            self->dpiScale_ = self->dpi_ / 96.0f;
+
+            // 使用系统建议的窗口矩形
+            RECT* suggested = reinterpret_cast<RECT*>(lParam);
+            SetWindowPos(hwnd, nullptr,
+                         suggested->left, suggested->top,
+                         suggested->right - suggested->left,
+                         suggested->bottom - suggested->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+
+            // 更新渲染目标大小和 DPI（无需完全重建，保留控件状态）
+            RECT rc; ::GetClientRect(hwnd, &rc);
+            if (self->renderTarget_) {
+                self->renderTarget_->Resize(
+                    D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
+                self->renderTarget_->SetDpi(
+                    static_cast<FLOAT>(self->dpi_), static_cast<FLOAT>(self->dpi_));
+            }
+
+            // 重新布局控件（DIP 坐标，渲染目标 DPI 已同步更新）
+            self->LayoutControls(self->contentWidth_);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
+    }
 
     case D2DSettingsWindow::kMsgApplySave:
         if (self) self->ApplyAndSave();

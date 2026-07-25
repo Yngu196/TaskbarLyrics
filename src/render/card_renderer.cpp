@@ -23,8 +23,9 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
                                                const std::string& nextLine) const {
     if (!cardCurrentFormat_ || !cardNextFormat_ || !dwriteFactory_) return 0.0f;
 
-    const float coverSizeDip = static_cast<float>(settings_.cardCoverSize);
-    const float gapDip = static_cast<float>(settings_.cardGap);
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float coverSizePx = static_cast<float>(settings_.cardCoverSize) * dpiScale;
+    const float gapPx = static_cast<float>(settings_.cardGap) * dpiScale;
     const float padding = constants::TEXT_PADDING_X;
 
     auto measureLine = [this](const std::wstring& line, IDWriteTextFormat* format) -> float {
@@ -36,20 +37,23 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
         if (FAILED(hr) || !layout) return 0.0f;
         DWRITE_TEXT_METRICS metrics = {};
         layout->GetMetrics(&metrics);
-        return metrics.width;  // metrics.width 已是 DIPs（TextFormat 字体大小以 DIPs 指定）
+        return metrics.width;  // 物理像素（TextFormat 字体大小已含 dpiScale）
     };
 
     std::wstring curW = Utf8ToWide(curLine);
     std::wstring nextW = Utf8ToWide(nextLine);
 
-    float curWidthDip = measureLine(curW, cardCurrentFormat_.Get());
-    float nextWidthDip = measureLine(nextW, cardNextFormat_.Get());
+    float curWidthPx = measureLine(curW, cardCurrentFormat_.Get());
+    float nextWidthPx = measureLine(nextW, cardNextFormat_.Get());
 
-    float maxTextWidthDip = std::max(curWidthDip, nextWidthDip);
-    if (maxTextWidthDip <= 0.0f) return 0.0f;
+    float maxTextWidthPx = std::max(curWidthPx, nextWidthPx);
+    if (maxTextWidthPx <= 0.0f) return 0.0f;
 
     // 总宽 = 左内边距 + 封面 + 间距 + 文本 + 右内边距
-    return padding * 2.0f + coverSizeDip + gapDip + maxTextWidthDip;
+    float totalPx = padding * 2.0f + coverSizePx + gapPx + maxTextWidthPx;
+
+    // 返回 DIP 单位（调用方使用 DIP）
+    return totalPx / dpiScale;
 }
 
 void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
@@ -404,9 +408,9 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                                     bp.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
                                     bp.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
                                     // 位图 DPI 设为 96（基准值），使像素尺寸与 DIP 1:1 对应。
-                                    // 因为此处的 w/h 已是按当前 DPI 缩放后的物理像素，
-                                    // 绘制矩形的 size 也同样是物理像素值（render target DPI == 屏幕 DPI），
-                                    // 若设为 dpi_（>96）会导致 D2D 将位图解释为比实际更小的 DIPs，
+                                    // 渲染目标使用默认 96 DPI（不调用 SetDpi），因此 1 DIP = 1 物理像素。
+                                    // 此处 w/h 已是物理像素值，绘制矩形也使用物理像素坐标，
+                                    // 设为 dpi_（>96）会导致 D2D 将位图解释为比实际更小的 DIPs，
                                     // 造成 FillRoundedRectangle 时位图区域不足，边缘像素被 CLAMP 拉伸。
                                     bp.dpiX = 96.0f;
                                     bp.dpiY = 96.0f;

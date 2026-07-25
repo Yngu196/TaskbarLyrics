@@ -28,16 +28,18 @@ static std::wstring Utf8ToWideLocal(const std::string& s) {
 // 生命周期
 // ═══════════════════════════════════════════════════════════════════
 
-void ColorPickerPopup::Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int titleBarHeight) {
+void ColorPickerPopup::Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int titleBarHeight, float dpiScale) {
     // 从当前 RGB 颜色计算 HSL，确保弹窗初始状态与当前颜色一致
     RGBToHSL(initialColor, hue_, sat_, lum_);
 
-    // 计算弹窗位置（客户区坐标）：在窗口右侧偏上
+    // 计算弹窗位置（DIP 坐标）：在窗口右侧偏上
+    // GetClientRect 返回物理像素，需要转换为 DIP
     RECT clientRc;
     GetClientRect(hwnd, &clientRc);
+    const int clientW = static_cast<int>(clientRc.right / dpiScale);
     const int popupW = 224;
     const int popupH = 220;
-    int popupX = clientRc.right - popupW - 8;
+    int popupX = clientW - popupW - 8;
     int popupY = titleBarHeight + 16;
 
     popupRect_ = {popupX, popupY, popupX + popupW, popupY + popupH};
