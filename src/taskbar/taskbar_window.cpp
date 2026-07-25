@@ -559,7 +559,9 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     case TaskbarWindow::WM_DELAYED_REPOSITION:
         if (self) {
             ::KillTimer(hwnd, 2);
-            ::SetTimer(hwnd, 2, 16, nullptr);
+            // 兼容模式 SlowReposition：延长延迟从 16ms 到 100ms
+            const int delayMs = self->companion_.HasCompatFlag(CompatSlowReposition) ? 100 : 16;
+            ::SetTimer(hwnd, 2, delayMs, nullptr);
         }
         return 0;
     default:

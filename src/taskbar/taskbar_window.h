@@ -60,6 +60,9 @@ public:
     // 任务栏信息
     TaskbarInfo GetTaskbarInfo() const { return companion_.GetTaskbarInfo(); }
 
+    // ShellCompanion 访问（用于兼容模式设置等）
+    ShellCompanion& GetCompanion() { return companion_; }
+
     // 静态:查找任务栏窗口（委托 ShellCompanion）
     static HWND FindTaskbarHandle();
 

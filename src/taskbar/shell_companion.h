@@ -12,6 +12,7 @@
 #include "taskbar/fullscreen_detector.h"
 #include "taskbar/taskbar_embedder.h"
 #include "taskbar/taskbar_geometry.h"
+#include "util/compat_mode.h"
 
 #include <windows.h>
 
@@ -91,6 +92,11 @@ public:
     // 更新内部句柄、重检测任务栏几何、重装 WinEvent 钩子、重置稳定跟踪状态
     void Rebind(HWND hNewTaskbar, HWND lyricsWnd);
 
+    // ── 兼容模式 ──
+    void SetCompatFlags(unsigned flags) { compatFlags_ = flags; }
+    bool HasCompatFlag(CompatFlag flag) const { return (compatFlags_ & flag) != 0; }
+    unsigned GetCompatFlags() const { return compatFlags_; }
+
     // ── 静态：查找任务栏句柄 ──
     static HWND FindTaskbarHandle();
 
@@ -115,6 +121,7 @@ private:
     FullscreenDetector fullscreenDetector_;
 
     HWND        hTaskbar_{nullptr};
+    unsigned    compatFlags_{CompatNone};  // 兼容模式标志
     TaskbarInfo info_{};
     bool        taskbarAutoHide_{false};
     bool        taskbarVisible_{false};

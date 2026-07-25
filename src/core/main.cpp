@@ -15,6 +15,7 @@
 #include "lyrics/krc_parser.h"
 #include "util/logger.h"
 #include "util/environment_check.h"
+#include "util/compat_mode.h"
 #include "core/message_window.h"
 #include "ui/tray_icon.h"
 
@@ -139,6 +140,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     tray.Initialize(hInstance, hMsgWnd);
     tray.SetMenuCheckedAutoStart(config.IsAutoStart());
 
+    // 6.5) 兼容模式检测：第三方 Shell 修改工具可能导致定位异常
+    const unsigned compatFlags = DetectCompatMode();
+    if (compatFlags != CompatNone) {
+        std::string flagNames;
+        for (unsigned f = 1; f <= CompatSlowReposition; f <<= 1) {
+            if (compatFlags & f) {
+                if (!flagNames.empty()) flagNames += " + ";
+                flagNames += CompatFlagName(f);
+            }
+        }
+        Log("[STARTUP] Compatibility mode: %s\n", flagNames.c_str());
+    } else {
+        Log("[STARTUP] Compatibility mode: none\n");
+    }
+
     // 7) 查找任务栏（开机时 Explorer 可能尚未就绪，重试等待最多 5 秒）
     HWND hTaskbar = nullptr;
     for (int retry = 0; retry < 10; ++retry) {
@@ -160,6 +176,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 8) 创建嵌入任务栏的歌词窗口
     app.taskbarWindow = std::make_unique<TaskbarWindow>();
     auto& taskbarWindow = *app.taskbarWindow;
+    taskbarWindow.GetCompanion().SetCompatFlags(compatFlags);
     if (!taskbarWindow.Create(hInstance, hTaskbar)) {
         ::MessageBoxW(nullptr,
                       L"创建任务栏歌词窗口失败。",

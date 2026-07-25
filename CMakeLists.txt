@@ -281,12 +281,14 @@ list(APPEND SOURCES
     src/util/logger.cpp
     src/util/process_monitor.cpp
     src/util/environment_check.cpp
+    src/util/compat_mode.cpp
     src/util/diagnostic_exporter.cpp
 )
 list(APPEND HEADERS
     src/util/logger.h
     src/util/process_monitor.h
     src/util/environment_check.h
+    src/util/compat_mode.h
     src/util/diagnostic_exporter.h
 )
 

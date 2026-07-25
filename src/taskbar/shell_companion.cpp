@@ -40,7 +40,8 @@ void CALLBACK ShellCompanion::TaskbarWinEventProc(
     ::GetClassNameW(hWnd, cls, 31);
     if (wcscmp(cls, L"Shell_TrayWnd") != 0) return;
 
-    // 投递延迟消息：10ms 等 DWM 帧完成，避免在动画中定位
+    // 投递延迟消息：正常 16ms，兼容模式 SlowReposition 100ms
+    // 兼容模式下 WinEvent 更频繁，延长延迟减少不必要的重定位
     if (s_lyricsWnd_) {
         ::PostMessageW(s_lyricsWnd_,
                        WM_USER + 0x101, 0, 0);  // WM_DELAYED_REPOSITION
@@ -360,7 +361,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
     const int tbWidth  = tbRect.right  - tbRect.left;
     const int tbHeight = tbRect.bottom - tbRect.top;
 
-    // ── P2 节流：UIA 枚举委托 geometry_，200ms 节流缓存 ──
+    // ── P2 节流：UIA 枚举委托 geometry_ ──
+    // 兼容模式 NoUIA：延长节流到 1000ms，使用 EnumChildWindows 代替 UIA
     RECT taskListRect = {};
     bool foundTaskList = false;
     RECT trayRect = {};
@@ -368,11 +370,24 @@ void ShellCompanion::PositionLyricsInTaskbar(
     RECT rebarRect = {};
     bool foundRebar = false;
 
-    const bool uiaExpired = geometry_.IsUiaCacheExpired(200);
+    const int uiaInterval = HasCompatFlag(CompatNoUIA) ? 1000 : 200;
+    const bool uiaExpired = geometry_.IsUiaCacheExpired(uiaInterval);
     if (uiaExpired) {
-        geometry_.GetChildRectsByUIA(taskListRect, foundTaskList,
-                                     trayRect, foundTray,
-                                     rebarRect, foundRebar, tbWidth);
+        if (HasCompatFlag(CompatNoUIA)) {
+            // 兼容模式：强制使用 EnumChildWindows（跳过 UIA）
+            // 临时置空 UIA 指针，GetChildRectsByUIA 会自动降级到 EnumChildWindows
+            IUIAutomation* savedUia = geometry_.GetUIA();
+            geometry_.CleanupUIA();
+            geometry_.GetChildRectsByUIA(taskListRect, foundTaskList,
+                                         trayRect, foundTray,
+                                         rebarRect, foundRebar, tbWidth);
+            // 恢复 UIA（下次非兼容模式时可用）
+            if (savedUia) geometry_.InitUIA();
+        } else {
+            geometry_.GetChildRectsByUIA(taskListRect, foundTaskList,
+                                         trayRect, foundTray,
+                                         rebarRect, foundRebar, tbWidth);
+        }
         geometry_.CacheUiaResults(taskListRect, foundTaskList,
                                   trayRect, foundTray,
                                   rebarRect, foundRebar);
@@ -383,7 +398,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
     }
 
     // ── 帧锁定（扩展）：双采样检测任务栏本体 + 任务列表子窗口的稳定性 ──
-    if (uiaExpired) {
+    // 兼容模式 NoFrameLock：跳过双采样（修改后的 Shell 容易误判为不稳定）
+    if (uiaExpired && !HasCompatFlag(CompatNoFrameLock)) {
         RECT tbCheck{};
         ::Sleep(2);
         ::GetWindowRect(hTaskbar_, &tbCheck);
@@ -447,6 +463,9 @@ void ShellCompanion::PositionLyricsInTaskbar(
                 stableTaskListValid_ = true;
             }
         }
+    } else if (uiaExpired && HasCompatFlag(CompatNoFrameLock)) {
+        // 兼容模式：跳过双采样，直接信任当前测量值
+        stableTaskbarRect_ = tbRect;
     }
 
     // 歌词区尺寸（根据显示模式选择不同的高度）
