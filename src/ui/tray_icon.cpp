@@ -111,6 +111,9 @@ void TrayIcon::RebuildMenu() {
     // 导出日志
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_EXPORT_LOG, L"导出日志...");
 
+    // 导出诊断信息
+    ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_EXPORT_DIAGNOSTIC, L"导出诊断信息...");
+
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
     // 开机自启

@@ -56,8 +56,7 @@ void CALLBACK ShellCompanion::ShellMenuWinEventProc(
         // 必须在冻结锁之前执行：冻结锁会阻止 PositionLyricsInTaskbar 定位，若先锁后恢复则窗口停在
         // (-32000,-32000) 屏幕外。先恢复后锁，SetFullscreenHidden(false) 内的定位可正常执行。
         if (s_instance_ && s_instance_->IsFullscreenHidden()) {
-            ::OutputDebugStringW(
-                L"[TaskbarLyrics] MENUPOPUPSTART: fullscreen hidden, restoring immediately\n");
+            LogDebug("[SHELL-COMPANION] MENUPOPUPSTART: fullscreen hidden, restoring immediately\n");
             s_instance_->SetFullscreenHidden(false, s_lyricsWnd_);
             s_instance_->Fullscreen().SetShellMenuSuppress(true);
         }
@@ -71,32 +70,27 @@ void CALLBACK ShellCompanion::ShellMenuWinEventProc(
         s_shellInteractionLockedTime_ = std::chrono::steady_clock::now();
         if (s_lastGoodTaskbarRect_.right != 0) {
             s_frozenTaskbarRect_ = s_lastGoodTaskbarRect_;
-            wchar_t dbg[160];
-            swprintf_s(dbg, L"[TaskbarLyrics] MENUPOPUPSTART: lock ON, frozen=(%d,%d,%d,%d)"
-                       L" from s_lastGoodTaskbarRect_\n",
-                       s_frozenTaskbarRect_.left,
-                       s_frozenTaskbarRect_.top,
-                       s_frozenTaskbarRect_.right,
-                       s_frozenTaskbarRect_.bottom);
-            ::OutputDebugStringW(dbg);
+            LogDebug("[SHELL-COMPANION] MENUPOPUPSTART: lock ON, frozen=(%d,%d,%d,%d)"
+                     " from s_lastGoodTaskbarRect_\n",
+                     s_frozenTaskbarRect_.left,
+                     s_frozenTaskbarRect_.top,
+                     s_frozenTaskbarRect_.right,
+                     s_frozenTaskbarRect_.bottom);
         } else {
             // 降级：冷启动时 s_lastGoodTaskbarRect_ 尚未初始化
             HWND tb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
             if (tb) {
                 ::GetWindowRect(tb, &s_frozenTaskbarRect_);
-                wchar_t dbg[160];
-                swprintf_s(dbg, L"[TaskbarLyrics] MENUPOPUPSTART: lock ON, frozen=(%d,%d,%d,%d)"
-                           L" from GetWindowRect (cold boot fallback)\n",
-                           s_frozenTaskbarRect_.left,
-                           s_frozenTaskbarRect_.top,
-                           s_frozenTaskbarRect_.right,
-                           s_frozenTaskbarRect_.bottom);
-                ::OutputDebugStringW(dbg);
+                LogDebug("[SHELL-COMPANION] MENUPOPUPSTART: lock ON, frozen=(%d,%d,%d,%d)"
+                         " from GetWindowRect (cold boot fallback)\n",
+                         s_frozenTaskbarRect_.left,
+                         s_frozenTaskbarRect_.top,
+                         s_frozenTaskbarRect_.right,
+                         s_frozenTaskbarRect_.bottom);
             }
         }
     } else if (event == EVENT_SYSTEM_MENUPOPUPEND) {
-        ::OutputDebugStringW(
-            L"[TaskbarLyrics] MENUPOPUPEND: scheduling unlock (300ms)\n");
+        LogDebug("[SHELL-COMPANION] MENUPOPUPEND: scheduling unlock (300ms)\n");
         if (s_lyricsWnd_) {
             ::SetTimer(s_lyricsWnd_, 3, 300, nullptr);
         }
@@ -136,15 +130,13 @@ void CALLBACK ShellCompanion::ForegroundWinEventProc(
             if (s_lastGoodTaskbarRect_.right != 0) {
                 s_frozenTaskbarRect_ = s_lastGoodTaskbarRect_;
             }
-            ::OutputDebugStringW(
-                L"[TaskbarLyrics] ForegroundHook: StartMenu ON, lock set\n");
+            LogDebug("[SHELL-COMPANION] ForegroundHook: StartMenu ON, lock set\n");
         }
     } else if (s_lockedByStartMenuFg_) {
         // 前台离开 Start Menu → 300ms 后解锁
         s_lockedByStartMenuFg_ = false;
         ::SetTimer(s_lyricsWnd_, 4, 300, nullptr);
-        ::OutputDebugStringW(
-            L"[TaskbarLyrics] ForegroundHook: StartMenu OFF, unlock in 300ms\n");
+        LogDebug("[SHELL-COMPANION] ForegroundHook: StartMenu OFF, unlock in 300ms\n");
     }
 }
 
@@ -285,8 +277,7 @@ void ShellCompanion::CheckResize(HWND lyricsWnd) {
         constexpr auto kMaxLockDuration = std::chrono::seconds(5);
         if (now - s_shellInteractionLockedTime_ > kMaxLockDuration) {
             s_shellInteractionLocked_ = false;
-            ::OutputDebugStringW(
-                L"[TaskbarLyrics] CheckResize: s_shellInteractionLocked_ timeout (5s), force reset\n");
+            LogDebug("[SHELL-COMPANION] CheckResize: s_shellInteractionLocked_ timeout (5s), force reset\n");
         } else {
             return;
         }
@@ -295,13 +286,11 @@ void ShellCompanion::CheckResize(HWND lyricsWnd) {
     RECT tb{};
     ::GetWindowRect(hTaskbar_, &tb);
     if (!::EqualRect(&tb, &lastTaskbarRect_)) {
-        wchar_t dbg[160];
-        swprintf_s(dbg, L"[TaskbarLyrics] CheckResize: rect changed "
-                   L"old=(%d,%d,%d,%d) new=(%d,%d,%d,%d) → posting WM_DELAYED_REPOSITION\n",
-                   lastTaskbarRect_.left, lastTaskbarRect_.top,
-                   lastTaskbarRect_.right, lastTaskbarRect_.bottom,
-                   tb.left, tb.top, tb.right, tb.bottom);
-        ::OutputDebugStringW(dbg);
+        LogDebug("[SHELL-COMPANION] CheckResize: rect changed "
+                 "old=(%d,%d,%d,%d) new=(%d,%d,%d,%d) → posting WM_DELAYED_REPOSITION\n",
+                 lastTaskbarRect_.left, lastTaskbarRect_.top,
+                 lastTaskbarRect_.right, lastTaskbarRect_.bottom,
+                 tb.left, tb.top, tb.right, tb.bottom);
 
         // 使用 PostMessage 延迟定位：确保任何已排队的 MENUPOPUPSTART 事件优先处理
         RequestReposition(lyricsWnd);
@@ -340,7 +329,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
     // Start Menu 冻结期间跳过重定位
     const bool useFrozen = s_shellInteractionLocked_ && s_frozenTaskbarRect_.right != 0;
     if (useFrozen) {
-        ::OutputDebugStringW(L"[TaskbarLyrics] PositionLyricsInTaskbar: frozen → skip\n");
+        LogDebug("[SHELL-COMPANION] PositionLyricsInTaskbar: frozen → skip\n");
         return;
     }
 
@@ -441,14 +430,11 @@ void ShellCompanion::PositionLyricsInTaskbar(
 
         if (deltaW > 5 || deltaH > 5 || deltaTaskList > 3) {
             if (stableTaskbarRect_.right != 0) {
-                wchar_t dbg[160];
-                swprintf_s(dbg,
-                    L"[TaskbarLyrics] Instability: dW=%d dH=%d dTaskList=%d"
-                    L" → fallback stable tbRect=(%d,%d,%d,%d)\n",
-                    deltaW, deltaH, deltaTaskList,
-                    stableTaskbarRect_.left, stableTaskbarRect_.top,
-                    stableTaskbarRect_.right, stableTaskbarRect_.bottom);
-                ::OutputDebugStringW(dbg);
+                LogDebug("[SHELL-COMPANION] Instability: dW=%d dH=%d dTaskList=%d"
+                         " → fallback stable tbRect=(%d,%d,%d,%d)\n",
+                         deltaW, deltaH, deltaTaskList,
+                         stableTaskbarRect_.left, stableTaskbarRect_.top,
+                         stableTaskbarRect_.right, stableTaskbarRect_.bottom);
                 tbRect = stableTaskbarRect_;
             }
             if (stableTaskListValid_ && foundTaskList) {
@@ -585,15 +571,11 @@ void ShellCompanion::PositionLyricsInTaskbar(
     }
 
     // 调试日志
-    {
-        wchar_t dbg[256];
-        swprintf_s(dbg, L"[TaskbarLyrics] Pos: pos=%d x=%d y=%d w=%d h=%d "
-                   L"tbRect=(%d,%d,%d,%d) dragOffX=%d\n",
-                   static_cast<int>(info_.position), x, y, w, h,
-                   tbRect.left, tbRect.top, tbRect.right, tbRect.bottom,
-                   dragOffsetX);
-        ::OutputDebugStringW(dbg);
-    }
+    LogDebug("[SHELL-COMPANION] Pos: pos=%d x=%d y=%d w=%d h=%d "
+             "tbRect=(%d,%d,%d,%d) dragOffX=%d\n",
+             static_cast<int>(info_.position), x, y, w, h,
+             tbRect.left, tbRect.top, tbRect.right, tbRect.bottom,
+             dragOffsetX);
 
     // 短路：坐标未变且窗口可见时跳过 SetWindowPos
     if (inOutLastPosRect.left == x && inOutLastPosRect.top == y &&
@@ -788,11 +770,9 @@ void ShellCompanion::SnapToEmptySpace(HWND lyricsWnd) {
 
 void ShellCompanion::UnlockShellInteraction(int timerId) {
     if (timerId == 3) {
-        ::OutputDebugStringW(
-            L"[TaskbarLyrics] Timer3: unlocking s_shellInteractionLocked_\n");
+        LogDebug("[SHELL-COMPANION] Timer3: unlocking s_shellInteractionLocked_\n");
     } else if (timerId == 4) {
-        ::OutputDebugStringW(
-            L"[TaskbarLyrics] Timer4: unlock (ForegroundHook)\n");
+        LogDebug("[SHELL-COMPANION] Timer4: unlock (ForegroundHook)\n");
     }
     s_shellInteractionLocked_ = false;
 }

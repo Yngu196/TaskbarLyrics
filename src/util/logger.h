@@ -28,7 +28,11 @@
 namespace moekoe {
 
 // 日志级别（严重性递增）
+// Debug < Info < Warn < Error < Fatal
+// 通过 SetLogLevel() 设置最低输出级别，低于此级别的日志被丢弃。
+// 默认级别为 Info，Debug 消息需显式启用 SetLogLevel(LogLevel::Debug)。
 enum class LogLevel {
+    Debug,
     Info,
     Warn,
     Error,
@@ -49,13 +53,17 @@ void SetLogLevel(LogLevel level);
 // 获取当前 debug.log 的绝对路径（UTF-8 编码）
 std::string GetLogPath();
 
+// 调试日志（最低严重性，默认不输出，需 SetLogLevel(LogLevel::Debug) 启用）
+// 输出前添加 [D] 前缀和时间戳
+void LogDebug(const char* fmt, ...);
+
 // 格式化日志（printf 风格，Info 级别，向后兼容）
 void Log(const char* fmt, ...);
 
 // 字符串日志（供 websocket_client 等已格式化字符串的调用方使用，Info 级别）
 void Log(const std::string& msg);
 
-// 带级别的日志函数：输出前添加 [W]/[E]/[F] 前缀
+// 带级别的日志函数：输出前添加 [W]/[E]/[F] 前缀和时间戳
 void LogWarn(const char* fmt, ...);
 void LogError(const char* fmt, ...);
 void LogFatal(const char* fmt, ...);

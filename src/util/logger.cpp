@@ -16,7 +16,7 @@ namespace {
 
 std::string g_logPath;
 bool      g_enabled = true;   // 默认开启，InitLogger 后由 config 覆盖
-LogLevel  g_minLevel = LogLevel::Info;  // 默认输出所有级别
+LogLevel  g_minLevel = LogLevel::Info;  // 默认输出 Info 及以上级别
 std::mutex g_logMutex;        // 线程安全：WebSocket 线程可能同时写日志
 
 // 日志轮转：超过此大小（字节）时备份旧日志
@@ -50,7 +50,15 @@ inline bool ShouldOutput(LogLevel level) {
     return static_cast<int>(level) >= static_cast<int>(g_minLevel);
 }
 
-// 带级别前缀的内部写入：先输出短前缀 [W]/[E]/[F]，再输出用户消息
+// 写入时间戳前缀 [HH:MM:SS.mmm]
+void WriteTimestamp(FILE* f) {
+    SYSTEMTIME st;
+    ::GetLocalTime(&st);
+    std::fprintf(f, "[%02d:%02d:%02d.%03d] ",
+                 st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+}
+
+// 带级别前缀的内部写入：先输出时间戳 + 短前缀 [D]/[W]/[E]/[F]，再输出用户消息
 void WriteWithPrefix(const char* prefix, const char* fmt, va_list args) {
     if (!g_enabled || g_logPath.empty()) return;
 
@@ -58,6 +66,7 @@ void WriteWithPrefix(const char* prefix, const char* fmt, va_list args) {
     RotateLogIfNeeded();
     FILE* f = fopen(g_logPath.c_str(), "a");
     if (!f) return;
+    WriteTimestamp(f);
     fputs(prefix, f);
     vfprintf(f, fmt, args);
     fclose(f);
@@ -93,6 +102,14 @@ std::string GetLogPath() {
     return g_logPath;
 }
 
+void LogDebug(const char* fmt, ...) {
+    if (!ShouldOutput(LogLevel::Debug)) return;
+    va_list args;
+    va_start(args, fmt);
+    WriteWithPrefix("[D] ", fmt, args);
+    va_end(args);
+}
+
 void Log(const char* fmt, ...) {
     if (!g_enabled || g_logPath.empty() || !ShouldOutput(LogLevel::Info)) return;
 
@@ -100,6 +117,7 @@ void Log(const char* fmt, ...) {
     RotateLogIfNeeded();
     FILE* f = fopen(g_logPath.c_str(), "a");
     if (!f) return;
+    WriteTimestamp(f);
     va_list args;
     va_start(args, fmt);
     vfprintf(f, fmt, args);
@@ -114,6 +132,7 @@ void Log(const std::string& msg) {
     RotateLogIfNeeded();
     FILE* f = fopen(g_logPath.c_str(), "a");
     if (!f) return;
+    WriteTimestamp(f);
     fprintf(f, "%s", msg.c_str());
     fclose(f);
 }

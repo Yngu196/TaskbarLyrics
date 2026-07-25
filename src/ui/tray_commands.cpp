@@ -10,6 +10,7 @@
 #include "core/constants.h"
 #include "ui/d2d_settings_window.h"
 #include "util/logger.h"
+#include "util/diagnostic_exporter.h"
 
 #include <shobjidl.h>
 #include <psapi.h>
@@ -318,6 +319,10 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         }
         // 用户取消无需提示
         pSaveDlg->Release();
+        break;
+    }
+    case ID_MENU_EXPORT_DIAGNOSTIC: {
+        ExportDiagnosticFile(app, app.hwnd);
         break;
     }
     default:

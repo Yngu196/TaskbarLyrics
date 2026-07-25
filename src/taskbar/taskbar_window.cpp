@@ -7,6 +7,7 @@
 #include "taskbar/taskbar_window.h"
 #include "core/constants.h"
 #include "ui/tray_icon.h"
+#include "util/logger.h"
 
 #include <shellapi.h>
 #include <windows.h>
@@ -120,7 +121,7 @@ void TaskbarWindow::InternalPosition() {
     if (lastPosition_ != TaskbarPosition::UNKNOWN && lastPosition_ != curPos) {
         dragOffsetX_ = 0;
         dragOffsetY_ = 0;
-        ::OutputDebugStringW(L"[TaskbarLyrics] 任务栏方位变化，重置拖动偏移\n");
+        LogDebug("[TASKBAR-WND] 任务栏方位变化，重置拖动偏移\n");
     }
     lastPosition_ = curPos;
 
@@ -472,16 +473,16 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         if (prevPos != newPos && prevPos != TaskbarPosition::UNKNOWN) {
             self->dragOffsetX_ = 0;
             self->dragOffsetY_ = 0;
-            ::OutputDebugStringW(L"[TaskbarLyrics] WM_DISPLAYCHANGE: orientation changed, resetting offsets\n");
+            LogDebug("[TASKBAR-WND] WM_DISPLAYCHANGE: orientation changed, resetting offsets\n");
         } else {
-            ::OutputDebugStringW(L"[TaskbarLyrics] WM_DISPLAYCHANGE: same orientation, preserving offsets\n");
+            LogDebug("[TASKBAR-WND] WM_DISPLAYCHANGE: same orientation, preserving offsets\n");
         }
         self->InternalPosition();
         return 0;
     }
     case WM_POWERBROADCAST: {
         if (wParam == PBT_APMRESUMEAUTOMATIC) {
-            ::OutputDebugStringW(L"[TaskbarLyrics] PBT_APMRESUMEAUTOMATIC: refreshing taskbar\n");
+            LogDebug("[TASKBAR-WND] PBT_APMRESUMEAUTOMATIC: refreshing taskbar\n");
             HWND hNewTaskbar = ShellCompanion::FindTaskbarHandle();
             if (hNewTaskbar && hNewTaskbar != self->companion_.GetTaskbarHandle()) {
                 ::SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hNewTaskbar));

@@ -276,14 +276,18 @@ list(APPEND HEADERS
     src/config/config.h
 )
 
-# util/: 工具 — 日志、进程监控
+# util/: 工具 — 日志、进程监控、环境检查、诊断导出
 list(APPEND SOURCES
     src/util/logger.cpp
     src/util/process_monitor.cpp
+    src/util/environment_check.cpp
+    src/util/diagnostic_exporter.cpp
 )
 list(APPEND HEADERS
     src/util/logger.h
     src/util/process_monitor.h
+    src/util/environment_check.h
+    src/util/diagnostic_exporter.h
 )
 
 # net/: 网络通信 — WebSocket、HTTP、Native Messaging、API

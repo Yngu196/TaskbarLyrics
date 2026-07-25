@@ -14,6 +14,7 @@
 #include "core/crash_handler.h"
 #include "lyrics/krc_parser.h"
 #include "util/logger.h"
+#include "util/environment_check.h"
 #include "core/message_window.h"
 #include "ui/tray_icon.h"
 
@@ -44,6 +45,27 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // WIC/Direct2D 需要 COM
     ::SetUnhandledExceptionFilter(GlobalExceptionHandler);
 
+    // 环境检查：Windows 版本检测 + 运行环境依赖校验
+    {
+        auto envStatus = CheckEnvironment();
+        LogEnvironmentStatus(envStatus);
+        if (!envStatus.versionSupported) {
+            std::wstring msg = L"当前 Windows 版本过低，本插件需要 Windows 10 2004 (Build 19041) 及以上。\n\n";
+            msg += L"检测到版本: Build " + std::to_wstring(envStatus.osVersion.build) + L"\n";
+            msg += L"最低要求: Build " + std::to_wstring(MIN_SUPPORTED_BUILD);
+            ::MessageBoxW(nullptr, msg.c_str(),
+                L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONERROR);
+            return 1;
+        }
+        if (!envStatus.versionRecommended) {
+            std::wstring msg = L"当前 Windows 版本低于推荐版本 (Build 19045)，部分功能可能异常。\n\n";
+            msg += L"检测到版本: Build " + std::to_wstring(envStatus.osVersion.build);
+            ::MessageBoxW(nullptr, msg.c_str(),
+                L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONWARNING);
+            // 不退出，仅警告
+        }
+    }
+
     // 单实例保护：避免多个进程竞争任务栏窗口导致闪烁/消息丢失
     ::CreateMutexW(nullptr, FALSE, L"MoeKoeTaskbarLyrics_Mutex");
     if (::GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -64,7 +86,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 目的：加载配置、创建消息窗口和托盘图标
 
     if (!RegisterMessageClass(hInstance)) {
-        std::fprintf(stderr, "[Error] RegisterClassExW failed\n");
+        LogError("[STARTUP] RegisterClassExW failed\n");
         return 1;
     }
 
@@ -73,7 +95,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         0, 0, 0, 0, 0,
         HWND_MESSAGE, nullptr, hInstance, nullptr);
     if (!hMsgWnd) {
-        std::fprintf(stderr, "[Error] Create message window failed\n");
+        LogError("[STARTUP] Create message window failed\n");
         return 1;
     }
 
@@ -86,6 +108,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     auto& config = *app.config;
     config.Load();
     SetLogEnabled(config.Advanced().debugLog);
+    if (config.Advanced().debugLog) {
+        SetLogLevel(LogLevel::Debug);
+    }
     Log("[STARTUP] Config loaded\n");
 
     // 启动时直接写入 MoeKoeMusic 的 config.json，确保 apiMode 已开启
@@ -119,9 +144,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     for (int retry = 0; retry < 10; ++retry) {
         hTaskbar = TaskbarWindow::FindTaskbarHandle();
         if (hTaskbar) break;
-        wchar_t dbg[64];
-        _snwprintf_s(dbg, _TRUNCATE, L"[TaskbarLyrics] FindTaskbarHandle retry %d/10: not found, waiting 500ms\n", retry + 1);
-        ::OutputDebugStringW(dbg);
+        LogDebug("[STARTUP] FindTaskbarHandle retry %d/10: not found, waiting 500ms\n", retry + 1);
         ::Sleep(500);
     }
     Log("[STARTUP] FindTaskbar hTaskbar=%p\n", hTaskbar);
