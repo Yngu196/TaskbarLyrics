@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <d2d1.h>
 #include <string>
+#include <windows.h>
 
 namespace moekoe {
 
@@ -96,6 +97,26 @@ inline void RGBToHSL(const D2D1_COLOR_F& rgb, float& h, float& s, float& l) {
         h = 60.0f * ((r - g) / delta + 4.0f);
 
     if (h < 0) h += 360.0f;
+}
+
+// ── UTF-8 ↔ 宽字符转换 ──
+
+inline std::wstring Utf8ToWide(const std::string& s) {
+    if (s.empty()) return {};
+    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    if (len <= 0) return {};
+    std::wstring out(static_cast<size_t>(len), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], len);
+    return out;
+}
+
+inline std::string WideToUtf8(const std::wstring& ws) {
+    if (ws.empty()) return {};
+    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 0) return {};
+    std::string s(static_cast<size_t>(n - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], n, nullptr, nullptr);
+    return s;
 }
 
 } // namespace moekoe

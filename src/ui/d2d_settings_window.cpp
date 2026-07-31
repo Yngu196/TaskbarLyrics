@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0
-// d2d_settings_window.cpp - Direct2D 原生自绘设置界面实现
+// d2d_settings_window.cpp - Direct2D 原生自绘设置界面实现（Settings 2.0）
 #include "ui/d2d_settings_window.h"
 #include "ui/color_utils.h"
 #include "ui/settings_draw_utils.h"
@@ -15,7 +15,8 @@ namespace moekoe {
 
 using namespace Microsoft::WRL;
 
-// 本地辅助：宽字符 → UTF-8
+// Utf8ToWide 已移至 color_utils.h（inline moekoe::Utf8ToWide）
+// 宽字符 → UTF-8（仅此文件使用）
 static std::string WideToLocalUtf8(const std::wstring& ws) {
     if (ws.empty()) return {};
     int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
@@ -25,20 +26,88 @@ static std::string WideToLocalUtf8(const std::wstring& ws) {
     return s;
 }
 
-// 本地辅助：UTF-8 → 宽字符（正确处理多字节中文）
-static std::string LocalUtf8ToWide(const std::string& utf8) {
-    // 返回的是 UTF-8（因为 D2D/DWrite 接收的是 wchar_t，这里返回原始字符串）
-    // 实际转换在 DrawTextLine 调用处进行
-    return utf8;
+// 简单输入对话框（模态，用于修改端口等数值）
+// 使用静态 DLGPROC + thread_local 数据传递
+namespace {
+struct InputDialogData {
+    const wchar_t* prompt;
+    wchar_t* buf;
+    int bufSize;
+    bool confirmed;
+};
+thread_local InputDialogData* t_inputData = nullptr;
 }
 
-static std::wstring Utf8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], len);
-    return out;
+static INT_PTR CALLBACK InputDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+    case WM_INITDIALOG: {
+        // 设置字体为系统默认
+        HFONT hFont = reinterpret_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+        SendMessageW(hDlg, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+
+        SetWindowTextW(hDlg, L"输入");
+        // 提示文本
+        HWND hStatic = CreateWindowExW(0, L"STATIC", t_inputData->prompt,
+                       WS_CHILD | WS_VISIBLE | SS_LEFT,
+                       10, 10, 280, 20, hDlg, nullptr, nullptr, nullptr);
+        SendMessageW(hStatic, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+        // 编辑框（仅数字）
+        HWND hEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", t_inputData->buf,
+                        WS_CHILD | WS_VISIBLE | ES_NUMBER | WS_TABSTOP,
+                        10, 36, 280, 24, hDlg, reinterpret_cast<HMENU>(101), nullptr, nullptr);
+        SendMessageW(hEdit, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+        SendMessageW(hEdit, EM_SETLIMITTEXT, t_inputData->bufSize - 1, 0);
+        // 确定按钮
+        HWND hOk = CreateWindowExW(0, L"BUTTON", L"确定",
+                   WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | BS_DEFPUSHBUTTON | WS_TABSTOP,
+                   120, 68, 80, 28, hDlg, reinterpret_cast<HMENU>(IDOK), nullptr, nullptr);
+        SendMessageW(hOk, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+        // 取消按钮
+        HWND hCancel = CreateWindowExW(0, L"BUTTON", L"取消",
+                       WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON | WS_TABSTOP,
+                       210, 68, 80, 28, hDlg, reinterpret_cast<HMENU>(IDCANCEL), nullptr, nullptr);
+        SendMessageW(hCancel, WM_SETFONT, reinterpret_cast<WPARAM>(hFont), TRUE);
+        SetFocus(hEdit);
+        return FALSE;
+    }
+    case WM_COMMAND:
+        if (LOWORD(wParam) == IDOK) {
+            HWND hEdit = GetDlgItem(hDlg, 101);
+            GetWindowTextW(hEdit, t_inputData->buf, t_inputData->bufSize);
+            t_inputData->confirmed = true;
+            EndDialog(hDlg, IDOK);
+        } else if (LOWORD(wParam) == IDCANCEL) {
+            EndDialog(hDlg, IDCANCEL);
+        }
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static bool SimpleInputDialog(HWND parent, const wchar_t* title,
+                               const wchar_t* prompt, wchar_t* buf, int bufSize) {
+    InputDialogData data{prompt, buf, bufSize, false};
+    t_inputData = &data;
+
+    // 对话框模板（必须 DWORD 对齐）
+    alignas(DWORD) struct {
+        DLGTEMPLATE dlg;
+        WORD menu = 0;
+        WORD cls = 0;
+        WORD title = 0;
+    } tmpl = {};
+
+    tmpl.dlg.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER | DS_SETFONT;
+    tmpl.dlg.cx = 220;
+    tmpl.dlg.cy = 80;
+    tmpl.dlg.cdit = 0;  // 控件在 WM_INITDIALOG 中动态创建
+
+    INT_PTR result = DialogBoxIndirectParamW(
+        reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(parent, GWLP_HINSTANCE)),
+        &tmpl.dlg, parent, InputDlgProc, 0);
+
+    t_inputData = nullptr;
+    return data.confirmed;
 }
 
 bool D2DSettingsWindow::classRegistered_ = false;
@@ -122,7 +191,7 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     hwnd_ = CreateWindowExW(
         WS_EX_APPWINDOW,  // 显示在任务栏
         kWindowClass, L"任务栏歌词 - 设置",
-        WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         0, 0, winW, winH,  // 先创建在 (0,0)，下面再定位
         parent, nullptr, hInstance, this);
 
@@ -148,9 +217,9 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
         return false;
     }
 
-    // 构建控件（布局使用 DIP 坐标，渲染目标 DPI 统一映射）
-    BuildControls(currentConfig);
-    LayoutControls(contentWidth_);
+    // 构建页面和导航（布局使用 DIP 坐标，渲染目标 DPI 统一映射）
+    BuildPages(currentConfig);
+    ArrangeUI();
 
     ShowWindow(hwnd_, SW_SHOW);
     SetFocus(hwnd_);
@@ -256,796 +325,11 @@ void D2DSettingsWindow::ShutdownD2D() {
     renderTarget_.Reset();
     dwriteFactory_.Reset();
     d2dFactory_.Reset();
-    // 注意：不清理 controls_，控件是 UI 状态而非 D2D 资源
 }
 
 // ═══════════════════════════════
-// 控件构建
+// 标题栏绘制
 // ═══════════════════════════════
-
-void D2DSettingsWindow::BuildControls(const Config& cfg) {
-    controls_.clear();
-    const auto& a = cfg.Appearance();
-    const auto& adv = cfg.Advanced();
-
-    auto addSection = [&](const std::string& title) {
-        Control c;
-        c.type = CtrlType::SectionHeader;
-        c.label = title;
-        controls_.push_back(c);
-    };
-
-    auto addLabelRow = [&](const std::string& id, const std::string& label,
-                           const std::string& value, bool readOnly = false, int maxLen = 32) {
-        Control c;
-        c.type = CtrlType::LabelRow;
-        c.id = id; c.label = label;
-        c.textValue = value; c.readOnly = readOnly; c.textMaxLen = maxLen;
-        controls_.push_back(c);
-    };
-
-    auto addToggle = [&](const std::string& id, const std::string& label, bool value) {
-        Control c;
-        c.type = CtrlType::ToggleRow;
-        c.id = id; c.label = label; c.toggleValue = value;
-        controls_.push_back(c);
-    };
-
-    auto addSlider = [&](const std::string& id, const std::string& label,
-                         float minV, float maxV, float val, const std::string& suffix) {
-        Control c;
-        c.type = CtrlType::SliderRow;
-        c.id = id; c.label = label;
-        c.sliderMin = minV; c.sliderMax = maxV; c.sliderValue = val;
-        c.sliderSuffix = suffix;
-        controls_.push_back(c);
-    };
-
-    auto addColor = [&](const std::string& id, const std::string& label, const std::string& hex) {
-        Control c;
-        c.type = CtrlType::ColorRow;
-        c.id = id; c.label = label;
-        c.colorValue = HexToColorF(hex);
-        c.textValue = hex;
-        controls_.push_back(c);
-    };
-
-    auto addDropdown = [&](const std::string& id, const std::string& label,
-                           const std::vector<std::string>& items, int selected) {
-        Control c;
-        c.type = CtrlType::DropdownRow;
-        c.id = id; c.label = label;
-        c.dropdownItems = items; c.dropdownSelected = selected;
-        controls_.push_back(c);
-    };
-
-    auto addButton = [&](const std::string& id, const std::string& label,
-                         const std::string& text, bool primary = false, bool danger = false) {
-        Control c;
-        c.type = CtrlType::ButtonRow;
-        c.id = id; c.label = label;
-        c.buttonText = text; c.isPrimary = primary; c.isDanger = danger;
-        controls_.push_back(c);
-    };
-
-    auto addHint = [&](const std::string& text) {
-        Control c;
-        c.type = CtrlType::HintText;
-        c.label = text;
-        controls_.push_back(c);
-    };
-
-    auto addSpacer = [&]() {
-        Control c;
-        c.type = CtrlType::Spacer;
-        controls_.push_back(c);
-    };
-
-    // ===== 外观 =====
-    addSection("外观");
-
-    // 显示模式
-    addDropdown("displayMode", "显示模式",
-                {"卡拉OK（默认）", "卡片样式"},
-                a.displayMode == "card" ? 1 : 0);
-
-    // 卡拉OK 区域的控件（始终构建，通过 visible 控制）
-    addSlider("fontSize", "字号", 10.f, 28.f, static_cast<float>(a.fontSize), "");
-    addLabelRow("fontFamily", "字体", a.fontFamily, /*readOnly*/true);
-    addColor("normalColor", "普通歌词颜色", a.normalColor);
-    addColor("highlightColor", "高亮歌词颜色", a.highlightColor);
-    addSlider("opacity", "不透明度", 20.f, 100.f, a.normalOpacity * 100.f, "%");
-    addToggle("karaoke", "卡拉OK 效果", a.enableKaraoke);
-    addToggle("translation", "显示翻译", a.enableTranslation);
-
-    // 跑马灯
-    addSection("长歌词滚动（跑马灯）");
-    addToggle("marquee", "启用跑马灯", a.enableMarquee);
-    addDropdown("marqueeMode", "滚动模式",
-                {"往返滚动（推荐）", "循环跑马灯", "关闭（截断显示）"},
-                a.marqueeMode == "loop" ? 1 : (a.marqueeMode == "off" ? 2 : 0));
-    addSlider("marqueeDelay", "开始延迟", 0.f, 5000.f, static_cast<float>(a.marqueeDelayMs), " ms");
-    addSlider("marqueePause", "端点暂停", 0.f, 3000.f, static_cast<float>(a.marqueePauseMs), " ms");
-    addSlider("marqueeSpeed", "滚动速度", 10.f, 200.f, a.marqueeSpeedPxPerSec, " px/s");
-
-    // 预设主题
-    {
-        Control c;
-        c.type = CtrlType::ThemePresets;
-        c.id = "themePresets";
-        c.themePresets = {
-            {HexToColorF("#4CC2FF"), HexToColorF("#FFFFFF"), "默认"},
-            {HexToColorF("#EC4141"), HexToColorF("#FFFFFF"), "网易云红"},
-            {HexToColorF("#31C27C"), HexToColorF("#FFFFFF"), "QQ音乐绿"},
-            {HexToColorF("#FF9800"), HexToColorF("#FFFFFF"), "暖橙"},
-            {HexToColorF("#E040FB"), HexToColorF("#E0E0E0"), "紫罗兰"},
-            {HexToColorF("#00E676"), HexToColorF("#B0BEC5"), "薄荷"},
-        };
-        // 检查当前是否匹配某个预设
-        for (int i = 0; i < static_cast<int>(c.themePresets.size()); ++i) {
-            if (ColorFToHex(c.themePresets[i].hlColor) == a.highlightColor &&
-                ColorFToHex(c.themePresets[i].nlColor) == a.normalColor) {
-                c.themeSelected = i;
-                break;
-            }
-        }
-        controls_.push_back(c);
-    }
-
-    // 卡片模式
-    addSection("卡片样式设置");
-    addSlider("cardFontSizeCurrent", "当前行字号", 10.f, 20.f,
-              static_cast<float>(a.cardFontSizeCurrent), "");
-    addSlider("cardFontSizeNext", "下一行字号", 8.f, 18.f,
-              static_cast<float>(a.cardFontSizeNext), "");
-    addLabelRow("cardFontFamily", "字体", a.cardFontFamily.empty() ? "(与主模式相同)" : a.cardFontFamily, /*readOnly*/true);
-    addColor("cardCurrentColor", "当前行颜色", a.cardCurrentColor);
-    addColor("cardNextColor", "下一行颜色", a.cardNextColor);
-    addDropdown("cardBackgroundMode", "卡片背景",
-                {"半透明毛玻璃", "纯透明"},
-                a.cardBackgroundMode == "transparent" ? 1 : 0);
-    addToggle("cardDynamicWidth", "歌词显示扩展", a.cardDynamicWidth);
-
-    // ===== 位置 =====
-    addSection("位置");
-    addHint("拖动歌词窗口可直接调整位置");
-    addButton("resetPos", "重置位置", "重置", false, /*danger*/true);
-
-    // ===== 高级 =====
-    addSection("高级");
-    addLabelRow("wsPort", "WebSocket 端口", std::to_string(adv.websocketPort));
-    addSlider("refreshRate", "刷新率", 15.f, 120.f, static_cast<float>(adv.refreshRateHz), " FPS");
-    addToggle("debugLog", "调试日志", adv.debugLog);
-
-    // ===== 通用 =====
-    addSection("通用");
-    addToggle("autoStart", "开机自动启动", cfg.IsAutoStart());
-
-    // ===== 操作按钮 =====
-    addSpacer();
-    {
-        Control c;
-        c.type = CtrlType::ButtonRow;
-        c.id = "applyBtn";
-        c.label = ""; // 右对齐按钮不需要标签
-        c.buttonText = "应用并保存";
-        c.isPrimary = true;
-        controls_.push_back(c);
-    }
-    {
-        Control c;
-        c.type = CtrlType::ButtonRow;
-        c.id = "cancelBtn";
-        c.label = "";
-        c.buttonText = "取消";
-        controls_.push_back(c);
-    }
-
-    // 初始可见性：根据当前 displayMode 过滤不相关控件
-    UpdateControlVisibility();
-}
-
-void D2DSettingsWindow::UpdateControlVisibility() {
-    // 根据当前 displayMode 动态显示/隐藏对应模式的专属控件组。
-    // 控件分三类：
-    //   1) ID 列表匹配（karaokeOnly / cardOnly）：遍历控件按 ID 精确匹配
-    //   2) SectionHeader 匹配（"长歌词滚动" / "卡片样式设置"）：通过标签关键词检测
-    //   3) 其余控件（位置/高级/通用/按钮）：保持默认 visible=true
-    //
-    // 调用时机：BuildControls 末尾（初始化）、displayMode dropdown 切换时（OnMouseDown）。
-    bool isCard = false;
-    for (const auto& c : controls_) {
-        if (c.id == "displayMode") {
-            isCard = (c.dropdownSelected == 1);
-            break;
-        }
-    }
-
-    // ID 白名单：不在列表中的控件不受影响（保持默认 visible=true）
-    static const std::vector<std::string> karaokeOnly = {
-        "fontSize", "fontFamily", "normalColor", "highlightColor",
-        "opacity", "karaoke", "translation", "themePresets",
-        "marquee", "marqueeMode", "marqueeDelay", "marqueePause", "marqueeSpeed"
-    };
-    static const std::vector<std::string> cardOnly = {
-        "cardFontSizeCurrent", "cardFontSizeNext", "cardFontFamily", "cardCurrentColor", "cardNextColor",
-        "cardBackgroundMode", "cardDynamicWidth"
-    };
-
-    // 跟踪「长歌词滚动（跑马灯）」和「卡片样式设置」两个 section 的范围。
-    // 这两个 SectionHeader 本身也需要按模式显示/隐藏，但其 ID 为空，无法用 ID 列表匹配，
-    // 故通过标签关键词 + 状态机方式处理：每次遇到 SectionHeader 时更新标志。
-    bool inKaraokeSection = false;
-    bool inCardSection = false;
-
-    for (auto& c : controls_) {
-        // 更新 section 状态标志（每个 SectionHeader 都会重置标志为精确值）
-        if (c.type == CtrlType::SectionHeader) {
-            inKaraokeSection = (c.label.find("跑马灯") != std::string::npos);
-            inCardSection = (c.label.find("卡片样式") != std::string::npos);
-        }
-
-        if (c.type == CtrlType::SectionHeader) {
-            if (inKaraokeSection) {
-                c.visible = !isCard;       // 卡拉OK模式可见，卡片模式隐藏
-                continue;
-            }
-            if (inCardSection) {
-                c.visible = isCard;        // 卡片模式可见，卡拉OK模式隐藏
-                continue;
-            }
-            // 外观 / 位置 / 高级 / 通用 — 双模式均可见
-            continue;
-        }
-
-        // ID 匹配：仅修改命中控件的 visible，其余控件原样保留
-        for (const auto& id : karaokeOnly) {
-            if (c.id == id) { c.visible = !isCard; break; }
-        }
-        for (const auto& id : cardOnly) {
-            if (c.id == id) { c.visible = isCard; break; }
-        }
-    }
-}
-
-void D2DSettingsWindow::LayoutControls(int contentWidth) {
-    const int leftPad = 16;
-    const int rightPad = 16;
-    const int controlRight = contentWidth - rightPad;
-    const int inputWidth = 140;
-    const int sliderWidth = 160;
-    const int colorBtnSize = 28;
-    const int gap = 10;
-
-    int y = kTitleBarHeight + 8; // 标题栏下方开始
-
-    for (auto& c : controls_) {
-        if (!c.visible) continue;  // 不可见控件不占布局空间，避免页面出现空白间隙
-
-        switch (c.type) {
-        case CtrlType::SectionHeader:
-            c.rect = {leftPad, y, controlRight, y + 24};
-            y += 24 + sectionPadding_;
-            break;
-
-        case CtrlType::LabelRow:
-            c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            y += rowHeight_;
-            break;
-
-        case CtrlType::ToggleRow:
-            c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            y += rowHeight_;
-            break;
-
-        case CtrlType::SliderRow:
-            c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            y += rowHeight_;
-            break;
-
-        case CtrlType::ColorRow:
-            c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            y += rowHeight_;
-            break;
-
-        case CtrlType::DropdownRow:
-            c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            y += rowHeight_;
-            break;
-
-        case CtrlType::ButtonRow:
-            if (c.id == "applyBtn" || c.id == "cancelBtn") {
-                // 操作按钮右对齐
-                int btnW = 100;
-                c.rect = {controlRight - btnW - gap, y, controlRight, y + 32};
-            } else {
-                c.rect = {leftPad, y, controlRight, y + rowHeight_};
-            }
-            y += (c.id == "applyBtn" || c.id == "cancelBtn") ? 40 : rowHeight_;
-            break;
-
-        case CtrlType::ThemePresets:
-            c.rect = {leftPad, y, controlRight, y + 44};
-            y += 44;
-            break;
-
-        case CtrlType::HintText:
-            c.rect = {leftPad, y, controlRight, y + 22};
-            y += 22;
-            break;
-
-        case CtrlType::Spacer:
-            y += 8;
-            c.rect = {0, y, 0, y};
-            break;
-        }
-    }
-
-    totalContentHeight_ = y + 20 + 28; // +28 为底部版本号预留
-}
-
-// ═══════════════════════════════
-// 命中测试
-// ═══════════════════════════════
-
-D2DSettingsWindow::Control* D2DSettingsWindow::HitTest(int x, int y) {
-    int testY = y + scrollOffset_; // 转换为内容坐标
-    for (auto& c : controls_) {
-        if (!c.visible) continue;
-        if (testY >= c.rect.top && testY < c.rect.bottom &&
-            x >= c.rect.left && x < c.rect.right) {
-            return &c;
-        }
-    }
-    return nullptr;
-}
-
-// ═══════════════════════════════
-// 绘制
-// ═══════════════════════════════
-
-void D2DSettingsWindow::DrawAll() {
-    if (!renderTarget_) return;
-
-    renderTarget_->BeginDraw();
-    renderTarget_->Clear(theme_.bg);
-
-    // 更新画刷颜色（暗色模式切换后可能变化）
-    bgBrush_->SetColor(theme_.bg);
-    surfaceBrush_->SetColor(theme_.surface);
-    borderBrush_->SetColor(theme_.border);
-    textBrush_->SetColor(theme_.text);
-    textSecondaryBrush_->SetColor(theme_.textSecondary);
-    accentBrush_->SetColor(theme_.accent);
-    accentHoverBrush_->SetColor(theme_.accentHover);
-
-    RECT clientRc; GetClientRect(hwnd_, &clientRc);
-    // 渲染目标 DPI 已设为系统 DPI，绘制坐标使用 DIP（逻辑像素）
-    const int clientW = static_cast<int>(clientRc.right / dpiScale_);
-    const int clientH = static_cast<int>(clientRc.bottom / dpiScale_);
-
-    // 绘制每个可见控件
-    for (const auto& c : controls_) {
-        if (!c.visible) continue;
-        // 裁剪：只绘制在可视区域内的控件
-        if (c.rect.bottom - scrollOffset_ < 0 || c.rect.top - scrollOffset_ > clientH)
-            continue;
-
-        switch (c.type) {
-        case CtrlType::SectionHeader:   DrawSectionHeader(renderTarget_.Get(), c); break;
-        case CtrlType::LabelRow:        DrawLabelRow(renderTarget_.Get(), c);      break;
-        case CtrlType::ToggleRow:       DrawToggleRow(renderTarget_.Get(), c);      break;
-        case CtrlType::SliderRow:       DrawSliderRow(renderTarget_.Get(), c);      break;
-        case CtrlType::ColorRow:        DrawColorRow(renderTarget_.Get(), c);       break;
-        case CtrlType::DropdownRow:     DrawDropdownRow(renderTarget_.Get(), c);    break;
-        case CtrlType::ButtonRow:       DrawButtonRow(renderTarget_.Get(), c);      break;
-        case CtrlType::ThemePresets:    DrawThemePresets(renderTarget_.Get(), c);   break;
-        case CtrlType::HintText:        DrawHintText(renderTarget_.Get(), c);       break;
-        default: break;
-        }
-    }
-
-    // 绘制底部版本号（在控件之后，随内容滚动）
-    {
-        const wchar_t* versionText = L"MoeKoe Taskbar Lyrics v1.0.2";
-        float verY = static_cast<float>(totalContentHeight_ - 24) - scrollOffset_;
-        if (verY + 20.f > 0 && verY < static_cast<float>(clientH)) {
-            float textWidth = 0;
-            ComPtr<IDWriteTextLayout> verLayout;
-            if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
-                    versionText, static_cast<UINT>(wcslen(versionText)),
-                    hintFmt_.Get(), 0, 0, &verLayout))) {
-                DWRITE_TEXT_METRICS tm = {};
-                verLayout->GetMetrics(&tm);
-                textWidth = tm.width;
-            }
-            float verX = (static_cast<float>(clientW) - textWidth) / 2.f;
-            renderTarget_->DrawText(versionText, static_cast<UINT>(wcslen(versionText)),
-                                    hintFmt_.Get(),
-                                    D2D1::RectF(verX, verY, verX + static_cast<float>(clientW), verY + 200),
-                                    textSecondaryBrush_.Get());
-        }
-    }
-
-    // 绘制标题栏（在控件之上）
-    DrawTitleBar(renderTarget_.Get());
-
-    // 绘制颜色选择器弹窗（在最上层）
-    colorPicker_.Draw(renderTarget_.Get(), isDarkMode_, theme_,
-                      valueFmt_.Get(), hintFmt_.Get(),
-                      textSecondaryBrush_.Get(), scrollOffset_);
-
-    HRESULT hr = renderTarget_->EndDraw();
-    if (hr == D2DERR_RECREATE_TARGET) {
-        renderTarget_.Reset();
-        RECT rc; GetClientRect(hwnd_, &rc);
-        d2dFactory_->CreateHwndRenderTarget(
-            D2D1::RenderTargetProperties(),
-            D2D1::HwndRenderTargetProperties(hwnd_,
-                D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)}),
-            &renderTarget_);
-        // 恢复渲染目标 DPI（DIP 坐标映射）
-        if (renderTarget_) {
-            renderTarget_->SetDpi(static_cast<FLOAT>(dpi_), static_cast<FLOAT>(dpi_));
-        }
-        // 重建画刷
-        if (renderTarget_) {
-            renderTarget_->CreateSolidColorBrush(theme_.bg, &bgBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.surface, &surfaceBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.border, &borderBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.text, &textBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.textSecondary, &textSecondaryBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.accent, &accentBrush_);
-            renderTarget_->CreateSolidColorBrush(theme_.accentHover, &accentHoverBrush_);
-        }
-    }
-}
-
-// 绘制辅助函数已移至 settings_draw_utils.h（inline，namespace moekoe）
-
-void D2DSettingsWindow::DrawSectionHeader(ID2D1RenderTarget* rt, const Control& c) {
-    float cy = static_cast<float>(c.rect.top) - scrollOffset_ + 12.f;
-
-    // 左侧竖线装饰
-    ComPtr<ID2D1SolidColorBrush> accentBr;
-    rt->CreateSolidColorBrush(theme_.accent, &accentBr);
-    FillRoundedRect(rt, accentBr.Get(),
-                    static_cast<float>(c.rect.left), cy - 7.f, 3.f, 14.f, 1.5f);
-
-    // 标题文字
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, sectionFmt_.Get(), textSecondaryBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left) + 10.f, cy - 9.f, 400.f);
-}
-
-void D2DSettingsWindow::DrawLabelRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float mid = top + static_cast<float>(rowHeight_) / 2.f;
-
-    // 标签
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 160.f);
-
-    // 输入框区域
-    float inputLeft = static_cast<float>(c.rect.right) - 150.f;
-    float inputTop = top + 6.f;
-    float inputW = 140.f;
-    float inputH = 26.f;
-
-    // 背景
-    ComPtr<ID2D1SolidColorBrush> inputBg;
-    rt->CreateSolidColorBrush(c.editing ? theme_.bg : theme_.surface, &inputBg);
-    FillRoundedRect(rt, inputBg.Get(), inputLeft, inputTop, inputW, inputH, 5.f);
-
-    // 边框（焦点时高亮）
-    ComPtr<ID2D1SolidColorBrush> borderBr;
-    rt->CreateSolidColorBrush(c.editing ? theme_.accent : theme_.border, &borderBr);
-    DrawRoundedRect(rt, borderBr.Get(), 1.f, inputLeft, inputTop, inputW, inputH, 5.f);
-
-    // 文字
-    std::wstring wideVal = Utf8ToWide(c.textValue);;
-    ComPtr<ID2D1SolidColorBrush> txtBr;
-    // 只读字段用 textSecondary，可编辑用 text；均创建本地画刷避免缓存失效
-    rt->CreateSolidColorBrush(c.readOnly ? theme_.textSecondary : theme_.text, &txtBr);
-    DrawTextLine(rt, valueFmt_.Get(), txtBr.Get(),
-                 wideVal.c_str(), inputLeft + 8.f, mid - 7.f, inputW - 16.f);
-
-    // 光标
-    if (c.editing && c.showCaret) {
-        ComPtr<ID2D1SolidColorBrush> caretBr;
-        rt->CreateSolidColorBrush(theme_.text, &caretBr);
-        // 计算光标 X 位置
-        float caretX = inputLeft + 8.f;
-        if (c.caretPos > 0 && !wideVal.empty()) {
-            DWRITE_TEXT_METRICS metrics{};
-            ComPtr<IDWriteTextLayout> layout;
-            dwriteFactory_->CreateTextLayout(
-                wideVal.c_str(), static_cast<UINT>(c.caretPos),
-                valueFmt_.Get(), 200.f, 30.f, &layout);
-            if (layout) layout->GetMetrics(&metrics);
-            caretX += metrics.widthIncludingTrailingWhitespace;
-        }
-        rt->DrawLine(D2D1::Point2F(caretX, inputTop + 4.f),
-                     D2D1::Point2F(caretX, inputTop + inputH - 4.f),
-                     caretBr.Get(), 1.f);
-    }
-
-    // 字体选择按钮（fontFamily / cardFontFamily 控件）
-    if (c.id == "fontFamily" || c.id == "cardFontFamily") {
-        float btnX = inputLeft - 50.f;
-        float btnW = 42.f;
-        float btnH = 26.f;
-        ComPtr<ID2D1SolidColorBrush> btnBg;
-        rt->CreateSolidColorBrush(hoverCtrl_ == &c ? theme_.surface : theme_.bg, &btnBg);
-        FillRoundedRect(rt, btnBg.Get(), btnX, top + 6.f, btnW, btnH, 5.f);
-        ComPtr<ID2D1SolidColorBrush> btnBorder;
-        rt->CreateSolidColorBrush(hoverCtrl_ == &c ? theme_.accent : theme_.border, &btnBorder);
-        DrawRoundedRect(rt, btnBorder.Get(), 1.f, btnX, top + 6.f, btnW, btnH, 5.f);
-        const wchar_t* pickText = L"选择";
-        DrawTextLine(rt, hintFmt_.Get(), textBrush_.Get(),
-                     pickText, btnX + 5.f, mid - 6.f, 36.f);
-    }
-}
-
-void D2DSettingsWindow::DrawToggleRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float mid = top + static_cast<float>(rowHeight_) / 2.f;
-
-    // 标签
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 220.f);
-
-    // Toggle 开关（右侧）
-    float tw = 36.f, th = 20.f, tr = 10.f;
-    float tx = static_cast<float>(c.rect.right) - tw - 16.f;
-    float ty = mid - th / 2.f;
-
-    ComPtr<ID2D1SolidColorBrush> trackBr;
-    rt->CreateSolidColorBrush(c.toggleValue ? theme_.accent : theme_.border, &trackBr);
-    FillRoundedRect(rt, trackBr.Get(), tx, ty, tw, th, tr);
-
-    // 圆形滑块
-    float knobR = 8.f;
-    float knobX = c.toggleValue ? tx + tw - knobR - 2.f : tx + 2.f;
-    float knobY = ty + th / 2.f;
-    ComPtr<ID2D1SolidColorBrush> knobBr;
-    rt->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &knobBr);
-    rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(knobX + knobR, knobY), knobR, knobR), knobBr.Get());
-}
-
-void D2DSettingsWindow::DrawSliderRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float mid = top + static_cast<float>(rowHeight_) / 2.f;
-
-    // 标签
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 120.f);
-
-    // 滑块轨道
-    float sl = static_cast<float>(c.rect.right) - 180.f;
-    float sw = sliderWidth_; // 160
-    float st = mid - 2.f;
-    float sh = 4.f;
-
-    ComPtr<ID2D1SolidColorBrush> trackBr;
-    rt->CreateSolidColorBrush(theme_.border, &trackBr);
-    FillRoundedRect(rt, trackBr.Get(), sl, st, sw, sh, 2.f);
-
-    // 已填充部分
-    float fillRatio = (c.sliderValue - c.sliderMin) / (c.sliderMax - c.sliderMin);
-    float fillW = sw * fillRatio;
-    ComPtr<ID2D1SolidColorBrush> fillBr;
-    rt->CreateSolidColorBrush(theme_.accent, &fillBr);
-    FillRoundedRect(rt, fillBr.Get(), sl, st, fillW, sh, 2.f);
-
-    // 滑块手柄
-    float handleX = sl + fillW;
-    float handleR = 7.f;
-    ComPtr<ID2D1SolidColorBrush> handleBr;
-    rt->CreateSolidColorBrush(theme_.accent, &handleBr);
-    rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(handleX, mid), handleR, handleR), handleBr.Get());
-    ComPtr<ID2D1SolidColorBrush> handleBorder;
-    rt->CreateSolidColorBrush(theme_.bg, &handleBorder);
-    rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(handleX, mid), handleR, handleR), handleBorder.Get(), 2.f);
-
-    // 数值显示
-    char valBuf[32];
-    if (c.sliderSuffix == "%")
-        std::snprintf(valBuf, sizeof(valBuf), "%.0f%s", c.sliderValue, c.sliderSuffix.c_str());
-    else if (c.sliderSuffix.find("ms") != std::string::npos)
-        std::snprintf(valBuf, sizeof(valBuf), "%.0f %s", c.sliderValue, c.sliderSuffix.c_str());
-    else if (c.sliderSuffix.find("px/s") != std::string::npos)
-        std::snprintf(valBuf, sizeof(valBuf), "%.0f %s", c.sliderValue, c.sliderSuffix.c_str());
-    else if (c.sliderSuffix.find("FPS") != std::string::npos)
-        std::snprintf(valBuf, sizeof(valBuf), "%.0f %s", c.sliderValue, c.sliderSuffix.c_str());
-    else
-        std::snprintf(valBuf, sizeof(valBuf), "%.0f", c.sliderValue);
-
-    std::wstring wval(valBuf, valBuf + strlen(valBuf));
-    // 使用本地画刷（theme_.text），避免缓存画刷失效导致数值显示异常
-    ComPtr<ID2D1SolidColorBrush> valBr;
-    rt->CreateSolidColorBrush(theme_.text, &valBr);
-    DrawTextLine(rt, valueFmt_.Get(), valBr.Get(),
-                 wval.c_str(), sl + sw + 10.f, mid - 7.f, 60.f);
-}
-
-void D2DSettingsWindow::DrawColorRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float mid = top + static_cast<float>(rowHeight_) / 2.f;
-
-    // 标签
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 120.f);
-
-    // 颜色方块
-    float cbSz = 28.f;
-    float cbX = static_cast<float>(c.rect.right) - 95.f - cbSz;
-    float cbY = top + (static_cast<float>(rowHeight_) - cbSz) / 2.f;
-    ComPtr<ID2D1SolidColorBrush> colorBr;
-    rt->CreateSolidColorBrush(c.colorValue, &colorBr);
-    FillRoundedRect(rt, colorBr.Get(), cbX, cbY, cbSz, cbSz, 5.f);
-    ComPtr<ID2D1SolidColorBrush> colorBorder;
-    rt->CreateSolidColorBrush(theme_.border, &colorBorder);
-    DrawRoundedRect(rt, colorBorder.Get(), 1.5f, cbX, cbY, cbSz, cbSz, 5.f);
-
-    // Hex 输入
-    float hexX = cbX + cbSz + 6.f;
-    float hexW = 75.f;
-    float hexH = 26.f;
-    float hexY = top + 6.f;
-    ComPtr<ID2D1SolidColorBrush> hexBg;
-    rt->CreateSolidColorBrush(theme_.surface, &hexBg);
-    FillRoundedRect(rt, hexBg.Get(), hexX, hexY, hexW, hexH, 5.f);
-    ComPtr<ID2D1SolidColorBrush> hexBorder;
-    rt->CreateSolidColorBrush(theme_.border, &hexBorder);
-    DrawRoundedRect(rt, hexBorder.Get(), 1.f, hexX, hexY, hexW, hexH, 5.f);
-
-    std::wstring wideVal = Utf8ToWide(c.textValue);;
-    DrawTextLine(rt, valueFmt_.Get(), textBrush_.Get(),
-                 wideVal.c_str(), hexX + 6.f, mid - 7.f, hexW - 12.f);
-}
-
-void D2DSettingsWindow::DrawDropdownRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float mid = top + static_cast<float>(rowHeight_) / 2.f;
-
-    // 标签
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 120.f);
-
-    // 下拉框背景
-    float ddW = 150.f, ddH = 26.f;
-    float ddX = static_cast<float>(c.rect.right) - ddW - 16.f;
-    float ddY = top + 6.f;
-    ComPtr<ID2D1SolidColorBrush> ddBg;
-    rt->CreateSolidColorBrush(theme_.surface, &ddBg);
-    FillRoundedRect(rt, ddBg.Get(), ddX, ddY, ddW, ddH, 5.f);
-    ComPtr<ID2D1SolidColorBrush> ddBorder;
-    rt->CreateSolidColorBrush(hoverCtrl_ == &c ? theme_.accent : theme_.border, &ddBorder);
-    DrawRoundedRect(rt, ddBorder.Get(), 1.f, ddX, ddY, ddW, ddH, 5.f);
-
-    // 选中项文字
-    if (c.dropdownSelected >= 0 && c.dropdownSelected < static_cast<int>(c.dropdownItems.size())) {
-        std::wstring sel = Utf8ToWide(c.dropdownItems[c.dropdownSelected]);
-        DrawTextLine(rt, valueFmt_.Get(), textBrush_.Get(),
-                     sel.c_str(), ddX + 8.f, mid - 7.f, ddW - 30.f);
-    }
-
-    // 下拉箭头 ▾
-    const wchar_t* arrow = L"\u25BE"; // ▾
-    DrawTextLine(rt, labelFmt_.Get(), textSecondaryBrush_.Get(),
-                 arrow, ddX + ddW - 18.f, mid - 8.f, 14.f);
-}
-
-void D2DSettingsWindow::DrawButtonRow(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-
-    if (c.id == "applyBtn" || c.id == "cancelBtn") {
-        // 底部操作按钮
-        float bw = c.isPrimary ? 110.f : 70.f;
-        float bh = 30.f;
-        float bx = static_cast<float>(c.rect.left);
-        float by = top + 4.f;
-
-        bool hovered = hoverCtrl_ == &c;
-        ComPtr<ID2D1SolidColorBrush> btnBg, btnBorder, btnText;
-
-        if (c.isPrimary) {
-            rt->CreateSolidColorBrush(hovered ? theme_.accentHover : theme_.accent, &btnBg);
-            rt->CreateSolidColorBrush(hovered ? theme_.accentHover : theme_.accent, &btnBorder);
-            rt->CreateSolidColorBrush(D2D1::ColorF(1,1,1,1), &btnText);
-        } else if (c.isDanger) {
-            rt->CreateSolidColorBrush(hovered ? theme_.surface : D2D1::ColorF(1,1,1,1), &btnBg);
-            rt->CreateSolidColorBrush(hovered ? HexToColorF("#ff4d4f") : theme_.border, &btnBorder);
-            rt->CreateSolidColorBrush(hovered ? HexToColorF("#ff4d4f") : theme_.text, &btnText);
-        } else {
-            rt->CreateSolidColorBrush(hovered ? theme_.surface : theme_.bg, &btnBg);
-            rt->CreateSolidColorBrush(hovered ? theme_.accent : theme_.border, &btnBorder);
-            rt->CreateSolidColorBrush(hovered ? theme_.accent : theme_.text, &btnText);
-        }
-
-        FillRoundedRect(rt, btnBg.Get(), bx, by, bw, bh, 6.f);
-        DrawRoundedRect(rt, btnBorder.Get(), 1.f, bx, by, bw, bh, 6.f);
-
-        std::wstring wtxt = Utf8ToWide(c.buttonText);;
-        DrawTextLine(rt, btnFmt_.Get(), btnText.Get(),
-                     wtxt.c_str(), bx + 14.f, by + 6.f, bw - 28.f);
-    } else {
-        // 行内按钮（如重置位置）
-        float mid = top + static_cast<float>(rowHeight_) / 2.f;
-        std::wstring wide = Utf8ToWide(c.label);
-        DrawTextLine(rt, labelFmt_.Get(), textBrush_.Get(),
-                     wide.c_str(), static_cast<float>(c.rect.left), mid - 8.f, 160.f);
-
-        float bw = 56.f, bh = 26.f;
-        float bx = static_cast<float>(c.rect.right) - bw - 16.f;
-        float by = top + 6.f;
-        bool hovered = hoverCtrl_ == &c;
-        ComPtr<ID2D1SolidColorBrush> btnBg, btnBorder, btnTxt;
-        rt->CreateSolidColorBrush(hovered ? theme_.surface : theme_.bg, &btnBg);
-        rt->CreateSolidColorBrush(hovered ? (c.isDanger ? HexToColorF("#ff4d4f") : theme_.accent) : theme_.border, &btnBorder);
-        rt->CreateSolidColorBrush(hovered ? (c.isDanger ? HexToColorF("#ff4d4f") : theme_.accent) : theme_.text, &btnTxt);
-        FillRoundedRect(rt, btnBg.Get(), bx, by, bw, bh, 6.f);
-        DrawRoundedRect(rt, btnBorder.Get(), 1.f, bx, by, bw, bh, 6.f);
-        std::wstring wtxt = Utf8ToWide(c.buttonText);;
-        DrawTextLine(rt, btnFmt_.Get(), btnTxt.Get(),
-                     wtxt.c_str(), bx + 10.f, by + 6.f, bw - 20.f);
-    }
-}
-
-void D2DSettingsWindow::DrawThemePresets(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    float startX = static_cast<float>(c.rect.left) + 4.f;
-    float y = top + 8.f;
-    float sz = 24.f;
-    float gap = 6.f;
-
-    for (int i = 0; i < static_cast<int>(c.themePresets.size()); ++i) {
-        float x = startX + i * (sz + gap);
-        const auto& preset = c.themePresets[i];
-        bool selected = (c.themeSelected == i);
-        bool hovered = (hoverCtrl_ == &c); // 简化：整个区域悬停
-
-        // 渐变背景色块
-        ComPtr<ID2D1LinearGradientBrush> gradBr;
-        D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES lgbp = {};
-        lgbp.startPoint = D2D1::Point2F(x, y);
-        lgbp.endPoint   = D2D1::Point2F(x + sz, y + sz);
-        D2D1_GRADIENT_STOP stops[2] = {
-            {0.f, preset.hlColor},
-            {1.f, preset.nlColor},
-        };
-        ComPtr<ID2D1GradientStopCollection> gradStops;
-        rt->CreateGradientStopCollection(stops, 2, &gradStops);
-        rt->CreateLinearGradientBrush(lgbp, gradStops.Get(), &gradBr);
-
-        // 圆形色块
-        rt->FillEllipse(D2D1::Ellipse(D2D1::Point2F(x + sz/2, y + sz/2), sz/2, sz/2), gradBr.Get());
-
-        // 选中边框
-        if (selected) {
-            ComPtr<ID2D1SolidColorBrush> selBr;
-            rt->CreateSolidColorBrush(theme_.text, &selBr);
-            rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(x + sz/2, y + sz/2), sz/2 + 2.f, sz/2 + 2.f), selBr.Get(), 2.f);
-        } else {
-            ComPtr<ID2D1SolidColorBrush> defBr;
-            rt->CreateSolidColorBrush(D2D1::ColorF(0,0,0,0), &defBr);
-            rt->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(x + sz/2, y + sz/2), sz/2, sz/2), defBr.Get(), 2.f);
-        }
-    }
-}
-
-void D2DSettingsWindow::DrawHintText(ID2D1RenderTarget* rt, const Control& c) {
-    float top = static_cast<float>(c.rect.top) - scrollOffset_;
-    std::wstring wide = Utf8ToWide(c.label);
-    DrawTextLine(rt, hintFmt_.Get(), textSecondaryBrush_.Get(),
-                 wide.c_str(), static_cast<float>(c.rect.left), top, 380.f);
-}
 
 void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
     RECT rc; GetClientRect(hwnd_, &rc);
@@ -1166,340 +450,129 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
     titleBarRect_ = {0, 0, static_cast<int>(W), kTitleBarHeight};
 }
 
-// 颜色选择器弹窗已拆分至 color_picker.h/.cpp
+// ═══════════════════════════════
+// 鼠标滚轮
+// ═══════════════════════════════
+// ComboBox 下拉列表绘制（裁剪区域外，覆盖下方内容）
+// ═══════════════════════════════
+
+void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox* combo) {
+    if (!combo || combo->items.empty()) return;
+
+    const float boxX = combo->X() + combo->Width() / 2;
+    const float boxW = combo->Width() / 2;
+    const float boxY = combo->Y() + 4 + 28;
+    const float itemH = 30;
+    const float dropH = static_cast<float>(combo->items.size()) * itemH;
+
+    // 下拉背景
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dropBg, dropBorder;
+    rt->CreateSolidColorBrush(isDarkMode_ ? D2D1::ColorF(0x25, 0x25, 0x42, 1.0f) : D2D1::ColorF(1, 1, 1, 1), &dropBg);
+    rt->CreateSolidColorBrush(theme_.border, &dropBorder);
+    rt->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 4, 4),
+        dropBg.Get());
+    rt->DrawRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 4, 4),
+        dropBorder.Get(), 1.0f);
+
+    // 绘制每个选项
+    static Microsoft::WRL::ComPtr<IDWriteFactory> dwFactory;
+    if (!dwFactory) {
+        ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                              reinterpret_cast<IUnknown**>(dwFactory.GetAddressOf()));
+    }
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> itemFmt;
+    dwFactory->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
+        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+        13, L"zh-CN", itemFmt.GetAddressOf());
+
+    if (itemFmt) {
+        itemFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        for (int i = 0; i < static_cast<int>(combo->items.size()); ++i) {
+            float iy = boxY + i * itemH;
+
+            // 选中项背景
+            if (i == combo->selectedIndex) {
+                Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selBg;
+                rt->CreateSolidColorBrush(theme_.accent, &selBg);
+                rt->FillRectangle(D2D1::RectF(boxX + 2, iy, boxX + boxW - 2, iy + itemH), selBg.Get());
+            }
+
+            D2D1_COLOR_F textColor = (i == combo->selectedIndex)
+                ? D2D1::ColorF(1, 1, 1, 1)
+                : (isDarkMode_ ? D2D1::ColorF(0.9f, 0.9f, 0.9f, 1) : D2D1::ColorF(0.2f, 0.2f, 0.2f, 1));
+            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> txtBrush;
+            rt->CreateSolidColorBrush(textColor, txtBrush.GetAddressOf());
+
+            std::wstring witem = Utf8ToWide(combo->items[i]);
+            rt->DrawTextW(witem.c_str(), static_cast<UINT32>(witem.size()),
+                          itemFmt.Get(), D2D1::RectF(boxX + 8, iy, boxX + boxW - 8, iy + itemH),
+                          txtBrush.Get());
+        }
+    }
+}
 
 // ═══════════════════════════════
-// 事件处理
+// 鼠标滚轮
 // ═══════════════════════════════
-
-void D2DSettingsWindow::OnMouseDown(int x, int y) {
-    // 颜色选择器弹窗优先处理
-    if (colorPicker_.IsActive()) {
-        D2D1_COLOR_F newColor;
-        std::string newHex;
-        auto result = colorPicker_.HandleMouseDown(x, y, &newColor, &newHex);
-
-        if (result == ColorPickerPopup::ActionResult::Confirmed) {
-            if (activeColorCtrl_) {
-                activeColorCtrl_->colorValue = newColor;
-                activeColorCtrl_->textValue = newHex;
-            }
-            colorPicker_.Deactivate(hwnd_);
-            activeColorCtrl_ = nullptr;
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            return;
-        }
-
-        if (result == ColorPickerPopup::ActionResult::Cancelled) {
-            colorPicker_.Deactivate(hwnd_);
-            activeColorCtrl_ = nullptr;
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            return;
-        }
-
-        // Handled: 色板/亮度条点击 → 重绘
-        if (result != ColorPickerPopup::ActionResult::None) {
-            InvalidateRect(hwnd_, nullptr, FALSE);
-        }
-        return;
-    }
-
-    Control* hit = HitTest(x, y);
-    if (!hit) return;
-
-    captureCtrl_ = hit;
-    hit->pressed = true;
-
-    switch (hit->type) {
-    case CtrlType::ToggleRow:
-        hit->toggleValue = !hit->toggleValue;
-        InvalidateRect(hwnd_, nullptr, FALSE);
-        break;
-
-    case CtrlType::LabelRow:
-        if (hit->id == "fontFamily" || hit->id == "cardFontFamily") {
-            // 点击了"选择"按钮区域
-            LOGFONT lf{};
-            lf.lfCharSet = DEFAULT_CHARSET;
-            lf.lfHeight = -12;
-            wcsncpy_s(lf.lfFaceName, LF_FACESIZE,
-                      Utf8ToWide(hit->textValue).c_str(), _TRUNCATE);
-            CHOOSEFONTW cf{};
-            cf.lStructSize = sizeof(cf);
-            cf.hwndOwner = hwnd_;
-            cf.lpLogFont = &lf;
-            cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT;
-            if (::ChooseFontW(&cf)) {
-                hit->textValue = WideToLocalUtf8(std::wstring(lf.lfFaceName));
-                if (hit->id == "fontFamily")
-                    editedConfig_.MutableAppearance().fontFamily = hit->textValue;
-                else
-                    editedConfig_.MutableAppearance().cardFontFamily = hit->textValue;
-            }
-        } else if (!hit->readOnly) {
-            // 开始编辑文本
-            for (auto& c : controls_) c.editing = false;
-            hit->editing = true;
-            hit->caretPos = static_cast<int>(hit->textValue.size());
-            hit->showCaret = true;
-            hit->caretBlinkTime = 0;
-            SetCapture(hwnd_);
-        }
-        break;
-
-    case CtrlType::ColorRow: {
-        // 激活 D2D 自定义颜色选择器弹窗（传入 dpiScale 用于坐标转换）
-        activeColorCtrl_ = hit;
-        colorPicker_.Activate(hwnd_, hit->colorValue, kTitleBarHeight, dpiScale_);
-        break;
-    }
-
-    case CtrlType::DropdownRow:
-        // 循环选择
-        hit->dropdownSelected = (hit->dropdownSelected + 1) %
-                               static_cast<int>(hit->dropdownItems.size());
-        // 显示模式切换时，重新过滤可见控件并重排布局
-        // UpdateControlVisibility 更新各控件 visible 标志，LayoutControls 基于新标志重新计算 rect + 总高度
-        if (hit->id == "displayMode") {
-            UpdateControlVisibility();
-            LayoutControls(contentWidth_);
-        }
-        break;
-
-    case CtrlType::ButtonRow:
-        if (hit->id == "applyBtn") ::PostMessageW(hwnd_, kMsgApplySave, 0, 0);
-        else if (hit->id == "cancelBtn") ::PostMessageW(hwnd_, kMsgCancel, 0, 0);
-        else if (hit->id == "resetPos") {
-            editedConfig_.MutablePosition().offsetX = 0;
-            editedConfig_.MutablePosition().offsetY = 0;
-        }
-        break;
-
-    case CtrlType::ThemePresets: {
-        // 计算点击了哪个预设
-        float relX = static_cast<float>(x) - (hit->rect.left + 4.f);
-        float relY = static_cast<float>(y) + scrollOffset_ - (hit->rect.top + 8.f);
-        float sz = 24.f, gap = 6.f;
-        int idx = static_cast<int>((relX) / (sz + gap));
-        if (idx >= 0 && idx < static_cast<int>(hit->themePresets.size())) {
-            hit->themeSelected = idx;
-            // 应用预设到对应的颜色控件
-            const auto& preset = hit->themePresets[idx];
-            for (auto& c : controls_) {
-                if (c.id == "highlightColor") {
-                    c.colorValue = preset.hlColor;
-                    c.textValue = ColorFToHex(preset.hlColor);
-                }
-                if (c.id == "normalColor") {
-                    c.colorValue = preset.nlColor;
-                    c.textValue = ColorFToHex(preset.nlColor);
-                }
-            }
-        }
-        break;
-    }
-
-    default:
-        break;
-    }
-
-    InvalidateRect(hwnd_, nullptr, FALSE);
-}
-
-void D2DSettingsWindow::OnMouseUp(int x, int y) {
-    if (captureCtrl_) {
-        captureCtrl_->pressed = false;
-        captureCtrl_ = nullptr;
-    }
-    ReleaseCapture();
-    InvalidateRect(hwnd_, nullptr, FALSE);
-}
-
-void D2DSettingsWindow::OnMouseMove(int x, int y) {
-    // 颜色选择器弹窗内拖动
-    if (colorPicker_.IsActive() && (GetKeyState(VK_LBUTTON) & 0x8000)) {
-        colorPicker_.HandleMouseMove(x, y, true);
-        InvalidateRect(hwnd_, nullptr, FALSE);
-        return;
-    }
-
-    // 标题栏按钮悬停检测
-    bool newHoverClose = PtInRect(&closeBtnRect_, {x, y});
-    bool newHoverMax   = PtInRect(&maxBtnRect_, {x, y});
-    bool newHoverMin   = PtInRect(&minBtnRect_, {x, y});
-    if (newHoverClose != hoverClose_ || newHoverMax != hoverMax_ || newHoverMin != hoverMin_) {
-        hoverClose_ = newHoverClose;
-        hoverMax_   = newHoverMax;
-        hoverMin_   = newHoverMin;
-        InvalidateRect(hwnd_, nullptr, FALSE);
-        return; // 标题栏按钮悬停变化时优先处理
-    }
-
-    Control* hit = HitTest(x, y);
-
-    // 滑块拖动
-    if (captureCtrl_ && captureCtrl_->type == CtrlType::SliderRow) {
-        float relX = static_cast<float>(x) -
-                     (static_cast<float>(captureCtrl_->rect.right) - 180.f);
-        float ratio = relX / sliderWidth_;
-        ratio = std::clamp(ratio, 0.f, 1.f);
-        captureCtrl_->sliderValue = captureCtrl_->sliderMin +
-                                   ratio * (captureCtrl_->sliderMax - captureCtrl_->sliderMin);
-        InvalidateRect(hwnd_, nullptr, FALSE);
-        return;
-    }
-
-    if (hit != hoverCtrl_) {
-        hoverCtrl_ = hit;
-        InvalidateRect(hwnd_, nullptr, FALSE);
-    }
-}
 
 void D2DSettingsWindow::OnMouseWheel(int delta) {
+    // 内容区可见高度（DIP 坐标，扣除标题栏和导航栏）
     const int clientH = [this]() {
         RECT rc; GetClientRect(hwnd_, &rc);
         return static_cast<int>(rc.bottom / dpiScale_);  // DIP 坐标
     }();
-    int maxScroll = std::max(0, totalContentHeight_ - clientH);
-    scrollOffset_ -= delta / WHEEL_DELTA * 48;
-    scrollOffset_ = std::clamp(scrollOffset_, 0, maxScroll);
-    InvalidateRect(hwnd_, nullptr, FALSE);
-}
+    const int visibleH = clientH - kTitleBarHeight;
+    int maxScroll = std::max(0, v2ContentHeight_ - visibleH);
+    if (maxScroll <= 0) return;  // 内容未溢出，无需滚动
 
-void D2DSettingsWindow::OnChar(wchar_t ch) {
-    // 找到正在编辑的控件
-    for (auto& c : controls_) {
-        if (c.editing) {
-            if (ch == VK_BACK) {
-                if (c.caretPos > 0) {
-                    c.textValue.erase(c.caretPos - 1, 1);
-                    --c.caretPos;
-                }
-            } else if (ch >= 32 && static_cast<int>(c.textValue.size()) < c.textMaxLen) {
-                char mb[4] = {};
-                int n = WideCharToMultiByte(CP_UTF8, 0, &ch, 1, mb, 4, nullptr, nullptr);
-                if (n > 0) {
-                    c.textValue.insert(c.caretPos, mb, n);
-                    ++c.caretPos;
-                }
-            }
-            c.showCaret = true;
-            c.caretBlinkTime = 0;
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            break;
-        }
+    int prevOffset = v2ScrollOffset_;
+    v2ScrollOffset_ -= delta / WHEEL_DELTA * 48;
+    v2ScrollOffset_ = std::clamp(v2ScrollOffset_, 0, maxScroll);
+    if (v2ScrollOffset_ != prevOffset) {
+        ArrangeUI();
+        InvalidateRect(hwnd_, nullptr, FALSE);
     }
-}
-
-void D2DSettingsWindow::OnKeyDown(UINT key) {
-    for (auto& c : controls_) {
-        if (c.editing) {
-            switch (key) {
-            case VK_LEFT:
-                if (c.caretPos > 0) --c.caretPos;
-                break;
-            case VK_RIGHT:
-                if (c.caretPos < static_cast<int>(c.textValue.size())) ++c.caretPos;
-                break;
-            case VK_HOME: c.caretPos = 0; break;
-            case VK_END:  c.caretPos = static_cast<int>(c.textValue.size()); break;
-            case VK_RETURN:
-                c.editing = false;
-                ReleaseCapture();
-                break;
-            case VK_ESCAPE:
-                c.editing = false;
-                ReleaseCapture();
-                break;
-            default:
-                return;
-            }
-            c.showCaret = true;
-            c.caretBlinkTime = 0;
-            InvalidateRect(hwnd_, nullptr, FALSE);
-            break;
-        }
-    }
-}
-
-void D2DSettingsWindow::OnLoseFocus() {
-    for (auto& c : controls_) c.editing = false;
-    ReleaseCapture();
-    InvalidateRect(hwnd_, nullptr, FALSE);
 }
 
 // ═══════════════════════════════
-// 应用配置 / 取消
+// 实时应用配置
 // ═══════════════════════════════
 
-void D2DSettingsWindow::ApplyAndSave() {
-    // 从控件收集值到 editedConfig_
-    for (const auto& c : controls_) {
-        auto& ap = editedConfig_.MutableAppearance();
-        auto& adv = editedConfig_.MutableAdvanced();
-
-        if (c.id == "displayMode") {
-            ap.displayMode = (c.dropdownSelected == 1) ? "card" : "karaoke";
-        } else if (c.id == "fontSize") {
-            ap.fontSize = static_cast<int>(c.sliderValue);
-        } else if (c.id == "fontFamily") {
-            ap.fontFamily = c.textValue;
-        } else if (c.id == "normalColor") {
-            ap.normalColor = ColorFToHex(c.colorValue);
-        } else if (c.id == "highlightColor") {
-            ap.highlightColor = ColorFToHex(c.colorValue);
-        } else if (c.id == "opacity") {
-            ap.normalOpacity = c.sliderValue / 100.f;
-        } else if (c.id == "karaoke") {
-            ap.enableKaraoke = c.toggleValue;
-        } else if (c.id == "translation") {
-            ap.enableTranslation = c.toggleValue;
-        } else if (c.id == "marquee") {
-            ap.enableMarquee = c.toggleValue;
-        } else if (c.id == "marqueeMode") {
-            ap.marqueeMode = (c.dropdownSelected == 1) ? "loop" :
-                             (c.dropdownSelected == 2) ? "off" : "bounce";
-        } else if (c.id == "marqueeDelay") {
-            ap.marqueeDelayMs = static_cast<int>(c.sliderValue);
-        } else if (c.id == "marqueePause") {
-            ap.marqueePauseMs = static_cast<int>(c.sliderValue);
-        } else if (c.id == "marqueeSpeed") {
-            ap.marqueeSpeedPxPerSec = c.sliderValue;
-        } else if (c.id == "cardFontSizeCurrent") {
-            ap.cardFontSizeCurrent = static_cast<int>(c.sliderValue);
-        } else if (c.id == "cardFontSizeNext") {
-            ap.cardFontSizeNext = static_cast<int>(c.sliderValue);
-        } else if (c.id == "cardFontFamily") {
-            ap.cardFontFamily = c.textValue;
-        } else if (c.id == "cardCurrentColor") {
-            ap.cardCurrentColor = ColorFToHex(c.colorValue);
-        } else if (c.id == "cardNextColor") {
-            ap.cardNextColor = ColorFToHex(c.colorValue);
-        } else if (c.id == "cardBackgroundMode") {
-            ap.cardBackgroundMode = (c.dropdownSelected == 1) ? "transparent" : "frosted";
-        } else if (c.id == "cardDynamicWidth") {
-            ap.cardDynamicWidth = c.toggleValue;
-        } else if (c.id == "wsPort") {
-            adv.websocketPort = atoi(c.textValue.c_str());
-        } else if (c.id == "refreshRate") {
-            adv.refreshRateHz = static_cast<int>(c.sliderValue);
-        } else if (c.id == "debugLog") {
-            adv.debugLog = c.toggleValue;
-        } else if (c.id == "autoStart") {
-            editedConfig_.SetAutoStart(c.toggleValue);
-        }
+void D2DSettingsWindow::ApplyChanges() {
+    // 从页面控件收集值到 editedConfig_
+    for (auto& page : pages_) {
+        page->CollectChanges(editedConfig_);
     }
-
-    // 回调通知主程序
+    // 实时回调通知主程序
     if (onConfigChanged_) onConfigChanged_(editedConfig_);
-
-    Log("[D2D-SETTINGS] Config applied and saved\n");
-    Close();
 }
 
-void D2DSettingsWindow::Cancel() {
-    Log("[D2D-SETTINGS] Settings cancelled\n");
-    Close();
+void D2DSettingsWindow::CollectAllChanges(Config& cfg) {
+    for (auto& page : pages_) {
+        page->CollectChanges(cfg);
+    }
+}
+
+void D2DSettingsWindow::UpdateActiveColorRow(const D2D1_COLOR_F& color, const std::string& hex) {
+    if (activeColorRow_) {
+        activeColorRow_->colorValue = color;
+        activeColorRow_->textValue = hex;
+        activeColorRow_ = nullptr;
+    }
+}
+
+// ═══════════════════════════════
+// 导出功能
+// ═══════════════════════════════
+
+void D2DSettingsWindow::ExportLogFile() {
+    if (onExportAction_) onExportAction_("exportLog");
+}
+
+void D2DSettingsWindow::ExportDiagnosticInfo() {
+    if (onExportAction_) onExportAction_("exportDiagnostic");
 }
 
 // ═══════════════════════════════
@@ -1521,7 +594,7 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
 
     case WM_PAINT:
-        if (self) self->DrawAll();
+        if (self) self->DrawV2();
         // D2D 自绘窗口：ValidateRect 直接标记已绘制，避免 BeginPaint 的 GDI 背景画刷覆盖 D2D 内容
         ValidateRect(hwnd, nullptr);
         return 0;
@@ -1536,41 +609,37 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             int lx = static_cast<int>(x / self->dpiScale_);
             int ly = static_cast<int>(y / self->dpiScale_);
 
+            // 颜色选择器优先处理（弹窗在最上层）
+            if (self->colorPicker_.IsActive()) {
+                D2D1_COLOR_F newColor; std::string newHex;
+                auto result = self->colorPicker_.HandleMouseDown(lx, ly, &newColor, &newHex);
+                if (result == ColorPickerPopup::ActionResult::Confirmed) {
+                    // 将选中颜色写回当前 ColorRow 控件
+                    self->UpdateActiveColorRow(newColor, newHex);
+                    self->colorPicker_.Deactivate(hwnd);
+                    self->ApplyChanges();
+                } else if (result == ColorPickerPopup::ActionResult::Cancelled) {
+                    self->colorPicker_.Deactivate(hwnd);
+                }
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+
             // 标题栏关闭按钮（使用逻辑坐标判定）
             if (PtInRect(&self->closeBtnRect_, {lx, ly})) {
-                ::PostMessageW(hwnd, D2DSettingsWindow::kMsgCancel, 0, 0);
+                ::PostMessageW(hwnd, D2DSettingsWindow::kMsgClose, 0, 0);
                 return 0;
             }
             // 标题栏最大化/恢复按钮
             if (PtInRect(&self->maxBtnRect_, {lx, ly})) {
                 if (self->isMaximized_) {
-                    // 恢复
-                    ::SetWindowPos(hwnd, nullptr,
-                                   self->restoreRect_.left, self->restoreRect_.top,
-                                   self->restoreRect_.right - self->restoreRect_.left,
-                                   self->restoreRect_.bottom - self->restoreRect_.top,
-                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    ShowWindow(hwnd, SW_RESTORE);
                     self->isMaximized_ = false;
                 } else {
-                    // 最大化：先保存当前位置
                     ::GetWindowRect(hwnd, &self->restoreRect_);
-                    MONITORINFO mi{}; mi.cbSize = sizeof(mi);
-                    ::GetMonitorInfo(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
-                    ::SetWindowPos(hwnd, nullptr,
-                                   mi.rcWork.left, mi.rcWork.top,
-                                   mi.rcWork.right - mi.rcWork.left,
-                                   mi.rcWork.bottom - mi.rcWork.top,
-                                   SWP_NOZORDER | SWP_FRAMECHANGED);
+                    ShowWindow(hwnd, SW_MAXIMIZE);
                     self->isMaximized_ = true;
                 }
-                // 调整渲染目标大小（无需完全重建）
-                RECT rc; ::GetClientRect(hwnd, &rc);
-                if (self->renderTarget_) {
-                    self->renderTarget_->Resize(
-                        D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
-                }
-                self->LayoutControls(self->contentWidth_);
-                ::InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
             // 标题栏最小化按钮（使用逻辑坐标判定）
@@ -1578,78 +647,35 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
                 ShowWindow(hwnd, SW_MINIMIZE);
                 return 0;
             }
-            // 标题栏拖动区域（使用逻辑坐标判定）
-            if (PtInRect(&self->titleBarRect_, {lx, ly})) {
-                ::SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
-                               MAKELPARAM(x, y));
-                return 0;
-            }
 
-            Control* hit = self->HitTest(lx, ly);
-            if (hit || self->colorPicker_.IsActive()) {
-                self->OnMouseDown(lx, ly); // 点击了控件或颜色选择器弹窗激活时，正常处理
-            } else {
-                // 点击空白区域，启动系统拖动
-                ::SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION,
-                               MAKELPARAM(x, y));
-            }
+            self->OnMouseDownV2(lx, ly);
         }
         return 0;
     }
     case WM_LBUTTONUP: {
         if (self) {
             int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-            // DPI 转换
-            self->OnMouseUp(static_cast<int>(x / self->dpiScale_),
-                            static_cast<int>(y / self->dpiScale_));
+            int lx = static_cast<int>(x / self->dpiScale_);
+            int ly = static_cast<int>(y / self->dpiScale_);
+            self->OnMouseUpV2(lx, ly);
         }
         return 0;
-    }
-    case WM_LBUTTONDBLCLK: {
-        // 双击标题栏：最大化/恢复
-        if (self) {
-            int lx = static_cast<int>(GET_X_LPARAM(lParam) / self->dpiScale_);
-            int ly = static_cast<int>(GET_Y_LPARAM(lParam) / self->dpiScale_);
-            if (PtInRect(&self->titleBarRect_, {lx, ly}) &&
-                !PtInRect(&self->closeBtnRect_, {lx, ly}) &&
-                !PtInRect(&self->maxBtnRect_, {lx, ly}) &&
-                !PtInRect(&self->minBtnRect_, {lx, ly})) {
-                if (self->isMaximized_) {
-                    ::SetWindowPos(hwnd, nullptr,
-                                   self->restoreRect_.left, self->restoreRect_.top,
-                                   self->restoreRect_.right - self->restoreRect_.left,
-                                   self->restoreRect_.bottom - self->restoreRect_.top,
-                                   SWP_NOZORDER | SWP_FRAMECHANGED);
-                    self->isMaximized_ = false;
-                } else {
-                    ::GetWindowRect(hwnd, &self->restoreRect_);
-                    MONITORINFO mi2{}; mi2.cbSize = sizeof(mi2);
-                    ::GetMonitorInfo(::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi2);
-                    ::SetWindowPos(hwnd, nullptr,
-                                   mi2.rcWork.left, mi2.rcWork.top,
-                                   mi2.rcWork.right - mi2.rcWork.left,
-                                   mi2.rcWork.bottom - mi2.rcWork.top,
-                                   SWP_NOZORDER | SWP_FRAMECHANGED);
-                    self->isMaximized_ = true;
-                }
-                RECT rc; ::GetClientRect(hwnd, &rc);
-                if (self->renderTarget_) {
-                    self->renderTarget_->Resize(
-                        D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
-                }
-                self->LayoutControls(self->contentWidth_);
-                ::InvalidateRect(hwnd, nullptr, FALSE);
-                return 0;
-            }
-        }
-        break;
     }
     case WM_MOUSEMOVE: {
         if (self) {
             int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-            // DPI 转换
-            self->OnMouseMove(static_cast<int>(x / self->dpiScale_),
-                              static_cast<int>(y / self->dpiScale_));
+            int lx = static_cast<int>(x / self->dpiScale_);
+            int ly = static_cast<int>(y / self->dpiScale_);
+
+            // 颜色选择器拖动
+            if (self->colorPicker_.IsActive()) {
+                bool lb = (wParam & MK_LBUTTON) != 0;
+                self->colorPicker_.HandleMouseMove(lx, ly, lb);
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                // 不继续分发到页面控件
+            } else {
+                self->OnMouseMoveV2(lx, ly);
+            }
         }
         return 0;
     }
@@ -1657,15 +683,72 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         if (self) self->OnMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
         return 0;
     }
-    case WM_CHAR:
-        if (self) self->OnChar(static_cast<wchar_t>(wParam));
+
+    case WM_NCHITTEST: {
+        // 无边框窗口的边缘拖拽调整大小
+        POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        ScreenToClient(hwnd, &pt);
+        RECT rc; GetClientRect(hwnd, &rc);
+        const int border = 6;  // 边缘检测宽度（物理像素）
+
+        // 转换为 DPI 缩放后的逻辑坐标
+        if (self) {
+            int lx = static_cast<int>(pt.x / self->dpiScale_);
+            int ly = static_cast<int>(pt.y / self->dpiScale_);
+
+            // 标题栏区域 → 可拖动
+            if (ly < kTitleBarHeight) {
+                // 排除标题栏按钮区域
+                RECT titleBar = self->titleBarRect_;
+                if (PtInRect(&self->closeBtnRect_, {lx, ly}) ||
+                    PtInRect(&self->maxBtnRect_, {lx, ly}) ||
+                    PtInRect(&self->minBtnRect_, {lx, ly})) {
+                    return HTCLIENT;  // 按钮区域由 WM_LBUTTONDOWN 处理
+                }
+                return HTCAPTION;
+            }
+        }
+
+        // 边缘检测
+        bool left   = pt.x < border;
+        bool right  = pt.x > rc.right - border;
+        bool top    = pt.y < border;
+        bool bottom = pt.y > rc.bottom - border;
+
+        if (top && left)     return HTTOPLEFT;
+        if (top && right)    return HTTOPRIGHT;
+        if (bottom && left)  return HTBOTTOMLEFT;
+        if (bottom && right) return HTBOTTOMRIGHT;
+        if (top)             return HTTOP;
+        if (bottom)          return HTBOTTOM;
+        if (left)            return HTLEFT;
+        if (right)           return HTRIGHT;
+
+        return HTCLIENT;
+    }
+
+    case WM_GETMINMAXINFO: {
+        // 设置窗口最小尺寸
+        auto* mmi = reinterpret_cast<MINMAXINFO*>(lParam);
+        if (self) {
+            mmi->ptMinTrackSize.x = ::MulDiv(480, self->dpi_, 96);
+            mmi->ptMinTrackSize.y = ::MulDiv(360, self->dpi_, 96);
+        }
         return 0;
-    case WM_KEYDOWN:
-        if (self) self->OnKeyDown(static_cast<UINT>(wParam));
+    }
+
+    case WM_SIZE: {
+        if (self && self->renderTarget_) {
+            // 更新渲染目标大小
+            RECT rc; GetClientRect(hwnd, &rc);
+            self->renderTarget_->Resize(
+                D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
+            // 重新布局
+            self->ArrangeUI();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
         return 0;
-    case WM_KILLFOCUS:
-        if (self) self->OnLoseFocus();
-        return 0;
+    }
 
     case WM_DPICHANGED: {
         // 多显示器 DPI 变化时更新缩放因子、窗口大小和布局
@@ -1691,38 +774,15 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             }
 
             // 重新布局控件（DIP 坐标，渲染目标 DPI 已同步更新）
-            self->LayoutControls(self->contentWidth_);
+            self->ArrangeUI();
             InvalidateRect(hwnd, nullptr, FALSE);
         }
         return 0;
     }
 
-    case D2DSettingsWindow::kMsgApplySave:
-        if (self) self->ApplyAndSave();
+    case D2DSettingsWindow::kMsgClose:
+        if (self) self->Close();
         return 0;
-
-    case D2DSettingsWindow::kMsgCancel:
-        if (self) self->Cancel();
-        return 0;
-
-    case WM_TIMER: {
-        // 光标闪烁
-        if (self && wParam == 1) {
-            LARGE_INTEGER freq, now;
-            ::QueryPerformanceFrequency(&freq);
-            ::QueryPerformanceCounter(&now);
-            double nowSec = static_cast<double>(now.QuadPart) / freq.QuadPart;
-            for (auto& c : self->controls_) {
-                if (c.editing && (nowSec - c.caretBlinkTime) > 0.53) {
-                    c.showCaret = !c.showCaret;
-                    c.caretBlinkTime = nowSec;
-                    InvalidateRect(self->hwnd_, nullptr, FALSE);
-                    break;
-                }
-            }
-        }
-        return 0;
-    }
 
     case WM_DESTROY:
         // 设置对话框关闭，不退出主程序（不能调用 PostQuitMessage）
@@ -1732,6 +792,439 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         break;
     }
     return DefWindowProcW(hwnd, msg, wParam, lParam);
+}
+
+// ═══════════════════════════════════════
+// Settings 2.0 页面系统
+// ═══════════════════════════════════════
+
+void D2DSettingsWindow::BuildPages(const Config& cfg) {
+    // 创建导航
+    navView_ = std::make_unique<ui::NavView>();
+    navView_->id = "navView";
+    navView_->BuildItems({"歌词", "外观", "窗口", "行为", "高级", "关于"});
+    navView_->SetOnPageChange([this](int idx) {
+        currentPage_ = idx;
+        v2ScrollOffset_ = 0;
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    });
+
+    // 创建页面
+    pages_.clear();
+    auto lyricsPage = std::make_unique<ui::LyricsPage>();       lyricsPage->BuildContent(cfg);
+    auto appearPage = std::make_unique<ui::AppearancePage>();   appearPage->BuildContent(cfg);
+    auto windowPage = std::make_unique<ui::WindowPage>();       windowPage->BuildContent(cfg);
+    auto behavPage  = std::make_unique<ui::BehaviorPage>();     behavPage->BuildContent(cfg);
+    auto advPage    = std::make_unique<ui::AdvancedPage>();     advPage->BuildContent(cfg);
+    auto aboutPage  = std::make_unique<ui::AboutPage>();        aboutPage->BuildContent(cfg);
+
+    pages_.push_back(std::move(lyricsPage));
+    pages_.push_back(std::move(appearPage));
+    pages_.push_back(std::move(windowPage));
+    pages_.push_back(std::move(behavPage));
+    pages_.push_back(std::move(advPage));
+    pages_.push_back(std::move(aboutPage));
+}
+
+void D2DSettingsWindow::ArrangeUI() {
+    if (!navView_ || pages_.empty()) return;
+
+    RECT rc; GetClientRect(hwnd_, &rc);
+    int clientW = static_cast<int>(rc.right / dpiScale_);
+    int clientH = static_cast<int>(rc.bottom / dpiScale_);
+
+    const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
+    const int contentW = clientW - navW;
+
+    // 导航区域
+    navView_->Arrange(0, kTitleBarHeight, navW, clientH - kTitleBarHeight);
+
+    // 当前页面
+    if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        auto& page = pages_[currentPage_];
+        float pageH = page->MeasureHeight(contentW);
+        page->Arrange(navW, kTitleBarHeight - v2ScrollOffset_, contentW, pageH);
+        v2ContentHeight_ = static_cast<int>(pageH);
+    }
+}
+
+void D2DSettingsWindow::DrawV2() {
+    if (!renderTarget_) return;
+
+    renderTarget_->BeginDraw();
+    renderTarget_->Clear(theme_.bg);
+
+    // 更新画刷颜色
+    bgBrush_->SetColor(theme_.bg);
+    surfaceBrush_->SetColor(theme_.surface);
+    borderBrush_->SetColor(theme_.border);
+    textBrush_->SetColor(theme_.text);
+    textSecondaryBrush_->SetColor(theme_.textSecondary);
+    accentBrush_->SetColor(theme_.accent);
+    accentHoverBrush_->SetColor(theme_.accentHover);
+
+    RECT rc; GetClientRect(hwnd_, &rc);
+    const int clientW = static_cast<int>(rc.right / dpiScale_);
+    const int clientH = static_cast<int>(rc.bottom / dpiScale_);
+
+    // 绘制标题栏
+    DrawTitleBar(renderTarget_.Get());
+
+    // 绘制导航
+    if (navView_) navView_->Draw(renderTarget_.Get());
+
+    // 绘制当前页面（裁剪内容区）
+    if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        renderTarget_->PushAxisAlignedClip(
+            D2D1::RectF(moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP,
+                        static_cast<float>(kTitleBarHeight),
+                        static_cast<float>(clientW),
+                        static_cast<float>(clientH)),
+            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        // 先绘制页面（不含 ComboBox 下拉）
+        pages_[currentPage_]->Draw(renderTarget_.Get());
+        renderTarget_->PopAxisAlignedClip();
+
+        // ComboBox 下拉列表绘制在裁剪区域外（覆盖下方 Card）
+        for (auto& card : pages_[currentPage_]->Children()) {
+            for (auto& child : card->Children()) {
+                auto* combo = dynamic_cast<ui::ComboBox*>(child.get());
+                if (combo && combo->dropped) {
+                    DrawComboBoxDropdown(renderTarget_.Get(), combo);
+                }
+            }
+        }
+    }
+
+    // 绘制颜色选择器弹窗（在最上层，不受裁剪限制）
+    if (colorPicker_.IsActive()) {
+        colorPicker_.Draw(renderTarget_.Get(), isDarkMode_, theme_,
+                          valueFmt_.Get(), hintFmt_.Get(), textSecondaryBrush_.Get(),
+                          v2ScrollOffset_);
+    }
+
+    HRESULT hr = renderTarget_->EndDraw();
+    if (hr == D2DERR_RECREATE_TARGET) {
+        ShutdownD2D();
+        InitD2D();
+        BuildPages(currentConfig_);
+        ArrangeUI();
+    }
+}
+
+ui::UIElement* D2DSettingsWindow::HitTestV2(int x, int y) {
+    // 先检测导航区
+    if (navView_) {
+        ui::UIElement* hit = navView_->HitTest(static_cast<float>(x), static_cast<float>(y));
+        if (hit) return hit;
+    }
+    // 再检测当前页面
+    if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        ui::UIElement* hit = pages_[currentPage_]->HitTest(static_cast<float>(x), static_cast<float>(y));
+        if (hit) return hit;
+    }
+    return nullptr;
+}
+
+void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
+    // ── 优先处理已展开的 ComboBox（下拉弹窗在最上层）──
+    if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        auto& page = pages_[currentPage_];
+        for (auto& card : page->Children()) {
+            for (auto& child : card->Children()) {
+                auto* combo = dynamic_cast<ui::ComboBox*>(child.get());
+                if (combo && combo->dropped) {
+                    // 检查点击是否在下拉区域内
+                    float dropH = static_cast<float>(combo->items.size() * 30);
+                    float boxY = combo->Y() + 4 + 28;
+                    if (x >= combo->X() && x <= combo->X() + combo->Width() &&
+                        y >= boxY && y <= boxY + dropH) {
+                        // 选中下拉项
+                        float relY = static_cast<float>(y) - boxY;
+                        int idx = static_cast<int>(relY / 30);
+                        if (idx >= 0 && idx < static_cast<int>(combo->items.size())) {
+                            combo->selectedIndex = idx;
+                        }
+                        combo->dropped = false;
+                        // displayMode 切换时更新外观页和歌词页
+                        if (combo->id == "displayMode") {
+                            std::string newMode = (combo->selectedIndex == 1) ? "card" : "karaoke";
+                            auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                            if (appearPage) {
+                                appearPage->UpdateVisibility(newMode);
+                            }
+                            auto* lyricsPage = dynamic_cast<ui::LyricsPage*>(pages_[0].get());
+                            if (lyricsPage) {
+                                // 需要临时收集当前配置来获取翻译模式值
+                                moekoe::Config tmpCfg = currentConfig_;
+                                CollectAllChanges(tmpCfg);
+                                lyricsPage->UpdateForDisplayMode(newMode, tmpCfg);
+                            }
+                            ArrangeUI();
+                        }
+                        ApplyChanges();
+                    } else {
+                        // 点击下拉区域外 → 关闭下拉（不选择）
+                        combo->dropped = false;
+                    }
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                    return;  // 下拉展开时拦截所有点击
+                }
+            }
+        }
+    }
+
+    ui::UIElement* hit = HitTestV2(x, y);
+    if (hit) {
+        // Toggle 切换 → 实时应用
+        auto* toggle = dynamic_cast<ui::Toggle*>(hit);
+        if (toggle) {
+            toggle->value = !toggle->value;
+            ApplyChanges();
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+        // NavItem 点击
+        auto* navItem = dynamic_cast<ui::NavItem*>(hit);
+        if (navItem && navItem->OnClick()) {
+            navItem->OnClick()(navItem);
+            ArrangeUI();
+            return;
+        }
+        // Button 点击 → 实时应用
+        auto* btn = dynamic_cast<ui::Button*>(hit);
+        if (btn) {
+            if (btn->id == "resetPos") {
+                // 重置位置
+                if (onConfigChanged_) {
+                    moekoe::Config tmp = currentConfig_;
+                    tmp.MutablePosition().offsetX = 0;
+                    tmp.MutablePosition().offsetY = 0;
+                    onConfigChanged_(tmp);
+                }
+            } else if (btn->id == "resetPort") {
+                // 重置 WebSocket 端口为默认值 6520
+                if (auto* advPage = dynamic_cast<ui::AdvancedPage*>(
+                        pages_[4].get())) {
+                    for (auto& card : advPage->Children()) {
+                        for (auto& child : card->Children()) {
+                            if (auto* lr = dynamic_cast<ui::LabelRow*>(child.get())) {
+                                if (lr->id == "wsPort") {
+                                    lr->textValue = "6520";
+                                }
+                            }
+                        }
+                    }
+                }
+                ApplyChanges();
+                InvalidateRect(hwnd_, nullptr, FALSE);
+            } else if (btn->id == "exportLog") {
+                // 导出日志文件
+                ExportLogFile();
+            } else if (btn->id == "exportDiagnostic") {
+                // 导出诊断信息
+                ExportDiagnosticInfo();
+            } else if (btn->OnClick()) {
+                btn->OnClick()(btn);
+            }
+            return;
+        }
+        // Slider 开始拖动（拖动结束才应用，见 OnMouseUpV2）
+        auto* slider = dynamic_cast<ui::Slider*>(hit);
+        if (slider) {
+            capturedElement_ = slider;
+            slider->dragging = true;
+            float relX = static_cast<float>(x) - slider->X();
+            float ratio = std::clamp(relX / slider->Width(), 0.0f, 1.0f);
+            slider->value = slider->minValue + ratio * (slider->maxValue - slider->minValue);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+        // ComboBox → 打开下拉
+        auto* combo = dynamic_cast<ui::ComboBox*>(hit);
+        if (combo) {
+            combo->dropped = true;
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+        // ColorRow 点击 → 弹出颜色选择器（选择完成后应用）
+        auto* colorRow = dynamic_cast<ui::ColorRow*>(hit);
+        if (colorRow) {
+            activeColorRow_ = colorRow;
+            colorPicker_.Activate(hwnd_, colorRow->colorValue, kTitleBarHeight, dpiScale_);
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+        // TextBlock 点击（如"关于"页面的项目名 → 跳转 GitHub）
+        auto* textBlock = dynamic_cast<ui::TextBlock*>(hit);
+        if (textBlock && textBlock->id == "about_name") {
+            ShellExecuteW(nullptr, L"open",
+                          L"https://github.com/Yngu196/TaskbarLyrics",
+                          nullptr, nullptr, SW_SHOWNORMAL);
+            return;
+        }
+        // LabelRow 点击 → 弹出对话框 → 实时应用
+        auto* labelRow = dynamic_cast<ui::LabelRow*>(hit);
+        if (labelRow && !labelRow->readOnly) {
+            if (labelRow->id == "fontFamily" || labelRow->id == "cardFontFamily") {
+                LOGFONTW lf = {};
+                lf.lfCharSet = DEFAULT_CHARSET;
+                std::wstring wFont = Utf8ToWide(labelRow->textValue);
+                wcsncpy_s(lf.lfFaceName, wFont.c_str(), LF_FACESIZE - 1);
+                CHOOSEFONTW cf = {};
+                cf.lStructSize = sizeof(cf);
+                cf.hwndOwner = hwnd_;
+                cf.lpLogFont = &lf;
+                cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT;
+                if (::ChooseFontW(&cf)) {
+                    labelRow->textValue = WideToLocalUtf8(std::wstring(lf.lfFaceName));
+                    ApplyChanges();
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                }
+            } else if (labelRow->id == "wsPort") {
+                // 弹出输入对话框修改端口
+                std::wstring currentVal = Utf8ToWide(labelRow->textValue);
+                // 使用简单的 InputDialog
+                wchar_t buf[32] = {};
+                wcsncpy_s(buf, currentVal.c_str(), 31);
+                // 创建简单输入对话框
+                if (SimpleInputDialog(hwnd_, L"修改 WebSocket 端口", L"请输入端口号（1-65535）：", buf, 32)) {
+                    int port = _wtoi(buf);
+                    if (port >= 1 && port <= 65535) {
+                        labelRow->textValue = std::to_string(port);
+                        ApplyChanges();
+                        InvalidateRect(hwnd_, nullptr, FALSE);
+                    }
+                }
+            }
+            return;
+        }
+        // ThemePresets 点击 → 实时应用
+        auto* tp = dynamic_cast<ui::ThemePresets*>(hit);
+        if (tp) {
+            const int cols = static_cast<int>(tp->presets.size());
+            const float gap = 8, swatchW = 36;
+            const float totalW = cols * swatchW + (cols - 1) * gap;
+            const float startX = tp->X() + (tp->Width() - totalW) / 2;
+            float relX = static_cast<float>(x) - startX;
+            if (relX >= 0) {
+                int idx = static_cast<int>(relX / (swatchW + gap));
+                if (idx >= 0 && idx < cols) {
+                    tp->selectedIndex = idx;
+                    // 同步更新颜色控件
+                    if (tp->id == "themePresets") {
+                        auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                        if (appearPage) {
+                            for (auto& card : appearPage->Children()) {
+                                for (auto& child : card->Children()) {
+                                    auto* cr = dynamic_cast<ui::ColorRow*>(child.get());
+                                    if (cr) {
+                                        if (cr->id == "normalColor") {
+                                            cr->textValue = ColorFToHex(tp->presets[idx].nlColor);
+                                            cr->colorValue = tp->presets[idx].nlColor;
+                                        } else if (cr->id == "highlightColor") {
+                                            cr->textValue = ColorFToHex(tp->presets[idx].hlColor);
+                                            cr->colorValue = tp->presets[idx].hlColor;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    ApplyChanges();
+                }
+            }
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            return;
+        }
+    }
+}
+
+void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
+    // 标题栏按钮悬停检测
+    hoverClose_  = PtInRect(&closeBtnRect_, {x, y});
+    hoverMax_    = PtInRect(&maxBtnRect_, {x, y});
+    hoverMin_    = PtInRect(&minBtnRect_, {x, y});
+
+    ui::UIElement* hit = HitTestV2(x, y);
+
+    // 清除之前的悬停状态
+    if (hoveredElement_ && hoveredElement_ != hit) {
+        auto* toggle = dynamic_cast<ui::Toggle*>(hoveredElement_);
+        if (toggle) toggle->hovered = false;
+        auto* slider = dynamic_cast<ui::Slider*>(hoveredElement_);
+        if (slider) slider->hovered = false;
+        auto* combo = dynamic_cast<ui::ComboBox*>(hoveredElement_);
+        if (combo) combo->hovered = false;
+        auto* navItem = dynamic_cast<ui::NavItem*>(hoveredElement_);
+        if (navItem) navItem->hovered = false;
+        auto* btn = dynamic_cast<ui::Button*>(hoveredElement_);
+        if (btn) btn->hovered = false;
+        auto* colorRow = dynamic_cast<ui::ColorRow*>(hoveredElement_);
+        if (colorRow) colorRow->hovered = false;
+        auto* labelRow = dynamic_cast<ui::LabelRow*>(hoveredElement_);
+        if (labelRow) labelRow->hovered = false;
+        auto* tp = dynamic_cast<ui::ThemePresets*>(hoveredElement_);
+        if (tp) tp->hoveredIndex = -1;
+    }
+    hoveredElement_ = hit;
+
+    // 设置新悬停状态
+    if (hit) {
+        auto* toggle = dynamic_cast<ui::Toggle*>(hit);
+        if (toggle) toggle->hovered = true;
+        auto* slider = dynamic_cast<ui::Slider*>(hit);
+        if (slider) slider->hovered = true;
+        auto* combo = dynamic_cast<ui::ComboBox*>(hit);
+        if (combo) combo->hovered = true;
+        auto* navItem = dynamic_cast<ui::NavItem*>(hit);
+        if (navItem) navItem->hovered = true;
+        auto* btn = dynamic_cast<ui::Button*>(hit);
+        if (btn) btn->hovered = true;
+        auto* colorRow = dynamic_cast<ui::ColorRow*>(hit);
+        if (colorRow) colorRow->hovered = true;
+        auto* labelRow = dynamic_cast<ui::LabelRow*>(hit);
+        if (labelRow) labelRow->hovered = true;
+        // ThemePresets 悬停检测
+        auto* tp = dynamic_cast<ui::ThemePresets*>(hit);
+        if (tp) {
+            const int cols = static_cast<int>(tp->presets.size());
+            const float gap = 8, swatchW = 36;
+            const float totalW = cols * swatchW + (cols - 1) * gap;
+            const float startX = tp->X() + (tp->Width() - totalW) / 2;
+            float relX = static_cast<float>(x) - startX;
+            if (relX >= 0) {
+                int idx = static_cast<int>(relX / (swatchW + gap));
+                tp->hoveredIndex = (idx >= 0 && idx < cols) ? idx : -1;
+            } else {
+                tp->hoveredIndex = -1;
+            }
+        }
+    }
+
+    // Slider 拖动
+    if (capturedElement_) {
+        auto* slider = dynamic_cast<ui::Slider*>(capturedElement_);
+        if (slider && slider->dragging) {
+            float relX = static_cast<float>(x) - slider->X();
+            float ratio = std::clamp(relX / slider->Width(), 0.0f, 1.0f);
+            slider->value = slider->minValue + ratio * (slider->maxValue - slider->minValue);
+        }
+    }
+
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void D2DSettingsWindow::OnMouseUpV2(int x, int y) {
+    if (capturedElement_) {
+        auto* slider = dynamic_cast<ui::Slider*>(capturedElement_);
+        if (slider) {
+            slider->dragging = false;
+            // 滑块拖动结束 → 实时应用
+            ApplyChanges();
+        }
+        capturedElement_ = nullptr;
+    }
 }
 
 } // namespace moekoe

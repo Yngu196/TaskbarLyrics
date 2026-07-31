@@ -11,6 +11,7 @@
 #include "ui/d2d_settings_window.h"
 #include "util/logger.h"
 #include "util/diagnostic_exporter.h"
+#include "ui/color_utils.h"       // Utf8ToWide
 
 #include <shobjidl.h>
 #include <psapi.h>
@@ -19,6 +20,48 @@
 #include <string>
 
 namespace moekoe {
+
+// 导出日志文件到用户指定路径
+static void ExportLogFileImpl(const AppContext& app) {
+    std::string logPath = GetLogPath();
+    if (logPath.empty()) return;
+
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    bool needUninitialize = SUCCEEDED(hr);
+
+    Microsoft::WRL::ComPtr<IFileSaveDialog> pDialog;
+    hr = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
+                          IID_PPV_ARGS(&pDialog));
+    if (SUCCEEDED(hr)) {
+        pDialog->SetFileName(L"debug.log");
+        pDialog->SetTitle(L"导出日志文件");
+        COMDLG_FILTERSPEC filter[] = {
+            { L"日志文件 (*.log)", L"*.log" },
+            { L"所有文件 (*.*)", L"*.*" },
+        };
+        pDialog->SetFileTypes(ARRAYSIZE(filter), filter);
+        pDialog->SetDefaultExtension(L"log");
+
+        hr = pDialog->Show(app.hwnd);
+        if (SUCCEEDED(hr)) {
+            Microsoft::WRL::ComPtr<IShellItem> pItem;
+            hr = pDialog->GetResult(&pItem);
+            if (SUCCEEDED(hr)) {
+                PWSTR pszPath = nullptr;
+                hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+                if (SUCCEEDED(hr)) {
+                    std::wstring srcPath = Utf8ToWide(logPath);
+                    if (CopyFileW(srcPath.c_str(), pszPath, FALSE)) {
+                        Log("[Export] 日志已导出到: %s", WideToUtf8(pszPath).c_str());
+                    }
+                    CoTaskMemFree(pszPath);
+                }
+            }
+        }
+    }
+
+    if (needUninitialize) CoUninitialize();
+}
 
 using namespace moekoe::constants;
 
@@ -85,6 +128,13 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                     app.tray->SetMenuCheckedAutoStart(cfg.IsAutoStart());
                 }
                 Log("[SETTINGS] D2D config applied and saved\n");
+            });
+            app.d2dSettingsWindow->OnExportAction([&](const std::string& action) {
+                if (action == "exportDiagnostic") {
+                    ExportDiagnosticFile(app, app.hwnd);
+                } else if (action == "exportLog") {
+                    ExportLogFileImpl(app);
+                }
             });
         }
 

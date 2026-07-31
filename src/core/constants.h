@@ -246,6 +246,28 @@ constexpr float SPECTRUM_BAR_GAP = 1.0f;
 constexpr float SPECTRUM_BAR_MIN_HEIGHT = 2.0f;
 
 // ═══════════════════════════════════════
+// Settings 2.0 窗口尺寸（DIP，96 DPI 基准）
+// ═══════════════════════════════════════
+
+/// Settings 2.0 窗口基准宽度（导航 + 内容）
+constexpr int SETTINGS_WIN_WIDTH_BASE_DP = 720;
+
+/// Settings 2.0 左侧导航宽度
+constexpr int SETTINGS_NAV_WIDTH_BASE_DP = 180;
+
+/// Settings 2.0 右侧内容区宽度
+constexpr int SETTINGS_CONTENT_WIDTH_BASE_DP = 540;
+
+/// Settings 2.0 卡片圆角半径
+constexpr float SETTINGS_CARD_CORNER_RADIUS_DP = 12.0f;
+
+/// Settings 2.0 卡片内边距
+constexpr float SETTINGS_CARD_PADDING_DP = 20.0f;
+
+/// Settings 2.0 卡片间距
+constexpr float SETTINGS_CARD_GAP_DP = 12.0f;
+
+// ═══════════════════════════════════════
 // P3: 歌词切换动画 + 进度弹簧
 // ═══════════════════════════════════════
 

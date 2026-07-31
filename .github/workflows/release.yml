@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史来获取上一个 tag
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
@@ -86,10 +88,81 @@ jobs:
         run: |
           python scripts/pack_zip.py moeKoe-taskbar-lyrics moeKoe-taskbar-lyrics.zip
 
+      - name: Extract changelog for this version
+        id: changelog
+        shell: powershell
+        run: |
+          # 从 tag 获取版本号（去掉 v 前缀）
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v',''
+          Write-Host "Extracting changelog for version: $tag"
+
+          $changelogFile = "Docs\版本更新日志.md"
+          if (!(Test-Path $changelogFile)) {
+            Write-Host "WARNING: Changelog file not found"
+            echo "body=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $content = Get-Content $changelogFile -Raw -Encoding UTF8
+          $lines = $content -split "`n"
+
+          # 查找 "## vX.Y.Z 变更" 标题行
+          $headerPattern = "^## $tag 变更"
+          $nextHeaderPattern = "^## v\d"
+
+          $startIdx = -1
+          $endIdx = $lines.Count
+
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i] -match $headerPattern) {
+              $startIdx = $i
+              continue
+            }
+            # 找到起始行后，下一个 ## v 标题就是结束
+            if ($startIdx -ge 0 -and $i -gt $startIdx -and $lines[$i] -match $nextHeaderPattern) {
+              $endIdx = $i
+              break
+            }
+          }
+
+          if ($startIdx -lt 0) {
+            Write-Host "WARNING: No changelog entry found for $tag"
+            echo "body=" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # 提取该版本的内容（去掉标题行本身）
+          $versionNotes = ($lines[($startIdx+1)..($endIdx-1)]) -join "`n"
+          $versionNotes = $versionNotes.TrimEnd()
+
+          # 获取上一个版本的 tag（用于 Full Changelog 链接）
+          $repo = "${{ github.repository }}"
+          $prevTag = git tag --sort=-version:refname | Select-String -Pattern "^v" | Select-Object -First 10 | Where-Object { $_.Line -ne $tag } | Select-Object -First 1
+          $prevTagStr = if ($prevTag) { $prevTag.Line.Trim() } else { "" }
+
+          # 构建 release body：版本更新日志 + Full Changelog 链接
+          $fullChangelogLink = ""
+          if ($prevTagStr) {
+            $fullChangelogLink = "`n`n---`n`n**Full Changelog**: https://github.com/$repo/compare/$prevTagStr...$tag"
+          }
+
+          $body = $versionNotes + $fullChangelogLink
+
+          # 写入多行输出（使用 GITHUB_OUTPUT 分隔符语法）
+          $delimiter = "CHANGELOG_EOF"
+          "body<<$delimiter" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          $delimiter >> $env:GITHUB_OUTPUT
+
+          Write-Host "Changelog extracted successfully"
+          Write-Host "--- Preview ---"
+          Write-Host $body
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: moeKoe-taskbar-lyrics.zip
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
