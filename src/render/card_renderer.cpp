@@ -24,7 +24,7 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
     if (!cardCurrentFormat_ || !cardNextFormat_ || !dwriteFactory_) return 0.0f;
 
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float coverSizePx = static_cast<float>(settings_.cardCoverSize) * dpiScale;
+    const float coverSizePx = static_cast<float>(settings_.coverSize) * dpiScale;
     const float gapPx = static_cast<float>(settings_.cardGap) * dpiScale;
     const float padding = constants::TEXT_PADDING_X;
 
@@ -49,8 +49,9 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
     float maxTextWidthPx = std::max(curWidthPx, nextWidthPx);
     if (maxTextWidthPx <= 0.0f) return 0.0f;
 
-    // 总宽 = 左内边距 + 封面 + 间距 + 文本 + 右内边距
-    float totalPx = padding * 2.0f + coverSizePx + gapPx + maxTextWidthPx;
+    // 总宽 = 左内边距 + [封面 + 间距] + 文本 + 右内边距
+    float coverPart = settings_.enableCover ? (coverSizePx + gapPx) : 0.0f;
+    float totalPx = padding * 2.0f + coverPart + maxTextWidthPx;
 
     // 返回 DIP 单位（调用方使用 DIP）
     return totalPx / dpiScale;
@@ -58,9 +59,11 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
 
 void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float coverSize = static_cast<float>(settings_.cardCoverSize) * dpiScale;
+    const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
     const float paddingX = constants::TEXT_PADDING_X;
+    const bool showCover = settings_.enableCover;
+    const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
 
     // ═════ P1-①+P1-④: 卡片背景（柔焦封面 + 主题色叠加） ═════
     // [原: if (cardBackgroundBrush_)]
@@ -86,12 +89,14 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     }
 
     // ═════ 1. 绘制封面（左侧） ═════
-    wchar_t fallback = FirstUtf8CharAsWide(state.songName);
-    DrawCoverArt(state.coverArtUrl, fallback, paddingX,
-                 (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
+    if (showCover) {
+        wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+        DrawCoverArt(state.coverArtUrl, fallback, paddingX + coverOffsetPx,
+                     (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
+    }
 
     // ═════ 2. 绘制双行歌词（封面右侧，无卡拉OK逐字效果） ═════
-    const float lyricsX = paddingX + coverSize + gap;
+    const float lyricsX = showCover ? (paddingX + coverSize + gap) : paddingX;
     const float lyricsWidth = static_cast<float>(width_) - lyricsX - paddingX;
 
     if (lyricsWidth <= 10.0f) return;
@@ -176,10 +181,12 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
     const float paddingX = constants::TEXT_PADDING_X * 0.5f;  // 窄窗口减小左右边距
     const float w = static_cast<float>(width_);
     const float h = static_cast<float>(height_);
+    const bool showCover = settings_.enableCover;
+    const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
 
     // 封面尺寸：缩小以适应窄窗口
     const float coverSize = std::min(
-        static_cast<float>(settings_.cardCoverSize) * dpiScale * 0.8f,
+        static_cast<float>(settings_.coverSize) * dpiScale * 0.8f,
         w - paddingX * 2.0f);
 
     // ═════ P1-①+P1-④: 绘制卡片背景（柔焦封面 + 主题色叠加） ═════
@@ -205,13 +212,15 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
     }
 
     // ═════ 1. 封面（居中顶部） ═════
-    wchar_t fallback = FirstUtf8CharAsWide(state.songName);
-    const float coverX = (w - coverSize) / 2.0f;
-    const float coverY = paddingX;
-    DrawCoverArt(state.coverArtUrl, fallback, coverX, coverY, coverSize);
+    if (showCover) {
+        wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+        const float coverX = (w - coverSize) / 2.0f + coverOffsetPx;
+        const float coverY = paddingX;
+        DrawCoverArt(state.coverArtUrl, fallback, coverX, coverY, coverSize);
+    }
 
     // ═════ 2. 歌词文本（封面下方，居中对齐） ═════
-    const float lyricsTop = coverY + coverSize + paddingX * 0.5f;
+    const float lyricsTop = showCover ? (paddingX + coverSize + paddingX * 0.5f) : paddingX;
     const float lyricsWidth = w - paddingX * 2.0f;
 
     if (lyricsWidth <= 10.0f) return;
@@ -268,7 +277,10 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
     if (!renderTarget_ || size <= 0.0f) return;
 
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float radius = constants::CARD_COVER_RADIUS_DP * dpiScale;
+    // 圆角半径：coverCornerRadius 百分比 → 实际像素
+    // 0% = 正方形 (0px), 100% = 圆形 (size/2)
+    const float radiusPercent = std::clamp(static_cast<float>(settings_.coverCornerRadius), 0.0f, 100.0f);
+    const float radius = (radiusPercent / 100.0f) * (size / 2.0f);
 
     // ═════ 异步下载封面图到内存（无磁盘 I/O） ═════
     // URL 变更时启动后台线程下载到 std::vector<uint8_t>，通过 atomic swap 交给渲染线程。

@@ -184,6 +184,11 @@ bool Config::Load() {
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
             appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
             appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
+            appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
+            appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
+            appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
+            appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
+            appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
         }
 
         if (j.contains("advanced")) {
@@ -271,6 +276,11 @@ bool Config::Save() const {
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},
         {"marquee_pause_ms",   appearance_.marqueePauseMs},
         {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
+        {"enable_cover",          appearance_.enableCover},
+        {"cover_size",           appearance_.coverSize},
+        {"cover_offset_x",       appearance_.coverOffsetX},
+        {"cover_corner_radius",  appearance_.coverCornerRadius},
+        {"settings_theme",       appearance_.settingsTheme},
     };
 
     j["advanced"] = {

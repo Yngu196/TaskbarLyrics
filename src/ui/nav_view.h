@@ -33,6 +33,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 
 private:

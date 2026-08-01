@@ -103,8 +103,8 @@ constexpr int CARD_HEIGHT_BASE_DP = 42;
 /// 卡片模式最小宽度基础值（96 DPI）
 constexpr int CARD_MIN_WIDTH_BASE_DP = 180;
 
-/// 卡片封面尺寸（96 DPI）
-constexpr int CARD_COVER_SIZE_DP = 34;
+/// 封面默认尺寸（96 DPI）
+constexpr int COVER_SIZE_DP = 34;
 
 /// 卡片封面圆角半径（96 DPI）
 constexpr float CARD_COVER_RADIUS_DP = 6.0f;   /// 封面圆角半径（DIP）

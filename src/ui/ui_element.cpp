@@ -23,4 +23,14 @@ UIElement* UIElement::HitTest(float x, float y) {
     return this;  // 自身被命中
 }
 
+bool UIElement::TickAnimation(float deltaMs) {
+    bool anyActive = false;
+    for (auto& child : children_) {
+        if (child->IsVisible()) {
+            anyActive = child->TickAnimation(deltaMs) || anyActive;
+        }
+    }
+    return anyActive;
+}
+
 } // namespace moekoe::ui

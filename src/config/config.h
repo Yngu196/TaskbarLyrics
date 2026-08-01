@@ -49,9 +49,21 @@ struct AppearanceConfig {
     int         marqueePauseMs{1000};          // 滚动到端点后暂停时间（毫秒）
     float       marqueeSpeedPxPerSec{40.0f};   // 滚动速度（像素/秒）
 
-    // 卡片模式布局参数（供渲染器使用）
-    int         cardCoverSize{34};             // 封面尺寸 (dp, 会按 DPI 缩放)
+    // 封面与布局参数（供渲染器使用）
+    int         coverSize{34};                 // 封面尺寸 (dp, 会按 DPI 缩放)
     int         cardGap{8};                    // 封面与文字间距 (dp)
+
+    // 封面开关（独立于显示模式，两种模式都可选）
+    bool        enableCover{true};             // 是否显示专辑封面
+
+    // 封面左右偏移量（dp, 负值左移/正值右移, 默认 0）
+    int         coverOffsetX{0};
+
+    // 封面圆角百分比（0=正方形, 100=圆形, 默认 17 约 6dp/34dp）
+    int         coverCornerRadius{17};
+
+    // 设置界面主题颜色: "purple"(默认,Linear紫色) | "blue"(经典蓝) | "green"(薄荷绿) | "rose"(玫瑰粉)
+    std::string settingsTheme{"purple"};
 
     // 卡片背景模式: "frosted" (默认,半透明毛玻璃) | "transparent" (纯透明)
     std::string cardBackgroundMode{"frosted"};

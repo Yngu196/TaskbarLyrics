@@ -46,44 +46,62 @@ void SettingsPage::Arrange(float x, float y, float w, float h) {
 }
 
 void SettingsPage::Draw(ID2D1RenderTarget* rt) {
+    Draw(rt, DrawContext{});
+}
+
+void SettingsPage::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标题
-    static Microsoft::WRL::ComPtr<IDWriteFactory> dwFactory;
-    if (!dwFactory) {
-        ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                              reinterpret_cast<IUnknown**>(dwFactory.GetAddressOf()));
-    }
+    // 辅助函数
+    static auto makeBrush = [](ID2D1RenderTarget* rt, const D2D1_COLOR_F& c) {
+        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> b;
+        rt->CreateSolidColorBrush(c, b.GetAddressOf());
+        return b;
+    };
+    static auto getFactory = []() {
+        static Microsoft::WRL::ComPtr<IDWriteFactory> f;
+        if (!f) ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
+                                       reinterpret_cast<IUnknown**>(f.GetAddressOf()));
+        return f;
+    };
 
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> titleFmt, subFmt;
-    dwFactory->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-        DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-        20, L"zh-CN", titleFmt.GetAddressOf());
-    dwFactory->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
-        DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-        13, L"zh-CN", subFmt.GetAddressOf());
+    // 页面标题（Segoe UI Variable 28px SemiBold #E0E0E0）
+    auto titleFmt = [&]() {
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> fmt;
+        getFactory()->CreateTextFormat(L"Segoe UI Variable", nullptr,
+            DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            28, L"zh-Hans", fmt.GetAddressOf());
+        return fmt;
+    }();
 
     if (titleFmt) {
-        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> titleBrush;
-        rt->CreateSolidColorBrush(D2D1::ColorF(0.13f, 0.13f, 0.13f, 1), titleBrush.GetAddressOf());
+        auto titleBrush = makeBrush(rt, ctx.Text());
         std::wstring wtitle = Utf8ToWide(Title());
         rt->DrawTextW(wtitle.c_str(), static_cast<UINT32>(wtitle.size()),
-                      titleFmt.Get(), D2D1::RectF(x_ + 20, y_ + 8, x_ + w_ - 20, y_ + 36),
+                      titleFmt.Get(), D2D1::RectF(x_ + 20, y_ + 8, x_ + w_ - 20, y_ + 40),
                       titleBrush.Get());
     }
 
+    // 副标题（Segoe UI Variable 13px #B0B0B0）
+    auto subFmt = [&]() {
+        Microsoft::WRL::ComPtr<IDWriteTextFormat> fmt;
+        getFactory()->CreateTextFormat(L"Segoe UI Variable", nullptr,
+            DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            13, L"zh-Hans", fmt.GetAddressOf());
+        return fmt;
+    }();
+
     if (subFmt) {
-        Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> subBrush;
-        rt->CreateSolidColorBrush(D2D1::ColorF(0.5f, 0.5f, 0.5f, 1), subBrush.GetAddressOf());
+        auto subBrush = makeBrush(rt, ctx.TextSecondary());
         std::wstring wsub = Utf8ToWide(Subtitle());
         rt->DrawTextW(wsub.c_str(), static_cast<UINT32>(wsub.size()),
-                      subFmt.Get(), D2D1::RectF(x_ + 20, y_ + 36, x_ + w_ - 20, y_ + 56),
+                      subFmt.Get(), D2D1::RectF(x_ + 20, y_ + 40, x_ + w_ - 20, y_ + 58),
                       subBrush.Get());
     }
 
-    // 子元素（Card 等）
+    // 子元素（Card 等），传递 DrawContext
     for (auto& child : children_) {
-        if (child->IsVisible()) child->Draw(rt);
+        if (child->IsVisible()) child->Draw(rt, ctx);
     }
 }
 
@@ -114,14 +132,14 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
         auto dm = std::make_unique<ComboBox>();
         dm->id = "displayMode";
         dm->label = "显示模式";
-        dm->items = {"卡拉OK（默认）", "卡片样式"};
+        dm->items = {"单行歌词", "双行歌词"};
         dm->selectedIndex = isCard ? 1 : 0;
         c1->AddChild(std::move(dm));
     }
     {
         auto t = std::make_unique<Toggle>();
         t->id = "karaoke";
-        t->label = "卡拉OK 效果";
+        t->label = "逐字高亮";
         t->value = a.enableKaraoke;
         t->SetVisible(!isCard);
         c1->AddChild(std::move(t));
@@ -209,7 +227,63 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     const auto& a = cfg.Appearance();
     bool isCard = (a.displayMode == "card");
 
-    // ── 卡拉OK 区域 ──
+    // ── 通用选项（两种模式都可见）──
+
+    // Card: 封面
+    auto c0 = MakeCard("封面");
+    c0->id = "coverCard";
+    {
+        auto t = std::make_unique<Toggle>();
+        t->id = "enableCover";
+        t->label = "显示专辑封面";
+        t->value = a.enableCover;
+        c0->AddChild(std::move(t));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "coverSize";
+        s->label = "封面尺寸";
+        s->minValue = 16; s->maxValue = 80;
+        s->value = static_cast<float>(a.coverSize);
+        s->suffix = " dp";
+        c0->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "coverOffsetX";
+        s->label = "左右偏移";
+        s->minValue = -50; s->maxValue = 50;
+        s->value = static_cast<float>(a.coverOffsetX);
+        s->suffix = " dp";
+        c0->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "coverCornerRadius";
+        s->label = "封面圆角";
+        s->minValue = 0; s->maxValue = 100;
+        s->value = static_cast<float>(a.coverCornerRadius);
+        s->suffix = "%";
+        c0->AddChild(std::move(s));
+    }
+    AddChild(std::move(c0));
+
+    // Card: 主题颜色
+    auto cTheme = MakeCard("主题颜色");
+    cTheme->id = "themeColorCard";
+    {
+        auto dm = std::make_unique<ComboBox>();
+        dm->id = "settingsTheme";
+        dm->label = "设置界面主题";
+        dm->items = {"紫色（默认）", "经典蓝", "薄荷绿", "玫瑰粉"};
+        dm->selectedIndex = (a.settingsTheme == "blue")  ? 1 :
+                            (a.settingsTheme == "green") ? 2 :
+                            (a.settingsTheme == "rose")  ? 3 : 0;
+        cTheme->AddChild(std::move(dm));
+    }
+    AddChild(std::move(cTheme));
+
+    // ── 单行歌词区域 ──
 
     // Card: 字体
     auto c1 = MakeCard("字体");
@@ -339,7 +413,7 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c4->SetVisible(!isCard);
     AddChild(std::move(c4));
 
-    // ── 卡片模式区域 ──
+    // ── 双行歌词区域 ──
 
     // Card: 卡片字体
     auto c5 = MakeCard("卡片字体");
@@ -426,6 +500,7 @@ void AppearancePage::UpdateVisibility(const std::string& displayMode) {
         } else if (cid == "cardFont" || cid == "cardColor" || cid == "cardBg") {
             child->SetVisible(isCard);
         }
+        // coverCard 和 themeColorCard 始终可见，无需切换
     }
 }
 
@@ -441,17 +516,25 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                 else if (s->id == "marqueeSpeed")  ap.marqueeSpeedPxPerSec = s->value;
                 else if (s->id == "cardFontSizeCurrent") ap.cardFontSizeCurrent = static_cast<int>(s->value);
                 else if (s->id == "cardFontSizeNext")    ap.cardFontSizeNext = static_cast<int>(s->value);
+                else if (s->id == "coverSize")            ap.coverSize = static_cast<int>(s->value);
+                else if (s->id == "coverOffsetX")       ap.coverOffsetX = static_cast<int>(s->value);
+                else if (s->id == "coverCornerRadius")  ap.coverCornerRadius = static_cast<int>(s->value);
             } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                 if (t->id == "karaoke")            ap.enableKaraoke = t->value;
                 else if (t->id == "translation")   ap.enableTranslation = t->value;
                 else if (t->id == "marquee")       ap.enableMarquee = t->value;
                 else if (t->id == "cardDynamicWidth") ap.cardDynamicWidth = t->value;
+                else if (t->id == "enableCover")   ap.enableCover = t->value;
             } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
                 if (cb->id == "marqueeMode")
                     ap.marqueeMode = (cb->selectedIndex == 1) ? "loop" :
                                      (cb->selectedIndex == 2) ? "off" : "bounce";
                 else if (cb->id == "cardBackgroundMode")
                     ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
+                else if (cb->id == "settingsTheme")
+                    ap.settingsTheme = (cb->selectedIndex == 1) ? "blue" :
+                                       (cb->selectedIndex == 2) ? "green" :
+                                       (cb->selectedIndex == 3) ? "rose" : "purple";
             } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
                 if (cr->id == "normalColor")       ap.normalColor = cr->textValue;
                 else if (cr->id == "highlightColor") ap.highlightColor = cr->textValue;

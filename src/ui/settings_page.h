@@ -33,6 +33,7 @@ public:
     float MeasureHeight(float availWidth) override;
     void Arrange(float x, float y, float w, float h) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
 };
 
 // ── 6 个页面 ──

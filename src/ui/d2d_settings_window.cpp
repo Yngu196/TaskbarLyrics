@@ -131,26 +131,156 @@ void D2DSettingsWindow::DetectDarkMode() {
     BOOL dark = FALSE;
     HRESULT hr = ::DwmGetWindowAttribute(
         ::GetDesktopWindow(), DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof(dark));
-    isDarkMode_ = SUCCEEDED(hr) && dark;
+    // Fluent Design 暗色主题：始终启用暗色模式
+    isDarkMode_ = true;
 }
 
 void D2DSettingsWindow::UpdateThemeColors() {
+    // 读取当前 settingsTheme（从 editedConfig_ 获取最新值）
+    std::string themeName = editedConfig_.Appearance().settingsTheme;
+
     if (isDarkMode_) {
-        theme_.bg            = HexToColorF("#1a1a2e");
-        theme_.surface       = HexToColorF("#252542");
-        theme_.border        = HexToColorF("#3a3a5c");
-        theme_.text          = HexToColorF("#e8e8f0");
-        theme_.textSecondary = HexToColorF("#9ca3af");
-        theme_.accent        = HexToColorF("#4CC2FF");
-        theme_.accentHover   = HexToColorF("#6bcfff");
+        // 每个主题定义完整配色：背景、表面、边框、文本、强调色
+        if (themeName == "blue") {
+            theme_.bg            = HexToColorF("#0D1B2A");  // 深海军蓝
+            theme_.surface       = HexToColorF("#1B2838");  // 海军表面
+            theme_.border        = HexToColorF("#2D3F58");  // 蓝灰边框
+            theme_.text          = HexToColorF("#E8EEF4");  // 冷白文本
+            theme_.textSecondary = HexToColorF("#8EA4BC");  // 蓝灰辅助
+            theme_.accent        = HexToColorF("#0078D4");  // 经典蓝
+            theme_.accentHover   = HexToColorF("#2390E5");
+        } else if (themeName == "green") {
+            theme_.bg            = HexToColorF("#0D1F17");  // 深森绿
+            theme_.surface       = HexToColorF("#1A2E24");  // 绿调表面
+            theme_.border        = HexToColorF("#2D4A3A");  // 绿灰边框
+            theme_.text          = HexToColorF("#E4F0EA");  // 绿白文本
+            theme_.textSecondary = HexToColorF("#8CB8A0");  // 绿灰辅助
+            theme_.accent        = HexToColorF("#31C27C");  // 薄荷绿
+            theme_.accentHover   = HexToColorF("#4AD896");
+        } else if (themeName == "rose") {
+            theme_.bg            = HexToColorF("#1F0D17");  // 深玫红
+            theme_.surface       = HexToColorF("#301A28");  // 玫红表面
+            theme_.border        = HexToColorF("#4A2A3C");  // 玫红边框
+            theme_.text          = HexToColorF("#F0E4EA");  // 暖白文本
+            theme_.textSecondary = HexToColorF("#B88CA0");  // 玫灰辅助
+            theme_.accent        = HexToColorF("#E84393");  // 玫瑰粉
+            theme_.accentHover   = HexToColorF("#F06EAE");
+        } else {
+            theme_.bg            = HexToColorF("#1A1A2E");  // 深蓝紫
+            theme_.surface       = HexToColorF("#252540");  // 微蓝紫表面
+            theme_.border        = HexToColorF("#3A3A5C");  // 蓝调边框
+            theme_.text          = HexToColorF("#EEEEF0");  // 近白文本
+            theme_.textSecondary = HexToColorF("#A0A0B8");  // 蓝灰辅助
+            theme_.accent        = HexToColorF("#6C5CE7");  // 紫色（默认）
+            theme_.accentHover   = HexToColorF("#7F70F0");
+        }
     } else {
-        theme_.bg            = HexToColorF("#ffffff");
-        theme_.surface       = HexToColorF("#f5f7fa");
-        theme_.border        = HexToColorF("#e0e4e8");
-        theme_.text          = HexToColorF("#1a1a2e");
-        theme_.textSecondary = HexToColorF("#6b7280");
-        theme_.accent        = HexToColorF("#4CC2FF");
-        theme_.accentHover   = HexToColorF("#3ab8f5");
+        if (themeName == "blue") {
+            theme_.bg            = HexToColorF("#f0f4f8");
+            theme_.surface       = HexToColorF("#e2e8f0");
+            theme_.border        = HexToColorF("#c8d4e0");
+            theme_.text          = HexToColorF("#0D1B2A");
+            theme_.textSecondary = HexToColorF("#5A7088");
+            theme_.accent        = HexToColorF("#0078D4");
+            theme_.accentHover   = HexToColorF("#2390E5");
+        } else if (themeName == "green") {
+            theme_.bg            = HexToColorF("#f0f8f4");
+            theme_.surface       = HexToColorF("#e0f0e8");
+            theme_.border        = HexToColorF("#c0d8cc");
+            theme_.text          = HexToColorF("#0D1F17");
+            theme_.textSecondary = HexToColorF("#4A7060");
+            theme_.accent        = HexToColorF("#31C27C");
+            theme_.accentHover   = HexToColorF("#4AD896");
+        } else if (themeName == "rose") {
+            theme_.bg            = HexToColorF("#f8f0f4");
+            theme_.surface       = HexToColorF("#f0e0e8");
+            theme_.border        = HexToColorF("#d8c0cc");
+            theme_.text          = HexToColorF("#1F0D17");
+            theme_.textSecondary = HexToColorF("#805060");
+            theme_.accent        = HexToColorF("#E84393");
+            theme_.accentHover   = HexToColorF("#F06EAE");
+        } else {
+            theme_.bg            = HexToColorF("#ffffff");
+            theme_.surface       = HexToColorF("#f5f7fa");
+            theme_.border        = HexToColorF("#e0e4e8");
+            theme_.text          = HexToColorF("#1a1a2e");
+            theme_.textSecondary = HexToColorF("#6b7280");
+            theme_.accent        = HexToColorF("#6C5CE7");
+            theme_.accentHover   = HexToColorF("#7F70F0");
+        }
+    }
+    UpdateDrawContext();
+}
+
+void D2DSettingsWindow::UpdateDrawContext() {
+    drawCtx_.isDarkMode = isDarkMode_;
+    if (isDarkMode_) {
+        drawCtx_.bg            = theme_.bg;
+        drawCtx_.surface       = theme_.surface;
+        // 悬停表面：surface 偏亮 20%
+        drawCtx_.surfaceHover  = D2D1::ColorF(
+            std::min(theme_.surface.r * 1.2f, 1.0f),
+            std::min(theme_.surface.g * 1.2f, 1.0f),
+            std::min(theme_.surface.b * 1.2f, 1.0f), 1.0f);
+        drawCtx_.border        = theme_.border;
+        drawCtx_.text          = theme_.text;
+        drawCtx_.textSecondary = theme_.textSecondary;
+        drawCtx_.accent        = theme_.accent;
+        drawCtx_.accentHover   = theme_.accentHover;
+
+        // accentLight 是 accent 的半透明变体
+        drawCtx_.accentLight   = D2D1::ColorF(theme_.accent.r, theme_.accent.g, theme_.accent.b, 0.5f);
+        drawCtx_.danger        = HexToColorF("#FF6B6B");
+    } else {
+        drawCtx_.lightBg            = theme_.bg;
+        drawCtx_.lightSurface       = theme_.surface;
+        drawCtx_.lightBorder        = theme_.border;
+        drawCtx_.lightText          = theme_.text;
+        drawCtx_.lightTextSecondary = theme_.textSecondary;
+    }
+}
+
+void D2DSettingsWindow::CreateBgGradientBrush() {
+    if (!renderTarget_ || !d2dFactory_) return;
+
+    RECT rc; GetClientRect(hwnd_, &rc);
+    float H = static_cast<float>(rc.bottom) / dpiScale_;
+
+    // 垂直渐变：基于当前主题的 bg 和 surface 颜色
+    // 中间色 = bg 和 surface 的混合
+    D2D1_COLOR_F topColor = theme_.bg;
+    D2D1_COLOR_F midColor = D2D1::ColorF(
+        (theme_.bg.r + theme_.surface.r) / 2,
+        (theme_.bg.g + theme_.surface.g) / 2,
+        (theme_.bg.b + theme_.surface.b) / 2, 1.0f);
+    D2D1_COLOR_F bottomColor = theme_.surface;
+
+    D2D1_GRADIENT_STOP stops[] = {
+        { 0.0f, topColor },
+        { 0.5f, midColor },
+        { 1.0f, bottomColor },
+    };
+    ComPtr<ID2D1GradientStopCollection> collection;
+    HRESULT hr = renderTarget_->CreateGradientStopCollection(
+        stops, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, &collection);
+    if (FAILED(hr)) return;
+
+    renderTarget_->CreateLinearGradientBrush(
+        D2D1::LinearGradientBrushProperties(
+            D2D1::Point2F(0, 0), D2D1::Point2F(0, H)),
+        collection.Get(), &bgGradientBrush_);
+}
+
+void D2DSettingsWindow::StartAnimationTimer() {
+    if (hwnd_) {
+        // 16ms ≈ 60fps，用于驱动控件动画
+        ::SetTimer(hwnd_, kAnimTimerId, 16, nullptr);
+    }
+}
+
+void D2DSettingsWindow::StopAnimationTimer() {
+    if (hwnd_) {
+        ::KillTimer(hwnd_, kAnimTimerId);
     }
 }
 
@@ -210,6 +340,16 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     DWM_WINDOW_CORNER_PREFERENCE cornerPref = DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &cornerPref, sizeof(cornerPref));
 
+    // DWM 毛玻璃背景（Mica 效果，Windows 11 22H2+）
+    // DWMWA_SYSTEMBACKDROP_TYPE = 38（Win11 22H2+），失败则静默忽略
+    {
+        INT backdropType = 2;  // 2 = Mica
+        DwmSetWindowAttribute(hwnd_, 38, &backdropType, sizeof(backdropType));
+        // 设置 DWMWA_USE_IMMERSIVE_DARK_MODE 让标题栏与暗色主题一致
+        BOOL darkMode = TRUE;
+        DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+    }
+
     // 初始化 D2D
     if (!InitD2D()) {
         DestroyWindow(hwnd_);
@@ -217,12 +357,19 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
         return false;
     }
 
+    // 创建渐变背景画刷
+    CreateBgGradientBrush();
+
     // 构建页面和导航（布局使用 DIP 坐标，渲染目标 DPI 统一映射）
     BuildPages(currentConfig);
     ArrangeUI();
 
     ShowWindow(hwnd_, SW_SHOW);
     SetFocus(hwnd_);
+
+    // 启动动画帧定时器
+    StartAnimationTimer();
+
     return true;
 }
 
@@ -231,6 +378,7 @@ bool D2DSettingsWindow::IsVisible() const {
 }
 
 void D2DSettingsWindow::Close() {
+    StopAnimationTimer();
     if (hwnd_) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
@@ -307,6 +455,7 @@ bool D2DSettingsWindow::InitD2D() {
 }
 
 void D2DSettingsWindow::ShutdownD2D() {
+    bgGradientBrush_.Reset();
     bgBrush_.Reset();
     surfaceBrush_.Reset();
     borderBrush_.Reset();
@@ -337,19 +486,19 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
     float W = static_cast<float>(rc.right) / dpiScale_;
     float H = static_cast<float>(kTitleBarHeight);
 
-    // 标题栏背景（半透明毛玻璃效果）
+    // 标题栏背景（深蓝紫半透明）
     ComPtr<ID2D1SolidColorBrush> titleBg;
     D2D1_COLOR_F bgColor = theme_.bg;
-    bgColor.a = isDarkMode_ ? 0.92f : 0.85f;
+    bgColor.a = isDarkMode_ ? 0.97f : 0.85f;
     rt->CreateSolidColorBrush(bgColor, &titleBg);
     rt->FillRectangle(D2D1::RectF(0, 0, W, H), titleBg.Get());
 
-    // 底部分隔线
+    // 底部分隔线（紫调半透明）
     ComPtr<ID2D1SolidColorBrush> lineBr;
-    rt->CreateSolidColorBrush(theme_.border, &lineBr);
+    rt->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 0.06f), &lineBr);
     rt->DrawLine(D2D1::Point2F(0, H - 0.5f), D2D1::Point2F(W, H - 0.5f), lineBr.Get());
 
-    // 标题文字
+    // 标题文字（暗色：#B0B0B0）
     std::wstring wtitle = Utf8ToWide("任务栏歌词 - 设置");
     DrawTextLine(rt, labelFmt_.Get(), textSecondaryBrush_.Get(),
                  wtitle.c_str(), 14.f, (H - 16.f) / 2.f, W - 100.f);
@@ -461,20 +610,33 @@ void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox
 
     const float boxX = combo->X() + combo->Width() / 2;
     const float boxW = combo->Width() / 2;
-    const float boxY = combo->Y() + 4 + 28;
-    const float itemH = 30;
+    const float boxY = combo->Y() + 5 + 30;  // 与 ComboBox::Draw 中的 boxY+boxH 匹配
+    const float itemH = 32;
     const float dropH = static_cast<float>(combo->items.size()) * itemH;
 
-    // 下拉背景
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dropBg, dropBorder;
-    rt->CreateSolidColorBrush(isDarkMode_ ? D2D1::ColorF(0x25, 0x25, 0x42, 1.0f) : D2D1::ColorF(1, 1, 1, 1), &dropBg);
-    rt->CreateSolidColorBrush(theme_.border, &dropBorder);
+    // 下拉阴影（更明显的投影）
+    ComPtr<ID2D1SolidColorBrush> shadowBrush1;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0.4f), &shadowBrush1);
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 4, 4),
+        D2D1::RoundedRect(D2D1::RectF(boxX + 3, boxY + 3, boxX + boxW + 3, boxY + dropH + 3), 8, 8),
+        shadowBrush1.Get());
+    ComPtr<ID2D1SolidColorBrush> shadowBrush2;
+    rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0.2f), &shadowBrush2);
+    rt->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(boxX + 1, boxY + 1, boxX + boxW + 1, boxY + dropH + 1), 8, 8),
+        shadowBrush2.Get());
+
+    // 下拉背景（基于主题 bg 色偏亮，确保与内容区区分）
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dropBg, dropBorder;
+    rt->CreateSolidColorBrush(
+        D2D1::ColorF(theme_.bg.r * 1.2f, theme_.bg.g * 1.2f, theme_.bg.b * 1.2f, 1.0f), &dropBg);
+    rt->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 0.08f), &dropBorder);
+    rt->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 8, 8),
         dropBg.Get());
     rt->DrawRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 4, 4),
-        dropBorder.Get(), 1.0f);
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 8, 8),
+        dropBorder.Get(), 1);
 
     // 绘制每个选项
     static Microsoft::WRL::ComPtr<IDWriteFactory> dwFactory;
@@ -483,31 +645,45 @@ void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox
                               reinterpret_cast<IUnknown**>(dwFactory.GetAddressOf()));
     }
     Microsoft::WRL::ComPtr<IDWriteTextFormat> itemFmt;
-    dwFactory->CreateTextFormat(L"Microsoft YaHei UI", nullptr,
+    dwFactory->CreateTextFormat(L"Segoe UI Variable", nullptr,
         DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-        13, L"zh-CN", itemFmt.GetAddressOf());
+        13, L"zh-Hans", itemFmt.GetAddressOf());
 
     if (itemFmt) {
         itemFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
         for (int i = 0; i < static_cast<int>(combo->items.size()); ++i) {
             float iy = boxY + i * itemH;
 
-            // 选中项背景
+            // 悬停项背景（紫色半透明）
+            if (i == combo->hoveredDropIndex_ && i != combo->selectedIndex) {
+                Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> hoverBg;
+                rt->CreateSolidColorBrush(
+                    D2D1::ColorF(drawCtx_.accent.r, drawCtx_.accent.g, drawCtx_.accent.b, 0.15f), &hoverBg);
+                rt->FillRoundedRectangle(
+                    D2D1::RoundedRect(D2D1::RectF(boxX + 3, iy + 2, boxX + boxW - 3, iy + itemH - 2), 4, 4),
+                    hoverBg.Get());
+            }
+
+            // 选中项背景（紫色强调色）
             if (i == combo->selectedIndex) {
                 Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> selBg;
-                rt->CreateSolidColorBrush(theme_.accent, &selBg);
-                rt->FillRectangle(D2D1::RectF(boxX + 2, iy, boxX + boxW - 2, iy + itemH), selBg.Get());
+                rt->CreateSolidColorBrush(drawCtx_.accent, &selBg);
+                rt->FillRoundedRectangle(
+                    D2D1::RoundedRect(D2D1::RectF(boxX + 3, iy + 2, boxX + boxW - 3, iy + itemH - 2), 4, 4),
+                    selBg.Get());
             }
 
             D2D1_COLOR_F textColor = (i == combo->selectedIndex)
                 ? D2D1::ColorF(1, 1, 1, 1)
-                : (isDarkMode_ ? D2D1::ColorF(0.9f, 0.9f, 0.9f, 1) : D2D1::ColorF(0.2f, 0.2f, 0.2f, 1));
+                : (i == combo->hoveredDropIndex_
+                    ? drawCtx_.Text()  // 悬停项文本更亮
+                    : drawCtx_.TextSecondary());
             Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> txtBrush;
             rt->CreateSolidColorBrush(textColor, txtBrush.GetAddressOf());
 
             std::wstring witem = Utf8ToWide(combo->items[i]);
             rt->DrawTextW(witem.c_str(), static_cast<UINT32>(witem.size()),
-                          itemFmt.Get(), D2D1::RectF(boxX + 8, iy, boxX + boxW - 8, iy + itemH),
+                          itemFmt.Get(), D2D1::RectF(boxX + 12, iy, boxX + boxW - 12, iy + itemH),
                           txtBrush.Get());
         }
     }
@@ -684,6 +860,26 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     }
 
+    case WM_TIMER: {
+        if (self && wParam == kAnimTimerId) {
+            // 推进所有控件动画
+            bool anyActive = false;
+            const float deltaMs = 16.0f;  // ≈60fps
+            if (self->navView_) {
+                anyActive = self->navView_->TickAnimation(deltaMs) || anyActive;
+            }
+            if (self->currentPage_ >= 0 &&
+                self->currentPage_ < static_cast<int>(self->pages_.size())) {
+                anyActive = self->pages_[self->currentPage_]->TickAnimation(deltaMs) || anyActive;
+            }
+            // 有动画在播放时重绘
+            if (anyActive) {
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+            }
+        }
+        return 0;
+    }
+
     case WM_NCHITTEST: {
         // 无边框窗口的边缘拖拽调整大小
         POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
@@ -743,6 +939,8 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             RECT rc; GetClientRect(hwnd, &rc);
             self->renderTarget_->Resize(
                 D2D1_SIZE_U{static_cast<UINT>(rc.right), static_cast<UINT>(rc.bottom)});
+            // 窗口大小变化后重建渐变画刷
+            self->CreateBgGradientBrush();
             // 重新布局
             self->ArrangeUI();
             InvalidateRect(hwnd, nullptr, FALSE);
@@ -772,6 +970,8 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
                 self->renderTarget_->SetDpi(
                     static_cast<FLOAT>(self->dpi_), static_cast<FLOAT>(self->dpi_));
             }
+            // DPI 变化后重建渐变画刷
+            self->CreateBgGradientBrush();
 
             // 重新布局控件（DIP 坐标，渲染目标 DPI 已同步更新）
             self->ArrangeUI();
@@ -852,7 +1052,16 @@ void D2DSettingsWindow::DrawV2() {
     if (!renderTarget_) return;
 
     renderTarget_->BeginDraw();
-    renderTarget_->Clear(theme_.bg);
+
+    // 渐变背景：#202020→#2A2A2A（若画刷无效则回退纯色）
+    if (bgGradientBrush_) {
+        RECT rc; GetClientRect(hwnd_, &rc);
+        float W = static_cast<float>(rc.right) / dpiScale_;
+        float H = static_cast<float>(rc.bottom) / dpiScale_;
+        renderTarget_->FillRectangle(D2D1::RectF(0, 0, W, H), bgGradientBrush_.Get());
+    } else {
+        renderTarget_->Clear(theme_.bg);
+    }
 
     // 更新画刷颜色
     bgBrush_->SetColor(theme_.bg);
@@ -870,8 +1079,8 @@ void D2DSettingsWindow::DrawV2() {
     // 绘制标题栏
     DrawTitleBar(renderTarget_.Get());
 
-    // 绘制导航
-    if (navView_) navView_->Draw(renderTarget_.Get());
+    // 绘制导航（传递 DrawContext）
+    if (navView_) navView_->Draw(renderTarget_.Get(), drawCtx_);
 
     // 绘制当前页面（裁剪内容区）
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
@@ -881,8 +1090,8 @@ void D2DSettingsWindow::DrawV2() {
                         static_cast<float>(clientW),
                         static_cast<float>(clientH)),
             D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        // 先绘制页面（不含 ComboBox 下拉）
-        pages_[currentPage_]->Draw(renderTarget_.Get());
+        // 先绘制页面（不含 ComboBox 下拉），传递 DrawContext
+        pages_[currentPage_]->Draw(renderTarget_.Get(), drawCtx_);
         renderTarget_->PopAxisAlignedClip();
 
         // ComboBox 下拉列表绘制在裁剪区域外（覆盖下方 Card）
@@ -935,17 +1144,26 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                 auto* combo = dynamic_cast<ui::ComboBox*>(child.get());
                 if (combo && combo->dropped) {
                     // 检查点击是否在下拉区域内
-                    float dropH = static_cast<float>(combo->items.size() * 30);
-                    float boxY = combo->Y() + 4 + 28;
+                    float dropH = static_cast<float>(combo->items.size() * 32);
+                    float boxY = combo->Y() + 5 + 30;
                     if (x >= combo->X() && x <= combo->X() + combo->Width() &&
                         y >= boxY && y <= boxY + dropH) {
                         // 选中下拉项
                         float relY = static_cast<float>(y) - boxY;
-                        int idx = static_cast<int>(relY / 30);
+                        int idx = static_cast<int>(relY / 32);
                         if (idx >= 0 && idx < static_cast<int>(combo->items.size())) {
                             combo->selectedIndex = idx;
                         }
                         combo->dropped = false;
+                        // settingsTheme 切换时刷新设置界面主题颜色
+                        if (combo->id == "settingsTheme") {
+                            ApplyChanges();  // 先收集新值到 editedConfig_
+                            UpdateThemeColors();
+                            CreateBgGradientBrush();
+                            ArrangeUI();
+                            InvalidateRect(hwnd_, nullptr, FALSE);
+                            return;
+                        }
                         // displayMode 切换时更新外观页和歌词页
                         if (combo->id == "displayMode") {
                             std::string newMode = (combo->selectedIndex == 1) ? "card" : "karaoke";
@@ -1155,7 +1373,7 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
         auto* slider = dynamic_cast<ui::Slider*>(hoveredElement_);
         if (slider) slider->hovered = false;
         auto* combo = dynamic_cast<ui::ComboBox*>(hoveredElement_);
-        if (combo) combo->hovered = false;
+        if (combo) { combo->hovered = false; combo->hoveredDropIndex_ = -1; }
         auto* navItem = dynamic_cast<ui::NavItem*>(hoveredElement_);
         if (navItem) navItem->hovered = false;
         auto* btn = dynamic_cast<ui::Button*>(hoveredElement_);
@@ -1176,7 +1394,18 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
         auto* slider = dynamic_cast<ui::Slider*>(hit);
         if (slider) slider->hovered = true;
         auto* combo = dynamic_cast<ui::ComboBox*>(hit);
-        if (combo) combo->hovered = true;
+        if (combo) {
+            combo->hovered = true;
+            // 更新下拉悬停项索引
+            if (combo->dropped) {
+                float boxY = combo->Y() + 5 + 30;
+                float relY = static_cast<float>(y) - boxY;
+                int idx = static_cast<int>(relY / 32);
+                combo->hoveredDropIndex_ = (idx >= 0 && idx < static_cast<int>(combo->items.size())) ? idx : -1;
+            } else {
+                combo->hoveredDropIndex_ = -1;
+            }
+        }
         auto* navItem = dynamic_cast<ui::NavItem*>(hit);
         if (navItem) navItem->hovered = true;
         auto* btn = dynamic_cast<ui::Button*>(hit);

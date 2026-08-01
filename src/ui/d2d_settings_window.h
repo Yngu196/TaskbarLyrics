@@ -112,6 +112,7 @@ private:
     // D2D 资源
     Microsoft::WRL::ComPtr<ID2D1Factory>           d2dFactory_;
     Microsoft::WRL::ComPtr<ID2D1HwndRenderTarget>   renderTarget_;
+    Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> bgGradientBrush_;  // 窗口渐变背景画刷
     Microsoft::WRL::ComPtr<IDWriteFactory>          dwriteFactory_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat>       titleFmt_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat>       labelFmt_;
@@ -167,10 +168,18 @@ private:
     // 颜色主题
     ThemeColors theme_;
 
+    // 绘制上下文（传递给所有控件的暗色模式状态）
+    ui::DrawContext drawCtx_;
+
     void DetectDarkMode();
     void UpdateThemeColors();
+    void UpdateDrawContext();
+    void CreateBgGradientBrush();       // 创建窗口渐变背景画刷
+    void StartAnimationTimer();         // 启动动画帧定时器
+    void StopAnimationTimer();          // 停止动画帧定时器
 
     static constexpr const wchar_t* kWindowClass = L"MoeKoeTaskbarLyricsD2DSettingsClass";
+    static constexpr UINT kAnimTimerId = 1;    // 动画帧定时器 ID
     static bool classRegistered_;
 
     // 延迟关闭消息

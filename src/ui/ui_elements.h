@@ -13,6 +13,7 @@
 #pragma once
 
 #include "ui/ui_element.h"
+#include "ui/ui_animation.h"
 
 #include <dwrite.h>
 #include <wrl/client.h>
@@ -35,6 +36,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
 };
 
 // ═══════════════════════════════════════
@@ -50,10 +52,16 @@ public:
     bool hovered{false};
     bool pressed{false};
 
+    // 动画
+    Animation<float> hoverAnim_;  // 0→1 悬停动画
+    float hoverT_{0.0f};          // 当前悬停动画进度（由 TickAnimation 更新）
+
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
+    bool TickAnimation(float deltaMs) override;
 };
 
 // ═══════════════════════════════════════
@@ -67,10 +75,16 @@ public:
     // 运行时状态
     bool hovered{false};
 
+    // 动画
+    Animation<float> thumbAnim_;  // 0（关闭）→1（开启）滑块位置
+    float thumbPos_{0.0f};        // 当前显示的滑块位置（由 TickAnimation 更新）
+
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
+    bool TickAnimation(float deltaMs) override;
 };
 
 // ═══════════════════════════════════════
@@ -86,10 +100,19 @@ public:
     bool hovered{false};
     bool dragging{false};
 
+    // 动画
+    Animation<float> hoverAnim_;  // 手柄 hover 动画
+    float hoverT_{0.0f};          // 当前 hover 动画进度（由 TickAnimation 更新）
+
+    // 缓存渐变画刷（跨帧复用，避免每帧创建）
+    Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> fillGradientBrush_;
+
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
+    bool TickAnimation(float deltaMs) override;
 };
 
 // ═══════════════════════════════════════
@@ -104,10 +127,12 @@ public:
     // 运行时状态
     bool hovered{false};
     bool dropped{false};
+    int hoveredDropIndex_{-1};  // 下拉列表中悬停的项索引
 
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 };
 
@@ -125,6 +150,7 @@ public:
     float MeasureHeight(float availWidth) override;
     void Arrange(float x, float y, float w, float h) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
 };
 
 // ═══════════════════════════════════════
@@ -142,6 +168,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 };
 
@@ -160,6 +187,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 };
 
@@ -178,6 +206,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 };
 
@@ -201,6 +230,7 @@ public:
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
     void Draw(ID2D1RenderTarget* rt) override;
+    void Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) override;
     UIElement* HitTest(float x, float y) override;
 };
 

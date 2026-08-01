@@ -253,6 +253,10 @@ void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
         HWND h = hwnd_;
         Shutdown();
         Initialize(h);
+        // 强制下一帧重绘：设置变更后 lastState_ 已过期，
+        // 若不重置则 Render() 可能因 stateChanged==false 跳过绘制，
+        // 导致 layered window 仍显示旧帧（如封面关闭后仍可见）
+        lastState_ = RenderState{};
     }
 }
 
@@ -468,7 +472,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 跑马灯滚动动画期间也需要重绘
     // 卡片模式无跑马灯：无封面图时每帧重绘（确保 fallback 始终可见），
     // 有封面图后按需重绘（state 变化时才更新）
-    const bool needCardRedraw = (settings_.displayMode == "card" && !d2dCoverBitmap_);
+    const bool needCardRedraw = (settings_.displayMode == "card" && settings_.enableCover && !d2dCoverBitmap_);
     if (!stateChanged && !marqueeNeedsRedraw && !needCardRedraw && !cardScrollNeedsRedraw && !kP3NeedsRedraw) {
         return;
     }
@@ -531,14 +535,18 @@ void TaskbarRenderer::Render(const RenderState& state) {
         } else if (state.isPlaying) {
             // 纯音乐：封面 + 频谱
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-            const float coverSize = static_cast<float>(settings_.cardCoverSize) * dpiScale;
+            const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float paddingX = constants::TEXT_PADDING_X;
-            wchar_t fallback = FirstUtf8CharAsWide(state.songName);
-            DrawCoverArt(state.coverArtUrl, fallback, paddingX,
-                         (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
+            const bool showCover = settings_.enableCover;
+            if (showCover) {
+                wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+                const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
+                DrawCoverArt(state.coverArtUrl, fallback, paddingX + coverOffsetPx,
+                             (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
+            }
             if (!state.spectrumBands.empty()) {
-                const float specX = paddingX + coverSize + gap;
+                const float specX = showCover ? (paddingX + coverSize + gap) : paddingX;
                 const float specW = static_cast<float>(width_) - specX - paddingX;
                 if (specW > 10.0f) {
                     const float specH = constants::SPECTRUM_CARD_HEIGHT_DP * dpiScale;
@@ -550,9 +558,25 @@ void TaskbarRenderer::Render(const RenderState& state) {
     } else {
         // ═════ 卡拉OK渲染路径 ═════
         // 垂直任务栏时减小内边距以适应窄窗口
-        const float vertPaddingX = isVerticalTaskbar_
+        float vertPaddingX = isVerticalTaskbar_
             ? constants::TEXT_PADDING_X * 0.4f
             : constants::TEXT_PADDING_X;
+
+        // 封面绘制（单行歌词模式）
+        if (settings_.enableCover) {
+            const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+            const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+            const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
+            const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
+            wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+            // 封面垂直居中（coverSize 大于窗口高度时居顶）
+            const float coverY = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
+            DrawCoverArt(state.coverArtUrl, fallback,
+                         vertPaddingX + coverOffsetPx,
+                         coverY, coverSize);
+            // 歌词向右偏移，让出封面空间
+            vertPaddingX += coverSize + gap;
+        }
 
         if (state.hasLyrics && !state.currentLine.empty()) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
@@ -600,12 +624,26 @@ void TaskbarRenderer::Render(const RenderState& state) {
             }
         } else {
             if (state.isPlaying) {
+                // 单行歌词模式下无歌词时：封面（可选）+ 频谱
+                const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+                float contentX = vertPaddingX;
+                if (settings_.enableCover) {
+                    const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+                    const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
+                    const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
+                    wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+                    const float coverY = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
+                    DrawCoverArt(state.coverArtUrl, fallback,
+                                 vertPaddingX + coverOffsetPx,
+                                 coverY, coverSize);
+                    contentX += coverSize + gap;
+                }
                 if (!state.spectrumBands.empty()) {
-                    // 全高频谱
-                    DrawSpectrumBars(state.spectrumBands,
-                                     constants::TEXT_PADDING_X,
-                                     static_cast<float>(width_) - 2.0f * constants::TEXT_PADDING_X,
-                                     0.0f, static_cast<float>(height_));
+                    const float specW = static_cast<float>(width_) - contentX - vertPaddingX;
+                    if (specW > 10.0f) {
+                        DrawSpectrumBars(state.spectrumBands, contentX, specW,
+                                         0.0f, static_cast<float>(height_));
+                    }
                 } else {
                     DrawCentered(L"...", normalBrush_.Get(), 0.0f);
                 }
