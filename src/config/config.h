@@ -62,14 +62,21 @@ struct AppearanceConfig {
     // 封面圆角百分比（0=正方形, 100=圆形, 默认 17 约 6dp/34dp）
     int         coverCornerRadius{17};
 
-    // 设置界面主题颜色: "purple"(默认,Linear紫色) | "blue"(经典蓝) | "green"(薄荷绿) | "rose"(玫瑰粉)
-    std::string settingsTheme{"purple"};
+    // 设置界面主题颜色: "blue"(默认,蓝) | "dark"(深色) | "light"(浅色) | "white"(白色)
+    std::string settingsTheme{"blue"};
 
     // 卡片背景模式: "frosted" (默认,半透明毛玻璃) | "transparent" (纯透明)
     std::string cardBackgroundMode{"frosted"};
 
     // 卡片模式歌词显示扩展：长歌词自动加宽显示区域
     bool        cardDynamicWidth{true};
+
+    // 歌词垂直偏移（单行/卡拉OK模式，dp，负值=上移，正值=下移）
+    int         lyricOffsetY{0};
+
+    // 双行歌词模式各行垂直偏移（dp，负值=上移，正值=下移）
+    int         cardLine1OffsetY{0};  // 首行（当前行）偏移
+    int         cardLine2OffsetY{0};  // 第二行（下一行）偏移
 };
 
 struct AdvancedConfig {

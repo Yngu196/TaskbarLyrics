@@ -275,10 +275,10 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
         auto dm = std::make_unique<ComboBox>();
         dm->id = "settingsTheme";
         dm->label = "设置界面主题";
-        dm->items = {"紫色（默认）", "经典蓝", "薄荷绿", "玫瑰粉"};
-        dm->selectedIndex = (a.settingsTheme == "blue")  ? 1 :
-                            (a.settingsTheme == "green") ? 2 :
-                            (a.settingsTheme == "rose")  ? 3 : 0;
+        dm->items = {"蓝（默认）", "深色", "浅色", "白色"};
+        dm->selectedIndex = (a.settingsTheme == "dark")  ? 1 :
+                            (a.settingsTheme == "light") ? 2 :
+                            (a.settingsTheme == "white") ? 3 : 0;
         cTheme->AddChild(std::move(dm));
     }
     AddChild(std::move(cTheme));
@@ -386,6 +386,21 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c3->SetVisible(!isCard);
     AddChild(std::move(c3));
 
+    // Card: 歌词位置（仅单行）
+    auto cLyricPos = MakeCard("歌词位置");
+    cLyricPos->id = "karaokeOffset";
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "lyricOffsetY";
+        s->label = "上下偏移";
+        s->minValue = -100; s->maxValue = 100;
+        s->value = static_cast<float>(a.lyricOffsetY);
+        s->suffix = " px";
+        cLyricPos->AddChild(std::move(s));
+    }
+    cLyricPos->SetVisible(!isCard);
+    AddChild(std::move(cLyricPos));
+
     // Card: 预设主题
     auto c4 = MakeCard("预设主题");
     c4->id = "themePresets";
@@ -488,6 +503,30 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     }
     c7->SetVisible(isCard);
     AddChild(std::move(c7));
+
+    // Card: 歌词位置（仅双行）
+    auto cCardOffset = MakeCard("歌词位置");
+    cCardOffset->id = "cardLineOffset";
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "cardLine1OffsetY";
+        s->label = "首行歌词偏移";
+        s->minValue = -100; s->maxValue = 100;
+        s->value = static_cast<float>(a.cardLine1OffsetY);
+        s->suffix = " px";
+        cCardOffset->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "cardLine2OffsetY";
+        s->label = "第二行偏移";
+        s->minValue = -100; s->maxValue = 100;
+        s->value = static_cast<float>(a.cardLine2OffsetY);
+        s->suffix = " px";
+        cCardOffset->AddChild(std::move(s));
+    }
+    cCardOffset->SetVisible(isCard);
+    AddChild(std::move(cCardOffset));
 }
 
 void AppearancePage::UpdateVisibility(const std::string& displayMode) {
@@ -495,9 +534,11 @@ void AppearancePage::UpdateVisibility(const std::string& displayMode) {
     for (auto& child : children_) {
         const std::string& cid = child->id;
         if (cid == "karaokeFont" || cid == "karaokeColor" ||
-            cid == "marqueeCard" || cid == "themePresets") {
+            cid == "marqueeCard" || cid == "themePresets" ||
+            cid == "karaokeOffset") {
             child->SetVisible(!isCard);
-        } else if (cid == "cardFont" || cid == "cardColor" || cid == "cardBg") {
+        } else if (cid == "cardFont" || cid == "cardColor" || cid == "cardBg" ||
+                   cid == "cardLineOffset") {
             child->SetVisible(isCard);
         }
         // coverCard 和 themeColorCard 始终可见，无需切换
@@ -519,6 +560,9 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                 else if (s->id == "coverSize")            ap.coverSize = static_cast<int>(s->value);
                 else if (s->id == "coverOffsetX")       ap.coverOffsetX = static_cast<int>(s->value);
                 else if (s->id == "coverCornerRadius")  ap.coverCornerRadius = static_cast<int>(s->value);
+                else if (s->id == "lyricOffsetY")       ap.lyricOffsetY = static_cast<int>(s->value);
+                else if (s->id == "cardLine1OffsetY")   ap.cardLine1OffsetY = static_cast<int>(s->value);
+                else if (s->id == "cardLine2OffsetY")   ap.cardLine2OffsetY = static_cast<int>(s->value);
             } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                 if (t->id == "karaoke")            ap.enableKaraoke = t->value;
                 else if (t->id == "translation")   ap.enableTranslation = t->value;
@@ -532,9 +576,9 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                 else if (cb->id == "cardBackgroundMode")
                     ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
                 else if (cb->id == "settingsTheme")
-                    ap.settingsTheme = (cb->selectedIndex == 1) ? "blue" :
-                                       (cb->selectedIndex == 2) ? "green" :
-                                       (cb->selectedIndex == 3) ? "rose" : "purple";
+                    ap.settingsTheme = (cb->selectedIndex == 1) ? "dark" :
+                                       (cb->selectedIndex == 2) ? "light" :
+                                       (cb->selectedIndex == 3) ? "white" : "blue";
             } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
                 if (cr->id == "normalColor")       ap.normalColor = cr->textValue;
                 else if (cr->id == "highlightColor") ap.highlightColor = cr->textValue;

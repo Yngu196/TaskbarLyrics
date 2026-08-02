@@ -14,7 +14,7 @@
 
 </p>
 
-<p align="center">在 Windows 任务栏上显示歌词，支持卡拉OK效果、双行显示歌词封面、播放控制和歌词翻译</p>
+<p align="center">在 Windows 任务栏上显示歌词，支持单行、双行歌词、显示歌曲封面、播放控制和歌词翻译</p>
 
 > MoeKoeMusic TaskbarLyrics 正在收集用户反馈，欢迎在 [GitHub Issues](https://github.com/Yngu196/TaskbarLyrics/issues)/[Discussion](https://github.com/Yngu196/TaskbarLyrics/discussions/17) 提交问题/建议或填写兼容性反馈！
 
@@ -27,8 +27,9 @@
 > 本项目与TranslucentTB、Wallpaper不存在兼容问题，可放心使用。
 
 - **Native Host 托管** — 随 MoeKoeMusic 自动启动/关闭，无需手动管理
-- **卡拉 OK 效果** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
-- **卡片样式显示** — 双行歌词 + 封面图标，此模式无歌词高亮、长歌词滚动效果，但独立字号和颜色配置
+- **单行歌词卡拉OK效果** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
+- **双行歌词显示** — 双行歌词无歌词高亮、长歌词滚动效果，但独立字号和颜色配置
+- **歌词位置微调** — 支持单行/双行歌词上下偏移，适配多显示器和特殊任务栏布局
 - **悬停控制按钮** — 鼠标悬停歌词时显示 ⏮ ⏸/▶ ⏭
 - **拖动定位** — 可在任务栏范围内自由拖动调整位置
 - **锁定模式** — 托盘菜单切换锁定位置 / 完全锁定

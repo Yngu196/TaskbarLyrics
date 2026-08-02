@@ -81,17 +81,17 @@ void NavView::Draw(ID2D1RenderTarget* rt) {
 void NavView::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 导航背景（比内容区更深的主题色，与内容区形成对比）
-    // 通过降低 bg 亮度 40% 实现
-    D2D1_COLOR_F navBgColor = D2D1::ColorF(
-        ctx.bg.r * 0.6f,
-        ctx.bg.g * 0.6f,
-        ctx.bg.b * 0.6f, 1.0f);
+    // 导航背景：暗色模式比内容区稍深（×0.6），亮色模式使用 surface 颜色
+    D2D1_COLOR_F navBgColor = ctx.isDarkMode
+        ? D2D1::ColorF(ctx.bg.r * 0.6f, ctx.bg.g * 0.6f, ctx.bg.b * 0.6f, 1.0f)
+        : ctx.Surface();
     auto navBg = MakeBrush(rt, navBgColor);
     rt->FillRectangle(D2D1::RectF(x_, y_, x_ + w_, y_ + h_), navBg.Get());
 
-    // 右侧分隔线（半透明紫调）
-    auto sepBrush = MakeBrush(rt, D2D1::ColorF(1, 1, 1, 0.06f));
+    // 右侧分隔线：暗色用半透明白，亮色用半透明灰
+    auto sepBrush = MakeBrush(rt, ctx.isDarkMode
+        ? D2D1::ColorF(1, 1, 1, 0.06f)
+        : D2D1::ColorF(0, 0, 0, 0.08f));
     rt->DrawLine(D2D1::Point2F(x_ + w_ - 0.5f, y_), D2D1::Point2F(x_ + w_ - 0.5f, y_ + h_),
                  sepBrush.Get(), 1);
 

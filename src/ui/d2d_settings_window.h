@@ -189,6 +189,7 @@ private:
     std::unique_ptr<ui::NavView> navView_;
     std::vector<std::unique_ptr<ui::SettingsPage>> pages_;
     int currentPage_{0};
+    int panelOffsetX_{0};  // 最大化时整体居中的左侧偏移量
     ui::UIElement* capturedElement_{nullptr};
     ui::UIElement* hoveredElement_{nullptr};
     ui::ColorRow* activeColorRow_{nullptr};  // 颜色选择器激活时的目标控件

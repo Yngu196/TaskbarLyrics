@@ -189,6 +189,9 @@ bool Config::Load() {
             appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
             appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
             appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
+            appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
+            appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
+            appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
         }
 
         if (j.contains("advanced")) {
@@ -281,6 +284,9 @@ bool Config::Save() const {
         {"cover_offset_x",       appearance_.coverOffsetX},
         {"cover_corner_radius",  appearance_.coverCornerRadius},
         {"settings_theme",       appearance_.settingsTheme},
+        {"lyric_offset_y",      appearance_.lyricOffsetY},
+        {"card_line1_offset_y", appearance_.cardLine1OffsetY},
+        {"card_line2_offset_y", appearance_.cardLine2OffsetY},
     };
 
     j["advanced"] = {

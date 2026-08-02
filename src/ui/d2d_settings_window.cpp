@@ -139,74 +139,82 @@ void D2DSettingsWindow::UpdateThemeColors() {
     // 读取当前 settingsTheme（从 editedConfig_ 获取最新值）
     std::string themeName = editedConfig_.Appearance().settingsTheme;
 
+    // 根据主题名决定暗色/亮色模式："蓝"和"深色"用暗色，"浅色"和"白色"用亮色
+    isDarkMode_ = (themeName == "blue" || themeName == "dark");
+
     if (isDarkMode_) {
         // 每个主题定义完整配色：背景、表面、边框、文本、强调色
-        if (themeName == "blue") {
-            theme_.bg            = HexToColorF("#0D1B2A");  // 深海军蓝
-            theme_.surface       = HexToColorF("#1B2838");  // 海军表面
-            theme_.border        = HexToColorF("#2D3F58");  // 蓝灰边框
-            theme_.text          = HexToColorF("#E8EEF4");  // 冷白文本
-            theme_.textSecondary = HexToColorF("#8EA4BC");  // 蓝灰辅助
-            theme_.accent        = HexToColorF("#0078D4");  // 经典蓝
-            theme_.accentHover   = HexToColorF("#2390E5");
-        } else if (themeName == "green") {
-            theme_.bg            = HexToColorF("#0D1F17");  // 深森绿
-            theme_.surface       = HexToColorF("#1A2E24");  // 绿调表面
-            theme_.border        = HexToColorF("#2D4A3A");  // 绿灰边框
-            theme_.text          = HexToColorF("#E4F0EA");  // 绿白文本
-            theme_.textSecondary = HexToColorF("#8CB8A0");  // 绿灰辅助
-            theme_.accent        = HexToColorF("#31C27C");  // 薄荷绿
-            theme_.accentHover   = HexToColorF("#4AD896");
-        } else if (themeName == "rose") {
-            theme_.bg            = HexToColorF("#1F0D17");  // 深玫红
-            theme_.surface       = HexToColorF("#301A28");  // 玫红表面
-            theme_.border        = HexToColorF("#4A2A3C");  // 玫红边框
-            theme_.text          = HexToColorF("#F0E4EA");  // 暖白文本
-            theme_.textSecondary = HexToColorF("#B88CA0");  // 玫灰辅助
-            theme_.accent        = HexToColorF("#E84393");  // 玫瑰粉
-            theme_.accentHover   = HexToColorF("#F06EAE");
+        if (themeName == "dark") {
+            // Visual Studio Dark 风格
+            theme_.bg            = HexToColorF("#1E1E1E");
+            theme_.surface       = HexToColorF("#2D2D2D");
+            theme_.border        = HexToColorF("#3E3E3E");
+            theme_.text          = HexToColorF("#F0F0F0");
+            theme_.textSecondary = HexToColorF("#A0A0A0");
+            theme_.accent        = HexToColorF("#007ACC");
+            theme_.accentHover   = HexToColorF("#1A8CDC");
+        } else if (themeName == "light") {
+            // Visual Studio Light 风格 (暗色模式下的浅灰变体)
+            theme_.bg            = HexToColorF("#2D2D30");
+            theme_.surface       = HexToColorF("#3E3E42");
+            theme_.border        = HexToColorF("#4E4E54");
+            theme_.text          = HexToColorF("#F5F5F5");
+            theme_.textSecondary = HexToColorF("#B0B0B8");
+            theme_.accent        = HexToColorF("#0099FF");
+            theme_.accentHover   = HexToColorF("#33ADFF");
+        } else if (themeName == "white") {
+            // 纯白简洁风格
+            theme_.bg            = HexToColorF("#2B2B2F");
+            theme_.surface       = HexToColorF("#3C3C40");
+            theme_.border        = HexToColorF("#4D4D54");
+            theme_.text          = HexToColorF("#FFFFFF");
+            theme_.textSecondary = HexToColorF("#C8C8D0");
+            theme_.accent        = HexToColorF("#3399FF");
+            theme_.accentHover   = HexToColorF("#5AB5FF");
         } else {
-            theme_.bg            = HexToColorF("#1A1A2E");  // 深蓝紫
-            theme_.surface       = HexToColorF("#252540");  // 微蓝紫表面
-            theme_.border        = HexToColorF("#3A3A5C");  // 蓝调边框
-            theme_.text          = HexToColorF("#EEEEF0");  // 近白文本
-            theme_.textSecondary = HexToColorF("#A0A0B8");  // 蓝灰辅助
-            theme_.accent        = HexToColorF("#6C5CE7");  // 紫色（默认）
-            theme_.accentHover   = HexToColorF("#7F70F0");
-        }
-    } else {
-        if (themeName == "blue") {
-            theme_.bg            = HexToColorF("#f0f4f8");
-            theme_.surface       = HexToColorF("#e2e8f0");
-            theme_.border        = HexToColorF("#c8d4e0");
-            theme_.text          = HexToColorF("#0D1B2A");
-            theme_.textSecondary = HexToColorF("#5A7088");
+            // 默认: Visual Studio Blue 风格
+            theme_.bg            = HexToColorF("#1E1E2E");
+            theme_.surface       = HexToColorF("#252540");
+            theme_.border        = HexToColorF("#3A3A5C");
+            theme_.text          = HexToColorF("#F0F0F5");
+            theme_.textSecondary = HexToColorF("#9B9BB8");
             theme_.accent        = HexToColorF("#0078D4");
             theme_.accentHover   = HexToColorF("#2390E5");
-        } else if (themeName == "green") {
-            theme_.bg            = HexToColorF("#f0f8f4");
-            theme_.surface       = HexToColorF("#e0f0e8");
-            theme_.border        = HexToColorF("#c0d8cc");
-            theme_.text          = HexToColorF("#0D1F17");
-            theme_.textSecondary = HexToColorF("#4A7060");
-            theme_.accent        = HexToColorF("#31C27C");
-            theme_.accentHover   = HexToColorF("#4AD896");
-        } else if (themeName == "rose") {
-            theme_.bg            = HexToColorF("#f8f0f4");
-            theme_.surface       = HexToColorF("#f0e0e8");
-            theme_.border        = HexToColorF("#d8c0cc");
-            theme_.text          = HexToColorF("#1F0D17");
-            theme_.textSecondary = HexToColorF("#805060");
-            theme_.accent        = HexToColorF("#E84393");
-            theme_.accentHover   = HexToColorF("#F06EAE");
+        }
+    } else {
+        if (themeName == "dark") {
+            theme_.bg            = HexToColorF("#F0F0F0");
+            theme_.surface       = HexToColorF("#FFFFFF");
+            theme_.border        = HexToColorF("#D0D0D0");
+            theme_.text          = HexToColorF("#1E1E1E");
+            theme_.textSecondary = HexToColorF("#6B6B6B");
+            theme_.accent        = HexToColorF("#007ACC");
+            theme_.accentHover   = HexToColorF("#1A8CDC");
+        } else if (themeName == "light") {
+            theme_.bg            = HexToColorF("#FAFAFA");
+            theme_.surface       = HexToColorF("#FFFFFF");
+            theme_.border        = HexToColorF("#E0E0E0");
+            theme_.text          = HexToColorF("#2D2D30");
+            theme_.textSecondary = HexToColorF("#8A8A8A");
+            theme_.accent        = HexToColorF("#0099FF");
+            theme_.accentHover   = HexToColorF("#33ADFF");
+        } else if (themeName == "white") {
+            theme_.bg            = HexToColorF("#FFFFFF");
+            theme_.surface       = HexToColorF("#F8F8F8");
+            theme_.border        = HexToColorF("#E8E8E8");
+            theme_.text          = HexToColorF("#1A1A1A");
+            theme_.textSecondary = HexToColorF("#808080");
+            theme_.accent        = HexToColorF("#0078D4");
+            theme_.accentHover   = HexToColorF("#2390E5");
         } else {
-            theme_.bg            = HexToColorF("#ffffff");
-            theme_.surface       = HexToColorF("#f5f7fa");
-            theme_.border        = HexToColorF("#e0e4e8");
-            theme_.text          = HexToColorF("#1a1a2e");
-            theme_.textSecondary = HexToColorF("#6b7280");
-            theme_.accent        = HexToColorF("#6C5CE7");
-            theme_.accentHover   = HexToColorF("#7F70F0");
+            // 默认: Visual Studio Blue 风格 (亮色)
+            theme_.bg            = HexToColorF("#F5F7FA");
+            theme_.surface       = HexToColorF("#FFFFFF");
+            theme_.border        = HexToColorF("#D8DEE4");
+            theme_.text          = HexToColorF("#1E1E2E");
+            theme_.textSecondary = HexToColorF("#6B7280");
+            theme_.accent        = HexToColorF("#0078D4");
+            theme_.accentHover   = HexToColorF("#2390E5");
         }
     }
     UpdateDrawContext();
@@ -237,6 +245,12 @@ void D2DSettingsWindow::UpdateDrawContext() {
         drawCtx_.lightBorder        = theme_.border;
         drawCtx_.lightText          = theme_.text;
         drawCtx_.lightTextSecondary = theme_.textSecondary;
+
+        // 亮色模式下也要填充通用字段（accent/danger 等），避免控件使用默认暗色值
+        drawCtx_.accent        = theme_.accent;
+        drawCtx_.accentHover   = theme_.accentHover;
+        drawCtx_.accentLight   = D2D1::ColorF(theme_.accent.r, theme_.accent.g, theme_.accent.b, 0.5f);
+        drawCtx_.danger        = HexToColorF("#FF6B6B");
     }
 }
 
@@ -317,11 +331,12 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     const int winW = ::MulDiv(kWinWidthBase, dpi_, 96);
     const int winH = ::MulDiv(kWinHeightBase, dpi_, 96);
 
-    // 创建窗口（不使用 WS_EX_LAYERED，避免 D2D 渲染异常）
+    // 创建窗口。WS_OVERLAPPEDWINDOW 含 WS_CAPTION/WS_SYSMENU/WS_MINIMIZEBOX/WS_MAXIMIZEBOX/WS_THICKFRAME，
+    // 提供完整任务栏交互（点击图标最小化/恢复）；系统标题栏通过 WM_NCCALCSIZE+WM_NCPAINT 消除。
     hwnd_ = CreateWindowExW(
         WS_EX_APPWINDOW,  // 显示在任务栏
         kWindowClass, L"任务栏歌词 - 设置",
-        WS_POPUP | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
         0, 0, winW, winH,  // 先创建在 (0,0)，下面再定位
         parent, nullptr, hInstance, this);
 
@@ -334,7 +349,14 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     GetMonitorInfo(hMon, &mi);
     int x = mi.rcWork.left + (mi.rcWork.right - mi.rcWork.left - winW) / 2;
     int y = mi.rcWork.top + (mi.rcWork.bottom - mi.rcWork.top - winH) / 2;
-    SetWindowPos(hwnd_, nullptr, x, y, winW, winH, SWP_NOZORDER);
+    SetWindowPos(hwnd_, nullptr, x, y, winW, winH, SWP_NOZORDER | SWP_FRAMECHANGED);
+
+    // 阻止 DWM 在窗口激活时绘制经典边框：扩展 DWM 帧到客户区底部 1px，
+    // 配合 WM_NCACTIVATE / WM_ACTIVATE / WM_DWMCOMPOSITIONCHANGED 中的 DwmExtendFrameIntoClientArea 调用。
+    {
+        MARGINS dwmMargins = {0, 0, 0, 1};
+        DwmExtendFrameIntoClientArea(hwnd_, &dwmMargins);
+    }
 
     // DWM 圆角
     DWM_WINDOW_CORNER_PREFERENCE cornerPref = DWMWCP_ROUND;
@@ -345,8 +367,8 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     {
         INT backdropType = 2;  // 2 = Mica
         DwmSetWindowAttribute(hwnd_, 38, &backdropType, sizeof(backdropType));
-        // 设置 DWMWA_USE_IMMERSIVE_DARK_MODE 让标题栏与暗色主题一致
-        BOOL darkMode = TRUE;
+        // 设置标题栏颜色跟随当前主题（深色→暗色标题栏，浅色→亮色标题栏）
+        BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
         DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
     }
 
@@ -626,11 +648,11 @@ void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox
         D2D1::RoundedRect(D2D1::RectF(boxX + 1, boxY + 1, boxX + boxW + 1, boxY + dropH + 1), 8, 8),
         shadowBrush2.Get());
 
-    // 下拉背景（基于主题 bg 色偏亮，确保与内容区区分）
+    // 下拉背景（基于主题 bg 色，亮暗模式自适应）
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> dropBg, dropBorder;
     rt->CreateSolidColorBrush(
         D2D1::ColorF(theme_.bg.r * 1.2f, theme_.bg.g * 1.2f, theme_.bg.b * 1.2f, 1.0f), &dropBg);
-    rt->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 0.08f), &dropBorder);
+    rt->CreateSolidColorBrush(drawCtx_.Border(), &dropBorder);
     rt->FillRoundedRectangle(
         D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 8, 8),
         dropBg.Get());
@@ -768,6 +790,37 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
 
     case WM_CREATE:
         return 0;
+
+    case WM_ACTIVATE:
+        if (LOWORD(wParam) != WA_INACTIVE) {
+            // 窗口重获焦点时重新扩展 DWM 帧到客户区，防止 DWM 重绘经典样式边框
+            MARGINS dwmMargins = {0, 0, 0, 1};
+            DwmExtendFrameIntoClientArea(hwnd, &dwmMargins);
+        }
+        break;
+
+    case WM_DWMCOMPOSITIONCHANGED:
+        // DWM 合成状态变化时（远程桌面等场景）重新扩展帧
+        {
+            MARGINS dwmMargins = {0, 0, 0, 1};
+            DwmExtendFrameIntoClientArea(hwnd, &dwmMargins);
+        }
+        break;
+
+    case WM_NCCALCSIZE:
+        // 消除非客户区（系统标题栏），使客户区覆盖整个窗口。
+        // D2D 自绘按钮落在窗口第一行，同时 WS_OVERLAPPEDWINDOW 的任务栏交互不受影响。
+        if (wParam == TRUE) return 0;
+        break;
+
+    case WM_NCPAINT:
+        // 阻止系统绘制标题栏内容（按钮、标题文字等），与 WM_NCCALCSIZE 配合杜绝残留渲染。
+        return 0;
+
+    case WM_NCACTIVATE:
+        // 返回 TRUE 阻止 DWM 在窗口激活/失活时重绘非客户区经典边框，
+        // 与 DwmExtendFrameIntoClientArea 配合使用。
+        return TRUE;
 
     case WM_PAINT:
         if (self) self->DrawV2();
@@ -1034,16 +1087,27 @@ void D2DSettingsWindow::ArrangeUI() {
     int clientH = static_cast<int>(rc.bottom / dpiScale_);
 
     const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
-    const int contentW = clientW - navW;
+    int contentW = clientW - navW;
+
+    // 限制内容区最大宽度，最大化时避免卡片过度拉伸
+    const int kMaxContentWidth = 700;
+    if (contentW > kMaxContentWidth) {
+        contentW = kMaxContentWidth;
+    }
+
+    // 最大化时整体居中：导航栏+内容区作为整体居中显示，左右对称留白
+    const int totalWidth = navW + contentW;
+    panelOffsetX_ = (clientW - totalWidth) / 2;
+    if (panelOffsetX_ < 0) panelOffsetX_ = 0;
 
     // 导航区域
-    navView_->Arrange(0, kTitleBarHeight, navW, clientH - kTitleBarHeight);
+    navView_->Arrange(panelOffsetX_, kTitleBarHeight, navW, clientH - kTitleBarHeight);
 
     // 当前页面
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
         auto& page = pages_[currentPage_];
         float pageH = page->MeasureHeight(contentW);
-        page->Arrange(navW, kTitleBarHeight - v2ScrollOffset_, contentW, pageH);
+        page->Arrange(panelOffsetX_ + navW, kTitleBarHeight - v2ScrollOffset_, contentW, pageH);
         v2ContentHeight_ = static_cast<int>(pageH);
     }
 }
@@ -1084,8 +1148,9 @@ void D2DSettingsWindow::DrawV2() {
 
     // 绘制当前页面（裁剪内容区）
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        const float contentClipLeft = static_cast<float>(panelOffsetX_ + moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP);
         renderTarget_->PushAxisAlignedClip(
-            D2D1::RectF(moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP,
+            D2D1::RectF(contentClipLeft,
                         static_cast<float>(kTitleBarHeight),
                         static_cast<float>(clientW),
                         static_cast<float>(clientH)),
@@ -1159,6 +1224,9 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                         if (combo->id == "settingsTheme") {
                             ApplyChanges();  // 先收集新值到 editedConfig_
                             UpdateThemeColors();
+                            // 同步更新系统标题栏颜色
+                            BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
+                            DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
                             CreateBgGradientBrush();
                             ArrangeUI();
                             InvalidateRect(hwnd_, nullptr, FALSE);

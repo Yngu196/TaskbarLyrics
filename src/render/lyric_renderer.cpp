@@ -37,9 +37,12 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
     const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
     const float availableWidth = static_cast<FLOAT>(width_) - paddingX * 2.0f;
+    // 应用用户设置的垂直偏移（dp → px）
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float userOffsetY = static_cast<float>(settings_.lyricOffsetY) * dpiScale;
 
     D2D1_RECT_F layoutRect = D2D1::RectF(
-        paddingX, 0.0f, static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_));
+        paddingX, userOffsetY, static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_) + userOffsetY);
 
     // ── 缓存文本布局：仅在歌词内容变化时重建 CreateTextLayout ──
     bool layoutValid = false;
@@ -92,18 +95,18 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         const float textLeft = paddingX - scrollOffset;
 
         renderTarget_->DrawTextLayout(
-            D2D1::Point2F(textLeft, 0.0f), cachedLayout_.Get(), normalBrush_.Get());
+            D2D1::Point2F(textLeft, userOffsetY), cachedLayout_.Get(), normalBrush_.Get());
 
         if (enableKaraoke && progress > 0.0) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth > 0.0f) {
                 D2D1_RECT_F clipRect = D2D1::RectF(
-                    textLeft, 0.0f,
+                    textLeft, userOffsetY,
                     textLeft + highlightWidth,
-                    static_cast<FLOAT>(height_));
+                    static_cast<FLOAT>(height_) + userOffsetY);
                 renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 renderTarget_->DrawTextLayout(
-                    D2D1::Point2F(textLeft, 0.0f), cachedLayout_.Get(), highlightBrush_.Get());
+                    D2D1::Point2F(textLeft, userOffsetY), cachedLayout_.Get(), highlightBrush_.Get());
                 renderTarget_->PopAxisAlignedClip();
             }
         }
@@ -117,9 +120,9 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
             if (highlightWidth > 0.0f) {
                 const float centeredLeft = paddingX + (availableWidth - textWidth) / 2.0f;
                 D2D1_RECT_F clipRect = D2D1::RectF(
-                    centeredLeft, 0.0f,
+                    centeredLeft, userOffsetY,
                     centeredLeft + highlightWidth,
-                    static_cast<FLOAT>(height_));
+                    static_cast<FLOAT>(height_) + userOffsetY);
                 renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 renderTarget_->DrawTextW(
                     text.c_str(), length, textFormat_.Get(), layoutRect, highlightBrush_.Get());
@@ -138,6 +141,9 @@ void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* 
 
     // 水平偏移量（像素）：支持垂直模式下的自定义内边距
     const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
+    // 应用用户设置的垂直偏移
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float userOffsetY = static_cast<float>(settings_.lyricOffsetY) * dpiScale;
 
     // P3-①: 歌词行切换 fade 过渡期间，旧行翻译通过 opacity<1 渐隐
     if (opacity < 1.0f) {
@@ -145,8 +151,8 @@ void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* 
     }
     
     D2D1_RECT_F layout = D2D1::RectF(
-        paddingX, static_cast<FLOAT>(height_) * 0.55f,
-        static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_));
+        paddingX, static_cast<FLOAT>(height_) * 0.55f + userOffsetY,
+        static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_) + userOffsetY);
     renderTarget_->DrawTextW(
         text.c_str(), static_cast<UINT32>(text.size()),
         translationFormat_.Get(),

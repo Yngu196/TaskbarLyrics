@@ -646,6 +646,10 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
 
     const float h = static_cast<float>(height_);
     const float midY = h * 0.50f;
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    // 应用用户设置的歌词偏移：首行用 cardLine1OffsetY，第二行用 cardLine2OffsetY
+    const float userOffsetY = (isCurrent ? static_cast<float>(settings_.cardLine1OffsetY)
+                                        : static_cast<float>(settings_.cardLine2OffsetY)) * dpiScale;
 
     IDWriteTextFormat* format = isCurrent ? cardCurrentFormat_.Get() : cardNextFormat_.Get();
     ID2D1SolidColorBrush* brush = isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get();
@@ -656,7 +660,7 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
     animColor.a = std::max(0.0f, std::min(1.0f, origColor.a * alpha));
     brush->SetColor(animColor);
 
-    D2D1_RECT_F layout = D2D1::RectF(x, y + yOffset, x + availWidth, y + midY + yOffset);
+    D2D1_RECT_F layout = D2D1::RectF(x, y + yOffset + userOffsetY, x + availWidth, y + midY + yOffset + userOffsetY);
     renderTarget_->DrawTextW(
         line.c_str(), static_cast<UINT32>(line.size()),
         format, layout, brush);
