@@ -112,6 +112,8 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         }
     } else {
         // ═══════ 非滚动模式：居中显示 ═══════
+        // 裁剪到 layoutRect，避免长歌词文本溢出覆盖封面
+        renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         renderTarget_->DrawTextW(
             text.c_str(), length, textFormat_.Get(), layoutRect, normalBrush_.Get());
 
@@ -129,6 +131,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->PopAxisAlignedClip();
             }
         }
+        renderTarget_->PopAxisAlignedClip();
     }
 
     if (layerPushed) {

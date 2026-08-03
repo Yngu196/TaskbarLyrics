@@ -308,6 +308,18 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     currentConfig_ = currentConfig;
     editedConfig_ = currentConfig;
 
+    // 单实例检测：若已有设置窗口存在则激活并前置
+    {
+        HWND existingWnd = FindWindowW(kWindowClass, L"任务栏歌词 - 设置");
+        if (existingWnd) {
+            if (IsIconic(existingWnd)) {
+                ShowWindow(existingWnd, SW_RESTORE);
+            }
+            SetForegroundWindow(existingWnd);
+            return true;
+        }
+    }
+
     DetectDarkMode();
     UpdateThemeColors();
 

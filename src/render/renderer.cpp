@@ -562,6 +562,20 @@ void TaskbarRenderer::Render(const RenderState& state) {
             ? constants::TEXT_PADDING_X * 0.4f
             : constants::TEXT_PADDING_X;
 
+        // 单行背景：毛玻璃效果（与双行背景逻辑一致）
+        // 仅当显式设置为 frosted 模式时绘制，transparent 时跳过
+        if (settings_.singleLineBackgroundMode != "transparent" && cardBackgroundBrush_) {
+            const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+            D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f,
+                static_cast<float>(width_), static_cast<float>(height_));
+            D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
+                constants::CARD_COVER_RADIUS_DP * dpiScale,
+                constants::CARD_COVER_RADIUS_DP * dpiScale);
+            cardBackgroundBrush_->SetOpacity(constants::COVER_THEME_ALPHA);
+            renderTarget_->FillRoundedRectangle(bgRR, cardBackgroundBrush_.Get());
+            cardBackgroundBrush_->SetOpacity(1.0f);
+        }
+
         // 封面绘制（单行歌词模式）
         if (settings_.enableCover) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -580,7 +594,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
         if (state.hasLyrics && !state.currentLine.empty()) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
-            const float* padPtr = isVerticalTaskbar_ ? &vertPaddingX : nullptr;
+            const float* padPtr = &vertPaddingX;
 
             // 翻译替换模式：用翻译文本替换原文显示
             const bool isReplaceMode = (settings_.translationMode == "replace" &&

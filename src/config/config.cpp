@@ -179,6 +179,7 @@ bool Config::Load() {
             appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
             appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
             appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
+            appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
             appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
@@ -274,6 +275,7 @@ bool Config::Save() const {
         {"card_current_color",     appearance_.cardCurrentColor},
         {"card_next_color",        appearance_.cardNextColor},
         {"card_background_mode",  appearance_.cardBackgroundMode},
+        {"single_line_background_mode", appearance_.singleLineBackgroundMode},
         {"card_dynamic_width",    appearance_.cardDynamicWidth},
         {"marquee_mode",       appearance_.marqueeMode},
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},

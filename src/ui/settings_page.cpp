@@ -401,6 +401,20 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     cLyricPos->SetVisible(!isCard);
     AddChild(std::move(cLyricPos));
 
+    // Card: 单行背景（仅单行模式可见）
+    auto cSingleBg = MakeCard("单行背景");
+    cSingleBg->id = "singleLineBg";
+    {
+        auto dm = std::make_unique<ComboBox>();
+        dm->id = "singleLineBackgroundMode";
+        dm->label = "单行背景";
+        dm->items = {"半透明毛玻璃", "纯透明"};
+        dm->selectedIndex = (a.singleLineBackgroundMode == "transparent") ? 1 : 0;
+        cSingleBg->AddChild(std::move(dm));
+    }
+    cSingleBg->SetVisible(!isCard);
+    AddChild(std::move(cSingleBg));
+
     // Card: 预设主题
     auto c4 = MakeCard("预设主题");
     c4->id = "themePresets";
@@ -461,8 +475,8 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c5->SetVisible(isCard);
     AddChild(std::move(c5));
 
-    // Card: 卡片颜色
-    auto c6 = MakeCard("卡片颜色");
+    // Card: 双行颜色
+    auto c6 = MakeCard("双行颜色");
     c6->id = "cardColor";
     {
         auto cr = std::make_unique<ColorRow>();
@@ -483,13 +497,13 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c6->SetVisible(isCard);
     AddChild(std::move(c6));
 
-    // Card: 卡片背景
-    auto c7 = MakeCard("卡片背景");
+    // Card: 双行背景
+    auto c7 = MakeCard("双行背景");
     c7->id = "cardBg";
     {
         auto dm = std::make_unique<ComboBox>();
         dm->id = "cardBackgroundMode";
-        dm->label = "卡片背景";
+        dm->label = "双行背景";
         dm->items = {"半透明毛玻璃", "纯透明"};
         dm->selectedIndex = (a.cardBackgroundMode == "transparent") ? 1 : 0;
         c7->AddChild(std::move(dm));
@@ -535,7 +549,7 @@ void AppearancePage::UpdateVisibility(const std::string& displayMode) {
         const std::string& cid = child->id;
         if (cid == "karaokeFont" || cid == "karaokeColor" ||
             cid == "marqueeCard" || cid == "themePresets" ||
-            cid == "karaokeOffset") {
+            cid == "karaokeOffset" || cid == "singleLineBg") {
             child->SetVisible(!isCard);
         } else if (cid == "cardFont" || cid == "cardColor" || cid == "cardBg" ||
                    cid == "cardLineOffset") {
@@ -575,6 +589,8 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                                      (cb->selectedIndex == 2) ? "off" : "bounce";
                 else if (cb->id == "cardBackgroundMode")
                     ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
+                else if (cb->id == "singleLineBackgroundMode")
+                    ap.singleLineBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
                 else if (cb->id == "settingsTheme")
                     ap.settingsTheme = (cb->selectedIndex == 1) ? "dark" :
                                        (cb->selectedIndex == 2) ? "light" :
