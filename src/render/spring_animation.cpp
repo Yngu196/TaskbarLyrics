@@ -93,6 +93,13 @@ bool TaskbarRenderer::UpdateProgressSpring(double target, double now)
         return false;
     }
 
+    // 目标进度回退（新行开始）→ 立即吸附，保持单向递增
+    if (target < springProgress_) {
+        springProgress_ = target;
+        springVelocity_ = 0.0;
+        return false;
+    }
+
     const double dt = now - springLastTime_;
     springLastTime_ = now;
 

@@ -308,7 +308,15 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     currentConfig_ = currentConfig;
     editedConfig_ = currentConfig;
 
-    // 单实例检测：若已有设置窗口存在则激活并前置
+    // 单实例检测：优先检查自身的 hwnd_，避免 FindWindowW 在大批量窗口
+    // 或系统高负载时漏检导致重复创建窗口。
+    if (hwnd_ && IsWindow(hwnd_)) {
+        if (IsIconic(hwnd_)) {
+            ShowWindow(hwnd_, SW_RESTORE);
+        }
+        SetForegroundWindow(hwnd_);
+        return true;
+    }
     {
         HWND existingWnd = FindWindowW(kWindowClass, L"任务栏歌词 - 设置");
         if (existingWnd) {
@@ -1045,12 +1053,19 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     }
 
+    case WM_CLOSE:
+        // 统一关闭路径：无论自定义按钮、Alt+F4、任务栏右键关闭，
+        // 都走 Close() 确保 hwnd_ 置空、D2D 资源释放、动画定时器停止
+        if (self) self->Close();
+        return 0;
+
     case D2DSettingsWindow::kMsgClose:
         if (self) self->Close();
         return 0;
 
     case WM_DESTROY:
-        // 设置对话框关闭，不退出主程序（不能调用 PostQuitMessage）
+        // 兜底：确保 hwnd_ 置空（防止系统路径绕过 Close 时 hwnd_ 残留）
+        if (self) self->hwnd_ = nullptr;
         return 0;
 
     default:
@@ -1279,6 +1294,8 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
         if (toggle) {
             toggle->value = !toggle->value;
             ApplyChanges();
+
+
             InvalidateRect(hwnd_, nullptr, FALSE);
             return;
         }

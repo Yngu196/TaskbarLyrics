@@ -125,6 +125,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth > 0.0f) {
                 const float centeredLeft = paddingX + (availableWidth - textWidth) / 2.0f;
+                // ── 硬切换：瞬间颜色切换 ──
                 D2D1_RECT_F clipRect = D2D1::RectF(
                     centeredLeft, userOffsetY,
                     centeredLeft + highlightWidth,
