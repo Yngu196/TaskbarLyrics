@@ -26,8 +26,9 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       double progress,
                                                       bool enableKaraoke,
                                                       float scrollOffset,
-                                                      const float* overridePaddingX,
-                                                      float opacity) {
+                                                      const float* overridePaddingLeft,
+                                                      float opacity,
+                                                      const float* overridePaddingRight) {
     if (!renderTarget_ || !textFormat_ || text.empty() ||
         !highlightBrush_ || !normalBrush_) {
         return;
@@ -35,14 +36,17 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
 
-    const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
-    const float availableWidth = static_cast<FLOAT>(width_) - paddingX * 2.0f;
+    const float paddingX = overridePaddingLeft ? *overridePaddingLeft : constants::TEXT_PADDING_X;
+    const float rightPaddingX = overridePaddingRight ? *overridePaddingRight : paddingX;
+    const float availableWidth = static_cast<FLOAT>(width_) - paddingX - rightPaddingX;
     // 应用用户设置的垂直偏移（dp → px）
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float userOffsetY = static_cast<float>(settings_.lyricOffsetY) * dpiScale;
 
     D2D1_RECT_F layoutRect = D2D1::RectF(
-        paddingX, userOffsetY, static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_) + userOffsetY);
+        paddingX, userOffsetY,
+        static_cast<FLOAT>(width_) - rightPaddingX,
+        static_cast<FLOAT>(height_) + userOffsetY);
 
     // ── 缓存文本布局：仅在歌词内容变化时重建 CreateTextLayout ──
     bool layoutValid = false;
@@ -139,11 +143,15 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     }
 }
 
-void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* overridePaddingX, float opacity) {
+void TaskbarRenderer::DrawTranslatedText(const std::wstring& text,
+                                         const float* overridePaddingLeft,
+                                         float opacity,
+                                         const float* overridePaddingRight) {
     if (!translationFormat_ || !translationBrush_ || text.empty()) return;
 
     // 水平偏移量（像素）：支持垂直模式下的自定义内边距
-    const float paddingX = overridePaddingX ? *overridePaddingX : constants::TEXT_PADDING_X;
+    const float paddingX = overridePaddingLeft ? *overridePaddingLeft : constants::TEXT_PADDING_X;
+    const float rightPaddingX = overridePaddingRight ? *overridePaddingRight : paddingX;
     // 应用用户设置的垂直偏移
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float userOffsetY = static_cast<float>(settings_.lyricOffsetY) * dpiScale;
@@ -155,7 +163,8 @@ void TaskbarRenderer::DrawTranslatedText(const std::wstring& text, const float* 
     
     D2D1_RECT_F layout = D2D1::RectF(
         paddingX, static_cast<FLOAT>(height_) * 0.55f + userOffsetY,
-        static_cast<FLOAT>(width_) - paddingX, static_cast<FLOAT>(height_) + userOffsetY);
+        static_cast<FLOAT>(width_) - rightPaddingX,
+        static_cast<FLOAT>(height_) + userOffsetY);
     renderTarget_->DrawTextW(
         text.c_str(), static_cast<UINT32>(text.size()),
         translationFormat_.Get(),

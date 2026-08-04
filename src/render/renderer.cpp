@@ -576,6 +576,9 @@ void TaskbarRenderer::Render(const RenderState& state) {
             cardBackgroundBrush_->SetOpacity(1.0f);
         }
 
+        // 保存封面调整前的基础右 padding（歌词右边缘不随封面偏移）
+        const float baseRightPadding = vertPaddingX;
+
         // 封面绘制（单行歌词模式）
         if (settings_.enableCover) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -595,6 +598,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
         if (state.hasLyrics && !state.currentLine.empty()) {
             const std::wstring lineW = Utf8ToWide(state.currentLine);
             const float* padPtr = &vertPaddingX;
+            const float* padRightPtr = &baseRightPadding;
 
             // 翻译替换模式：用翻译文本替换原文显示
             const bool isReplaceMode = (settings_.translationMode == "replace" &&
@@ -613,27 +617,27 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
                 // 旧行：progress=1.0（已完成），无卡拉OK、无跑马灯，渐隐
                 DrawHighlightedTextPerCharacter(lyricFadeOldText_, 1.0, false, 0.0f,
-                                               padPtr, 1.0f - fadeT);
+                                               padPtr, 1.0f - fadeT, padRightPtr);
                 // 旧行翻译（同步渐隐）
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !lyricFadeOldTrans_.empty()) {
-                    DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT);
+                    DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT, padRightPtr);
                 }
 
                 // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr, fadeT);
+                                               scrollOffset, padPtr, fadeT, padRightPtr);
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                    DrawTranslatedText(trW, padPtr, fadeT);
+                    DrawTranslatedText(trW, padPtr, fadeT, padRightPtr);
                 }
             } else {
                 // 非 fade：正常渲染（使用弹簧平滑进度）
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr);
+                                               scrollOffset, padPtr, 1.0f, padRightPtr);
 
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                    DrawTranslatedText(trW, padPtr);
+                    DrawTranslatedText(trW, padPtr, 1.0f, padRightPtr);
                 }
             }
         } else {

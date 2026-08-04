@@ -7,7 +7,34 @@ on:
     branches: ['**']
 
 jobs:
+  # 每天仅当日第一次 push 触发构建；pull_request 不受限制
+  check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    outputs:
+      skip: ${{ steps.check_today.outputs.skip }}
+    steps:
+      - name: Check today's build status
+        id: check_today
+        shell: bash
+        run: |
+          today=$(date -u +%Y-%m-%d)
+          runs=$(gh run list --branch "${{ github.ref_name }}" --workflow build.yml --limit 20 --json status,createdAt --jq "[.[] | select(.status == \"completed\" and (.createdAt | startswith(\"$today\")))] | length")
+          if [ "$runs" -gt 0 ]; then
+            echo "Today's build already completed ($runs run(s) found). Skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No completed build found for today. Proceeding."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   build:
+    needs: check
+    if: |
+      always() &&
+      (github.event_name != 'push' || needs.check.outputs.skip != 'true')
     runs-on: windows-latest
 
     steps:

@@ -61,9 +61,13 @@ private:
                                           double progress,
                                           bool enableKaraoke,
                                           float scrollOffset = 0.0f,
-                                          const float* overridePaddingX = nullptr,
-                                          float opacity = 1.0f);
-    void DrawTranslatedText(const std::wstring& text, const float* overridePaddingX = nullptr, float opacity = 1.0f);
+                                          const float* overridePaddingLeft = nullptr,
+                                          float opacity = 1.0f,
+                                          const float* overridePaddingRight = nullptr);
+    void DrawTranslatedText(const std::wstring& text,
+                            const float* overridePaddingLeft = nullptr,
+                            float opacity = 1.0f,
+                            const float* overridePaddingRight = nullptr);
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
