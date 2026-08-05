@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cwchar>
 #include <dwmapi.h>
+#include <shobjidl.h>   // IFileSaveDialog / IFileOpenDialog
 #include <windowsx.h>  // GET_X_LPARAM / GET_Y_LPARAM
 
 namespace moekoe {
@@ -793,6 +794,119 @@ void D2DSettingsWindow::ExportDiagnosticInfo() {
     if (onExportAction_) onExportAction_("exportDiagnostic");
 }
 
+void D2DSettingsWindow::ExportCurrentConfig() {
+    // 使用 IFileSaveDialog 选择保存路径
+    Microsoft::WRL::ComPtr<IFileSaveDialog> pDialog;
+    HRESULT hr = CoCreateInstance(CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(pDialog.GetAddressOf()));
+    if (FAILED(hr) || !pDialog) return;
+
+    pDialog->SetTitle(L"导出配置");
+    pDialog->SetFileName(L"TaskbarLyrics-config");
+    pDialog->SetDefaultExtension(L"json");
+
+    COMDLG_FILTERSPEC rgSpec[] = {
+        { L"JSON 配置文件 (*.json)", L"*.json" },
+        { L"所有文件 (*.*)",         L"*.*" },
+    };
+    pDialog->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+    pDialog->SetFileTypeIndex(0);
+
+    hr = pDialog->Show(hwnd_);
+    if (FAILED(hr)) return;
+
+    Microsoft::WRL::ComPtr<IShellItem> pItem;
+    hr = pDialog->GetResult(&pItem);
+    if (FAILED(hr) || !pItem) return;
+
+    PWSTR pszPath = nullptr;
+    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+    if (FAILED(hr) || !pszPath) return;
+
+    // 先收集当前设置窗口中的值
+    ApplyChanges();
+    std::string path;
+    {
+        int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            path.resize(len - 1);
+            WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, &path[0], len, nullptr, nullptr);
+        }
+    }
+    CoTaskMemFree(pszPath);
+
+    if (!path.empty()) {
+        editedConfig_.ExportToFile(path);
+    }
+}
+
+void D2DSettingsWindow::ImportConfigFromFile() {
+    // 使用 IFileOpenDialog 选择导入文件
+    Microsoft::WRL::ComPtr<IFileOpenDialog> pDialog;
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(pDialog.GetAddressOf()));
+    if (FAILED(hr) || !pDialog) return;
+
+    pDialog->SetTitle(L"导入配置");
+
+    COMDLG_FILTERSPEC rgSpec[] = {
+        { L"JSON 配置文件 (*.json)", L"*.json" },
+        { L"所有文件 (*.*)",         L"*.*" },
+    };
+    pDialog->SetFileTypes(ARRAYSIZE(rgSpec), rgSpec);
+    pDialog->SetFileTypeIndex(0);
+
+    hr = pDialog->Show(hwnd_);
+    if (FAILED(hr)) return;
+
+    Microsoft::WRL::ComPtr<IShellItem> pItem;
+    hr = pDialog->GetResult(&pItem);
+    if (FAILED(hr) || !pItem) return;
+
+    PWSTR pszPath = nullptr;
+    hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
+    if (FAILED(hr) || !pszPath) return;
+
+    std::string path;
+    {
+        int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0, nullptr, nullptr);
+        if (len > 0) {
+            path.resize(len - 1);
+            WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, &path[0], len, nullptr, nullptr);
+        }
+    }
+    CoTaskMemFree(pszPath);
+
+    if (!path.empty() && editedConfig_.ImportFromFile(path)) {
+        // 导入成功：重建页面、刷新主题、回调主程序
+        currentConfig_ = editedConfig_;
+        if (onConfigChanged_) onConfigChanged_(currentConfig_);
+        BuildPages(currentConfig_);
+        UpdateThemeColors();
+        CreateBgGradientBrush();
+        ArrangeUI();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    }
+}
+
+void D2DSettingsWindow::ResetConfigToDefaults() {
+    // 弹出确认对话框
+    int result = MessageBoxW(hwnd_,
+        L"确定要恢复默认配置吗？\n所有设置将被重置为默认值。",
+        L"恢复默认配置",
+        MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+    if (result != IDYES) return;
+
+    editedConfig_.ResetToDefaults();
+    currentConfig_ = editedConfig_;
+    if (onConfigChanged_) onConfigChanged_(currentConfig_);
+    BuildPages(currentConfig_);
+    UpdateThemeColors();
+    CreateBgGradientBrush();
+    ArrangeUI();
+    InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
 // ═══════════════════════════════
 // WndProc
 // ═══════════════════════════════
@@ -1339,6 +1453,15 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
             } else if (btn->id == "exportDiagnostic") {
                 // 导出诊断信息
                 ExportDiagnosticInfo();
+            } else if (btn->id == "exportConfig") {
+                // 导出当前配置到文件
+                ExportCurrentConfig();
+            } else if (btn->id == "importConfig") {
+                // 从文件导入配置
+                ImportConfigFromFile();
+            } else if (btn->id == "resetConfig") {
+                // 恢复默认配置
+                ResetConfigToDefaults();
             } else if (btn->OnClick()) {
                 btn->OnClick()(btn);
             }

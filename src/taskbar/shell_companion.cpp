@@ -321,7 +321,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
     const std::string& displayMode,
     int dragOffsetX, int dragOffsetY,
     RECT& inOutLastPosRect,
-    int dynamicWidthDip) {
+    int dynamicWidthDip,
+    int cardMaxExpandRatio) {
     if (!lyricsWnd || !hTaskbar_) return;
 
     // 全屏隐藏期间跳过定位
@@ -493,10 +494,20 @@ void ShellCompanion::PositionLyricsInTaskbar(
             rightEdge = tbRect.right - cachedRightEdgeOffset_;
         }
 
-        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展，上限 1.5x 默认（540 DIPs）
+        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展
+        // cardMaxExpandRatio: 0=默认(扩展1/3, 即1.5x基础), 1=50%(2x基础), 2=100%(无上限)
         int cardMaxDip = isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP;
         if (isCardMode && dynamicWidthDip > constants::CARD_MIN_WIDTH_BASE_DP * 2) {
-            cardMaxDip = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+            if (cardMaxExpandRatio >= 2) {
+                // 100%: 无硬性上限，仅受可用空间限制
+                cardMaxDip = dynamicWidthDip;
+            } else if (cardMaxExpandRatio == 1) {
+                // 50%: 扩展到2倍基础宽度
+                cardMaxDip = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 4);
+            } else {
+                // 默认: 扩展到1.5倍基础宽度
+                cardMaxDip = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+            }
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;
@@ -515,10 +526,16 @@ void ShellCompanion::PositionLyricsInTaskbar(
         int rightEdge = tbRect.right;
         if (foundTray) rightEdge = trayRect.left;
 
-        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展，上限 1.5x 默认（540 DIPs）
+        // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展
         int cardMaxDip2 = isCardMode ? constants::CARD_MIN_WIDTH_BASE_DP * 2 : constants::MAX_LYRIC_WIDTH_BASE_DP;
         if (isCardMode && dynamicWidthDip > constants::CARD_MIN_WIDTH_BASE_DP * 2) {
-            cardMaxDip2 = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+            if (cardMaxExpandRatio >= 2) {
+                cardMaxDip2 = dynamicWidthDip;
+            } else if (cardMaxExpandRatio == 1) {
+                cardMaxDip2 = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 4);
+            } else {
+                cardMaxDip2 = std::min(dynamicWidthDip, constants::CARD_MIN_WIDTH_BASE_DP * 3);
+            }
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip2, info_.dpi, 96);
         int availableWidth = rightEdge - tbRect.left;

@@ -122,6 +122,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 ApplyRendererSettings(app);
                 if (app.taskbarWindow) {
                     app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
+                    app.taskbarWindow->SetCardMaxExpandRatio(cfg.Appearance().cardMaxExpandRatio);
                     app.taskbarWindow->Reposition();
                 }
                 if (app.tray) {

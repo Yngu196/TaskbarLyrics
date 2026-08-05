@@ -181,6 +181,7 @@ bool Config::Load() {
             appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
             appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
             appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
+            appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
             appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
@@ -277,6 +278,7 @@ bool Config::Save() const {
         {"card_background_mode",  appearance_.cardBackgroundMode},
         {"single_line_background_mode", appearance_.singleLineBackgroundMode},
         {"card_dynamic_width",    appearance_.cardDynamicWidth},
+        {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
         {"marquee_mode",       appearance_.marqueeMode},
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},
         {"marquee_pause_ms",   appearance_.marqueePauseMs},
@@ -308,6 +310,154 @@ bool Config::Save() const {
 
     out << j.dump(2);
     return true;
+}
+
+bool Config::ExportToFile(const std::string& path) const {
+    std::ofstream out(path, std::ios::trunc);
+    if (!out.is_open()) {
+        moekoe::Log("[CONFIG] ExportToFile failed: cannot open %s\n", path.c_str());
+        return false;
+    }
+
+    // 复用 Save() 的序列化逻辑
+    json j;
+    j["schema_version"] = Config::kSchemaVersion;
+    j["enabled"]    = enabled_;
+    j["auto_start"] = autoStart_;
+
+    j["appearance"] = {
+        {"highlight_color",    appearance_.highlightColor},
+        {"normal_color",       appearance_.normalColor},
+        {"normal_opacity",     appearance_.normalOpacity},
+        {"font_family",        appearance_.fontFamily},
+        {"font_size",          appearance_.fontSize},
+        {"enable_karaoke",     appearance_.enableKaraoke},
+        {"enable_translation", appearance_.enableTranslation},
+        {"translation_mode",   appearance_.translationMode},
+        {"card_translation_mode", appearance_.cardTranslationMode},
+        {"enable_marquee",     appearance_.enableMarquee},
+        {"display_mode",       appearance_.displayMode},
+        {"card_font_size_current", appearance_.cardFontSizeCurrent},
+        {"card_font_size_next",    appearance_.cardFontSizeNext},
+        {"card_font_family",       appearance_.cardFontFamily},
+        {"card_current_color",     appearance_.cardCurrentColor},
+        {"card_next_color",        appearance_.cardNextColor},
+        {"card_background_mode",  appearance_.cardBackgroundMode},
+        {"single_line_background_mode", appearance_.singleLineBackgroundMode},
+        {"card_dynamic_width",    appearance_.cardDynamicWidth},
+        {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
+        {"marquee_mode",       appearance_.marqueeMode},
+        {"marquee_delay_ms",   appearance_.marqueeDelayMs},
+        {"marquee_pause_ms",   appearance_.marqueePauseMs},
+        {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
+        {"enable_cover",          appearance_.enableCover},
+        {"cover_size",           appearance_.coverSize},
+        {"cover_offset_x",       appearance_.coverOffsetX},
+        {"cover_corner_radius",  appearance_.coverCornerRadius},
+        {"settings_theme",       appearance_.settingsTheme},
+        {"lyric_offset_y",      appearance_.lyricOffsetY},
+        {"card_line1_offset_y", appearance_.cardLine1OffsetY},
+        {"card_line2_offset_y", appearance_.cardLine2OffsetY},
+    };
+
+    j["advanced"] = {
+        {"websocket_port",          advanced_.websocketPort},
+        {"http_server_port",        advanced_.httpServerPort},
+        {"refresh_rate_hz",         advanced_.refreshRateHz},
+        {"debug_log",               advanced_.debugLog},
+        {"enable_fullscreen_hide",  advanced_.enableFullscreenHide},
+    };
+
+    j["position"] = {
+        {"offset_x",      position_.offsetX},
+        {"offset_y",      position_.offsetY},
+        {"lock_position", position_.lockPosition},
+        {"lock_fully",    position_.lockFully},
+    };
+
+    out << j.dump(2);
+    moekoe::Log("[CONFIG] Exported to %s\n", path.c_str());
+    return true;
+}
+
+bool Config::ImportFromFile(const std::string& path) {
+    std::ifstream in(path);
+    if (!in.is_open()) {
+        moekoe::Log("[CONFIG] ImportFromFile failed: cannot open %s\n", path.c_str());
+        return false;
+    }
+
+    try {
+        json j;
+        in >> j;
+        // 复用 Load() 的反序列化逻辑
+        enabled_   = j.value("enabled",   true);
+        autoStart_ = j.value("auto_start", false);
+
+        if (j.contains("appearance")) {
+            const auto& a = j["appearance"];
+            appearance_.highlightColor    = a.value("highlight_color",   appearance_.highlightColor);
+            appearance_.normalColor       = a.value("normal_color",      appearance_.normalColor);
+            appearance_.normalOpacity     = a.value("normal_opacity",    appearance_.normalOpacity);
+            appearance_.fontFamily        = a.value("font_family",       appearance_.fontFamily);
+            appearance_.fontSize          = a.value("font_size",         appearance_.fontSize);
+            appearance_.enableKaraoke     = a.value("enable_karaoke",    appearance_.enableKaraoke);
+            appearance_.enableTranslation = a.value("enable_translation", appearance_.enableTranslation);
+            appearance_.translationMode   = a.value("translation_mode",   appearance_.translationMode);
+            appearance_.cardTranslationMode = a.value("card_translation_mode", appearance_.cardTranslationMode);
+            appearance_.enableMarquee     = a.value("enable_marquee",    appearance_.enableMarquee);
+            appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
+            appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
+            appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
+            appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
+            appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
+            appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
+            appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
+            appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
+            appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
+            appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
+            appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
+            appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
+            appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
+            appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
+            appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
+            appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
+            appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
+            appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
+            appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
+            appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
+            appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
+            appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
+        }
+
+        if (j.contains("advanced")) {
+            const auto& a = j["advanced"];
+            advanced_.websocketPort        = a.value("websocket_port",          advanced_.websocketPort);
+            advanced_.httpServerPort       = a.value("http_server_port",        advanced_.httpServerPort);
+            advanced_.refreshRateHz        = a.value("refresh_rate_hz",          advanced_.refreshRateHz);
+            advanced_.debugLog             = a.value("debug_log",               advanced_.debugLog);
+            advanced_.enableFullscreenHide = a.value("enable_fullscreen_hide",  advanced_.enableFullscreenHide);
+        }
+
+        // 导入时不覆盖位置（位置与具体机器/显示器相关）
+        Save();
+        moekoe::Log("[CONFIG] Imported from %s\n", path.c_str());
+        return true;
+    } catch (const std::exception& e) {
+        moekoe::Log("[CONFIG] ImportFromFile JSON error: %s\n", e.what());
+        return false;
+    }
+}
+
+bool Config::ResetToDefaults() {
+    appearance_ = AppearanceConfig{};
+    advanced_   = AdvancedConfig{};
+    position_   = PositionConfig{};
+    enabled_    = true;
+    autoStart_  = false;
+    bool ok = Save();
+    moekoe::Log("[CONFIG] ResetToDefaults: %s\n", ok ? "ok" : "FAIL");
+    return ok;
 }
 
 bool Config::SetAutoStart(bool v) {

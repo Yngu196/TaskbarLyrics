@@ -688,6 +688,7 @@ void BehaviorPage::CollectChanges(moekoe::Config& cfg) {
 
 void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
     const auto& adv = cfg.Advanced();
+    const auto& app = cfg.Appearance();
 
     auto c1 = MakeCard("高级设置");
     {
@@ -729,6 +730,41 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
     }
     AddChild(std::move(c1));
 
+    // Card: 卡片扩展
+    auto cExpand = MakeCard("卡片扩展");
+    {
+        auto cb = std::make_unique<ComboBox>();
+        cb->id = "cardMaxExpandRatio";
+        cb->label = "最大扩展比例";
+        cb->items = {"默认（1/3）", "50%", "100%"};
+        cb->selectedIndex = app.cardMaxExpandRatio;
+        cExpand->AddChild(std::move(cb));
+    }
+    AddChild(std::move(cExpand));
+
+    // Card: 配置管理
+    auto cCfg = MakeCard("配置管理");
+    {
+        auto btn = std::make_unique<Button>();
+        btn->id = "exportConfig";
+        btn->text = "导出当前配置";
+        cCfg->AddChild(std::move(btn));
+    }
+    {
+        auto btn = std::make_unique<Button>();
+        btn->id = "importConfig";
+        btn->text = "导入配置";
+        cCfg->AddChild(std::move(btn));
+    }
+    {
+        auto btn = std::make_unique<Button>();
+        btn->id = "resetConfig";
+        btn->text = "恢复默认";
+        btn->isDanger = true;
+        cCfg->AddChild(std::move(btn));
+    }
+    AddChild(std::move(cCfg));
+
     // Card: 导出
     auto c2 = MakeCard("导出");
     {
@@ -748,6 +784,7 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
 
 void AdvancedPage::CollectChanges(moekoe::Config& cfg) {
     auto& adv = cfg.MutableAdvanced();
+    auto& app = cfg.MutableAppearance();
     for (auto& card : children_) {
         for (auto& child : card->Children()) {
             if (auto* lr = dynamic_cast<LabelRow*>(child.get())) {
@@ -756,6 +793,8 @@ void AdvancedPage::CollectChanges(moekoe::Config& cfg) {
                 if (s->id == "refreshRate") adv.refreshRateHz = static_cast<int>(s->value);
             } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                 if (t->id == "debugLog") adv.debugLog = t->value;
+            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                if (cb->id == "cardMaxExpandRatio") app.cardMaxExpandRatio = cb->selectedIndex;
             }
         }
     }

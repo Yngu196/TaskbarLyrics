@@ -74,6 +74,9 @@ struct AppearanceConfig {
     // 卡片模式歌词显示扩展：长歌词自动加宽显示区域
     bool        cardDynamicWidth{true};
 
+    // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
+    int         cardMaxExpandRatio{0};
+
     // 歌词垂直偏移（单行/卡拉OK模式，dp，负值=上移，正值=下移）
     int         lyricOffsetY{0};
 
@@ -130,6 +133,14 @@ public:
 
     // ---- 路径 ----
     static std::string GetConfigPath();
+
+    // ---- 导入导出 ----
+    // 导出当前配置到指定文件
+    bool ExportToFile(const std::string& path) const;
+    // 从指定文件导入配置（覆盖当前值并保存）
+    bool ImportFromFile(const std::string& path);
+    // 重置为默认值并保存
+    bool ResetToDefaults();
 
     // ---- 鉴权 Token ----
     // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取。

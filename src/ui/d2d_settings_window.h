@@ -89,6 +89,15 @@ private:
     // 导出诊断信息（IFileSaveDialog）
     void ExportDiagnosticInfo();
 
+    // 导出当前配置到文件
+    void ExportCurrentConfig();
+
+    // 从文件导入配置
+    void ImportConfigFromFile();
+
+    // 恢复默认配置
+    void ResetConfigToDefaults();
+
     // ═══════════════════════════════
     // Settings 2.0 页面系统
     // ═══════════════════════════════

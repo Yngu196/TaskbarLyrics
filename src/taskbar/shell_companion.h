@@ -62,7 +62,8 @@ public:
                                   const std::string& displayMode,
                                   int dragOffsetX, int dragOffsetY,
                                   RECT& inOutLastPosRect,
-                                  int dynamicWidthDip = 0);
+                                  int dynamicWidthDip = 0,
+                                  int cardMaxExpandRatio = 0);
 
     // ── 拖动后吸附到空闲空间 ──
     void SnapToEmptySpace(HWND lyricsWnd);

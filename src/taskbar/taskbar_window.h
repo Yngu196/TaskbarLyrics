@@ -95,6 +95,10 @@ public:
     void SetDynamicCardWidthDip(int widthDip) { dynamicCardWidthDip_ = widthDip; }
     int GetDynamicCardWidthDip() const { return dynamicCardWidthDip_; }
 
+    // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
+    void SetCardMaxExpandRatio(int ratio) { cardMaxExpandRatio_ = ratio; }
+    int GetCardMaxExpandRatio() const { return cardMaxExpandRatio_; }
+
     // 显示模式（影响窗口尺寸计算）
     std::string GetDisplayMode() const { return displayMode_; }
     void SetDisplayMode(const std::string& mode) { displayMode_ = mode; }
@@ -157,6 +161,7 @@ private:
     int           dragOffsetX_{0};         // 用户拖动产生的累积偏移
     int           dragOffsetY_{0};
     int           dynamicCardWidthDip_{0};  // 卡片模式动态宽度（DIPs），0=使用默认
+    int           cardMaxExpandRatio_{0};   // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
     TaskbarPosition lastPosition_{TaskbarPosition::UNKNOWN};  // 用于检测方位变化（重置拖动偏移）
 
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"
