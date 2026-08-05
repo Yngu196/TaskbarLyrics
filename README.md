@@ -5,8 +5,8 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.2">
-    <img src="https://img.shields.io/badge/release-v1.0.2-blue" alt="release" />
+  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.3">
+    <img src="https://img.shields.io/badge/release-v1.0.3-blue" alt="release" />
   </a>
   <a href="https://github.com/Yngu196/TaskbarLyrics?tab=License-1-ov-file">
     <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
@@ -38,6 +38,7 @@
 - **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面
 - **自定义字体** — 可使用本地已安装的字体
 - **歌词翻译支持** — 自动解析 KRC `[language:...]` 标签提取翻译数据
+- **配置导入导出** — 支持将配置导出为 JSON 文件，方便分享和恢复
 
 ## 使用说明
 
