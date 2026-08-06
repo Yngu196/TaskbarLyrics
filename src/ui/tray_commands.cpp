@@ -119,6 +119,17 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 const auto savedPos = app.config->Position();
                 *app.config = cfg;
                 app.config->MutablePosition() = savedPos;
+                // 立即持久化，避免仅在进程退出时写盘
+                app.config->Save();
+
+                // 热更新调试日志开关（原实现只在启动时生效，
+                // 导致设置中开启调试日志后运行中的进程实际未开启）
+                const bool debugLog = cfg.Advanced().debugLog;
+                SetLogEnabled(debugLog);
+                SetLogLevel(debugLog ? LogLevel::Debug : LogLevel::Info);
+                if (app.renderer) app.renderer->SetDebugLog(debugLog);
+                if (app.wsClient) app.wsClient->SetDebugLog(debugLog);
+
                 ApplyRendererSettings(app);
                 if (app.taskbarWindow) {
                     app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
