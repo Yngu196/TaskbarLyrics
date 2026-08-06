@@ -112,8 +112,10 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     // 则视为无歌词，交由上层渲染频谱而非文字。
     {
         bool allInstrumental = true;
+        bool hasNonEmptyLine = false;
         for (const auto& line : lyrics_.lines) {
             if (line.text.empty()) continue;
+            hasNonEmptyLine = true;
             if (line.text.find("纯音乐") == std::string::npos &&
                 line.text.find("Instrumental") == std::string::npos &&
                 line.text.find("instrumental") == std::string::npos) {
@@ -121,7 +123,9 @@ RenderState LyricsParser::GetCurrentRenderState() const {
                 break;
             }
         }
-        if (allInstrumental) {
+        // 只有"存在非空文本行且全部为纯音乐标记"时才视为纯音乐；
+        // 全部文本为空（例如仅字符时间轴的歌词行）不应被误判为无歌词
+        if (allInstrumental && hasNonEmptyLine) {
             out.hasLyrics = false;
             return out;
         }

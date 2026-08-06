@@ -244,7 +244,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     wsClient.SetDebugLog(config.Advanced().debugLog);
 
     wsClient.OnLyrics([&](const LyricsData& data) {
-        if (app.config->Advanced().debugLog) Log("[WS] OnLyrics: valid=%d lines=%zu\n", data.valid, data.lines.size());
+        if (app.config->Advanced().debugLog)
+            Log("[WS] OnLyrics: valid=%d lines=%zu firstText='%.30s'\n",
+                data.valid, data.lines.size(),
+                data.lines.empty() ? "" : data.lines.front().text.c_str());
         // 性能监控：累加 WS 消息计数（仅 debug 模式有意义，但累加开销极低，无条件执行）
         app.perfWsMsgCount_.fetch_add(1, std::memory_order_relaxed);
         parser.UpdateLyrics(data);

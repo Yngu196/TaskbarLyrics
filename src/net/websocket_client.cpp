@@ -263,8 +263,22 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 // if (debugLog_) Log("[WS] lyricsData is array, count=%zu\n", lyricsArray.size());
             } else if (ld.is_string()) {
                 std::string ldStr = ld.get<std::string>();
-                data = ParseKrcString(ldStr);
-                hasLD = data.valid;
+                // 兼容：lyricsData 字符串可能是 JSON 字符串化的数组
+                // （不同 MoeKoeMusic 版本发送格式不同），也可能是 KuGou KRC 歌词文本。
+                // 先尝试按 JSON 数组解析，失败再走 KRC，避免真实歌词被丢弃导致显示频谱。
+                json maybeArray = json::parse(ldStr, nullptr, false);
+                if (!maybeArray.is_discarded() && maybeArray.is_array()) {
+                    lyricsArray = maybeArray;
+                    hasLD = true;
+                    if (debugLog_) Log("[WS] lyricsData string parsed as JSON array, count=%zu\n",
+                                       lyricsArray.size());
+                } else {
+                    data = ParseKrcString(ldStr);
+                    hasLD = data.valid;
+                    if (debugLog_ && !hasLD)
+                        Log("[WS] lyricsData string is neither JSON array nor valid KRC (len=%zu)\n",
+                            ldStr.size());
+                }
             } else {
                 Log("Dispatch: lyricsData unexpected type=" + std::to_string(static_cast<int>(ld.type())));
             }
@@ -338,6 +352,13 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                         if (!ct.ch.empty()) {
                             line.characters.push_back(std::move(ct));
                         }
+                    }
+                }
+                // 兼容缺少 text 字段、仅含 characters 时间轴的歌词行：
+                // 由字符级数据拼接出整行文本，否则会被上层误判为无歌词/纯音乐
+                if (line.text.empty()) {
+                    for (const auto& c : line.characters) {
+                        line.text += c.ch;
                     }
                 }
                 data.lines.push_back(std::move(line));
