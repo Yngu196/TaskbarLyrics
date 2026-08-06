@@ -17,7 +17,7 @@
 <p align="center">在 Windows 任务栏上显示歌词，支持单行、双行歌词、显示歌曲封面、播放控制和歌词翻译</p>
 
 > MoeKoeMusic TaskbarLyrics 正在收集用户反馈，欢迎在 [GitHub Issues](https://github.com/Yngu196/TaskbarLyrics/issues)/[Discussion](https://github.com/Yngu196/TaskbarLyrics/discussions/17) 提交问题/建议或填写兼容性反馈！
-
+### 如果您遇到不显示歌词的问题，请优先检测MoeKoeMusic的api模式是否开启，如果未开启，请先开启api模式。如果已开启，请关闭后重新开启，然后重启MoeKoeMusic一到两次。如果问题仍然存在，请提交 issue。
 ***
 
 ## 功能特性
