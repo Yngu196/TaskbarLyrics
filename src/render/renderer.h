@@ -76,6 +76,8 @@ private:
     void RenderCardStyle(const RenderState& state);
     /// 垂直任务栏专用：堆叠式布局（封面在上，歌词在下）
     void RenderCardStyleVertical(const RenderState& state);
+    /// 绘制卡片背景（毛玻璃封面 + 半透明主题色叠加），纯音乐模式共用
+    void DrawCardBackground();
     void DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                       float x, float y, float size);
     /// 绘制单行卡片模式歌词（isCurrent=true → 当前行大号亮色，false → 下一行小号灰色）

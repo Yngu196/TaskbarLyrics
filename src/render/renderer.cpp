@@ -539,6 +539,8 @@ void TaskbarRenderer::Render(const RenderState& state) {
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float paddingX = constants::TEXT_PADDING_X;
             const bool showCover = settings_.enableCover;
+            // 与有歌词时保持一致：纯音乐也绘制卡片毛玻璃背景
+            DrawCardBackground();
             if (showCover) {
                 wchar_t fallback = FirstUtf8CharAsWide(state.songName);
                 const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
@@ -563,8 +565,12 @@ void TaskbarRenderer::Render(const RenderState& state) {
             : constants::TEXT_PADDING_X;
 
         // 单行背景：毛玻璃效果（与双行背景逻辑一致）
-        // 仅当显式设置为 frosted 模式时绘制，transparent 时跳过
-        if (settings_.singleLineBackgroundMode != "transparent" && cardBackgroundBrush_) {
+        // 仅当显式设置为 frosted 模式时绘制，transparent 时跳过；
+        // 仅在存在显示内容（歌词，或纯音乐播放中）时绘制，
+        // 暂停纯音乐后整窗清空，避免残留毛玻璃背景。
+        const bool showLyrics = (state.hasLyrics && !state.currentLine.empty());
+        if ((showLyrics || state.isPlaying) &&
+            settings_.singleLineBackgroundMode != "transparent" && cardBackgroundBrush_) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
             D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f,
                 static_cast<float>(width_), static_cast<float>(height_));
@@ -579,8 +585,9 @@ void TaskbarRenderer::Render(const RenderState& state) {
         // 保存封面调整前的基础右 padding（歌词右边缘不随封面偏移）
         const float baseRightPadding = vertPaddingX;
 
-        // 封面绘制（单行歌词模式）
-        if (settings_.enableCover) {
+        // 封面绘制（单行歌词模式）：仅在显示歌词时绘制并让出歌词空间；
+        // 纯音乐无歌词时由下方 isPlaying 分支统一绘制封面 + 频谱，避免重复绘制
+        if (settings_.enableCover && showLyrics) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
             const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;

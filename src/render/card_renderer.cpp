@@ -57,22 +57,17 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
     return totalPx / dpiScale;
 }
 
-void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
-    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
-    const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
-    const float paddingX = constants::TEXT_PADDING_X;
-    const bool showCover = settings_.enableCover;
-    const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
-
-    // ═════ P1-①+P1-④: 卡片背景（柔焦封面 + 主题色叠加） ═════
-    // [原: if (cardBackgroundBrush_)]
+// 卡片背景：毛玻璃封面 + 半透明主题色叠加。
+// 供有歌词（RenderCardStyle / RenderCardStyleVertical）与纯音乐分支共用，
+// 确保两种场景下背景效果一致。
+void TaskbarRenderer::DrawCardBackground() {
     if (settings_.cardBackgroundMode != "transparent" && cardBackgroundBrush_) {
-        D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, static_cast<float>(width_), static_cast<float>(height_));
+        const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+        D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f,
+            static_cast<float>(width_), static_cast<float>(height_));
         D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
             constants::CARD_COVER_RADIUS_DP * dpiScale,
             constants::CARD_COVER_RADIUS_DP * dpiScale);
-        // P1-④: 先绘制柔焦封面背景（若有）
         if (blurredBgBrush_ && blurredBgBitmapW_ > 0.0f) {
             float sx = static_cast<float>(width_) / blurredBgBitmapW_;
             float sy = static_cast<float>(height_) / blurredBgBitmapW_;
@@ -82,11 +77,22 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
             blurredBgBrush_->SetOpacity(1.0f);
             blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Identity());
         }
-        // P1-①: 再叠加半透明主题色调（统一卡片氛围）
         cardBackgroundBrush_->SetOpacity(constants::COVER_THEME_ALPHA);
         renderTarget_->FillRoundedRectangle(bgRR, cardBackgroundBrush_.Get());
         cardBackgroundBrush_->SetOpacity(1.0f);
     }
+}
+
+void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+    const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
+    const float paddingX = constants::TEXT_PADDING_X;
+    const bool showCover = settings_.enableCover;
+    const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
+
+    // ═════ P1-①+P1-④: 卡片背景（柔焦封面 + 主题色叠加） ═════
+    DrawCardBackground();
 
     // ═════ 1. 绘制封面（左侧） ═════
     if (showCover) {
@@ -190,26 +196,8 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
         w - paddingX * 2.0f);
 
     // ═════ P1-①+P1-④: 绘制卡片背景（柔焦封面 + 主题色叠加） ═════
-    // 纯透明模式下跳过背景绘制
-    if (settings_.cardBackgroundMode != "transparent" && cardBackgroundBrush_) {
-        D2D1_RECT_F bgRect = D2D1::RectF(0.0f, 0.0f, w, h);
-        D2D1_ROUNDED_RECT bgRR = D2D1::RoundedRect(bgRect,
-            constants::CARD_COVER_RADIUS_DP * dpiScale,
-            constants::CARD_COVER_RADIUS_DP * dpiScale);
-        // P1-④: 先绘制柔焦封面背景（若有）
-        if (blurredBgBrush_ && blurredBgBitmapW_ > 0.0f) {
-            float sx = w / blurredBgBitmapW_;
-            float sy = h / blurredBgBitmapW_;
-            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Scale(sx, sy));
-            blurredBgBrush_->SetOpacity(constants::COVER_BLUR_BG_ALPHA);
-            renderTarget_->FillRoundedRectangle(bgRR, blurredBgBrush_.Get());
-            blurredBgBrush_->SetOpacity(1.0f);
-            blurredBgBrush_->SetTransform(D2D1::Matrix3x2F::Identity());
-        }
-        cardBackgroundBrush_->SetOpacity(constants::COVER_THEME_ALPHA);
-        renderTarget_->FillRoundedRectangle(bgRR, cardBackgroundBrush_.Get());
-        cardBackgroundBrush_->SetOpacity(1.0f);
-    }
+    // 纯透明模式下由 DrawCardBackground 内部跳过
+    DrawCardBackground();
 
     // ═════ 1. 封面（居中顶部） ═════
     if (showCover) {

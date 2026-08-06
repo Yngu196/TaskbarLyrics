@@ -83,6 +83,11 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     out.isPlaying   = state_.isPlaying;
+    // 封面/歌曲名属于播放器状态，与歌词是否存在无关：
+    // 纯音乐（无歌词或全部为纯音乐占位行）也必须透传给渲染层，
+    // 否则永远拿不到 coverArtUrl/songName，只能显示 '?' 占位封面。
+    out.coverArtUrl = state_.coverArtUrl;
+    out.songName    = state_.songName;
 
     // ── 本地时钟推算：播放状态下用本地时间插值 currentTime ──
     // 目的：即使 playerState 消息频率低（如每秒一次），progress 也能每帧平滑推进
@@ -144,10 +149,6 @@ RenderState LyricsParser::GetCurrentRenderState() const {
         out.nextLine = lyrics_.lines[idx + 1].text;
         out.nextTranslated = lyrics_.lines[idx + 1].translated;
     }
-
-    // 传递封面 URL 和歌曲名（来自 PlayerState）
-    out.coverArtUrl = state_.coverArtUrl;
-    out.songName    = state_.songName;
 
     // 在该行内计算字符级进度
     if (!line.characters.empty()) {
