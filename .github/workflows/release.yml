@@ -90,26 +90,30 @@ jobs:
 
       - name: Extract changelog for this version
         id: changelog
-        shell: powershell
+        # 必须使用 pwsh（PowerShell 7）：GitHub Actions 将 run 块写入无 BOM 的
+        # UTF-8 脚本文件，Windows PowerShell 5.1 会按 ANSI 读取，导致中文路径
+        # （Docs\版本更新日志.md）变成乱码、Test-Path 失败，生成空 Release notes
+        # （v1.0.3 曾因此触发）。
+        shell: pwsh
         run: |
           # 从 tag 获取版本号（去掉 v 前缀）
           $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^v',''
           Write-Host "Extracting changelog for version: $tag"
 
           $changelogFile = "Docs\版本更新日志.md"
-          if (!(Test-Path $changelogFile)) {
+          if (!(Test-Path -LiteralPath $changelogFile)) {
             Write-Host "WARNING: Changelog file not found"
             echo "body=" >> $env:GITHUB_OUTPUT
             exit 0
           }
 
-          $content = Get-Content $changelogFile -Raw -Encoding UTF8
+          $content = Get-Content -LiteralPath $changelogFile -Raw -Encoding UTF8
           $lines = $content -split "`n"
 
           # 查找 "## vX.Y.Z 变更" 标题行
-          $headerPattern = "^## $tag 变更"
-          $nextHeaderPattern = "^## v\d"
+          # 转义 tag 中的 "."，避免被当作正则通配符
+          $headerPattern = "^## " + [regex]::Escape($tag) + " 变更"
+          $nextHeaderPattern = "^## v\d+\.\d+\.\d+"
 
           $startIdx = -1
           $endIdx = $lines.Count
@@ -138,13 +142,15 @@ jobs:
 
           # 获取上一个版本的 tag（用于 Full Changelog 链接）
           $repo = "${{ github.repository }}"
-          $prevTag = git tag --sort=-version:refname | Select-String -Pattern "^v" | Select-Object -First 10 | Where-Object { $_.Line -ne $tag } | Select-Object -First 1
-          $prevTagStr = if ($prevTag) { $prevTag.Line.Trim() } else { "" }
+          $allTags = @(git tag --sort=-version:refname |
+            Where-Object { $_ -match '^v\d+\.\d+\.\d+$' } |
+            ForEach-Object { $_.Trim() })
+          $prevTagStr = $allTags | Where-Object { $_ -ne $tag } | Select-Object -First 1
 
           # 构建 release body：版本更新日志 + Full Changelog 链接
           $fullChangelogLink = ""
           if ($prevTagStr) {
-            $fullChangelogLink = "`n`n---`n`n**Full Changelog**: https://github.com/$repo/compare/$prevTagStr...$tag"
+            $fullChangelogLink = "`n`n---`n`n**Full Changelog**: [$prevTagStr...$tag](https://github.com/$repo/compare/$prevTagStr...$tag)"
           }
 
           $body = $versionNotes + $fullChangelogLink
