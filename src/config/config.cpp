@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0
 // config.cpp - 配置管理实现
 #include "config/config.h"
+#include "core/constants.h"
 #include "util/logger.h"
 
 #include <nlohmann/json.hpp>
@@ -194,6 +195,7 @@ bool Config::Load() {
             appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
+            appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
         }
 
         if (j.contains("advanced")) {
@@ -221,6 +223,8 @@ bool Config::Load() {
         appearance_.marqueeDelayMs      = std::clamp(appearance_.marqueeDelayMs, 0, 10000);
         appearance_.marqueePauseMs      = std::clamp(appearance_.marqueePauseMs, 0, 10000);
         appearance_.marqueeSpeedPxPerSec = std::clamp(appearance_.marqueeSpeedPxPerSec, 10.0f, 500.0f);
+        appearance_.windowWidthOverride = std::clamp(
+            appearance_.windowWidthOverride, 0, constants::WINDOW_WIDTH_OVERRIDE_MAX_DP);
         advanced_.websocketPort   = std::clamp(advanced_.websocketPort, 1024, 65535);
         advanced_.httpServerPort  = std::clamp(advanced_.httpServerPort, 1024, 65535);
         advanced_.refreshRateHz   = std::clamp(advanced_.refreshRateHz, 1, 120);
@@ -291,6 +295,7 @@ bool Config::Save() const {
         {"lyric_offset_y",      appearance_.lyricOffsetY},
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
+        {"window_width_override", appearance_.windowWidthOverride},
     };
 
     j["advanced"] = {
@@ -358,6 +363,7 @@ bool Config::ExportToFile(const std::string& path) const {
         {"lyric_offset_y",      appearance_.lyricOffsetY},
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
+        {"window_width_override", appearance_.windowWidthOverride},
     };
 
     j["advanced"] = {
@@ -428,6 +434,7 @@ bool Config::ImportFromFile(const std::string& path) {
             appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
+            appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
         }
 
         if (j.contains("advanced")) {

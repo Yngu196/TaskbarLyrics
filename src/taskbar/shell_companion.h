@@ -63,7 +63,8 @@ public:
                                   int dragOffsetX, int dragOffsetY,
                                   RECT& inOutLastPosRect,
                                   int dynamicWidthDip = 0,
-                                  int cardMaxExpandRatio = 0);
+                                  int cardMaxExpandRatio = 0,
+                                  int widthOverrideDip = 0);
 
     // ── 拖动后吸附到空闲空间 ──
     void SnapToEmptySpace(HWND lyricsWnd);

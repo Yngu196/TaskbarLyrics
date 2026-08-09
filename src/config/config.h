@@ -77,6 +77,10 @@ struct AppearanceConfig {
     // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
     int         cardMaxExpandRatio{0};
 
+    // 手动窗口宽度覆盖（dp, 0=自动计算；>0 时强制窗口至少为该宽度，
+    // 用于任务栏空闲区域检测异常导致窗口被压缩到过窄的场景）
+    int         windowWidthOverride{0};
+
     // 歌词垂直偏移（单行/卡拉OK模式，dp，负值=上移，正值=下移）
     int         lyricOffsetY{0};
 

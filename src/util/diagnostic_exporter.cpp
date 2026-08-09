@@ -131,6 +131,7 @@ std::string BuildConfigSnapshot(const Config& config) {
     ss << "  enableMarquee: " << (config.Appearance().enableMarquee ? "true" : "false") << "\n";
     ss << "  marqueeMode: " << config.Appearance().marqueeMode << "\n";
     ss << "  cardDynamicWidth: " << (config.Appearance().cardDynamicWidth ? "true" : "false") << "\n";
+    ss << "  windowWidthOverride: " << config.Appearance().windowWidthOverride << "\n";
 
     ss << "\n=== Advanced ===\n";
     ss << "  websocketPort: " << config.Advanced().websocketPort << "\n";

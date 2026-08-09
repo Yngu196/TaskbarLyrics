@@ -99,6 +99,11 @@ public:
     void SetCardMaxExpandRatio(int ratio) { cardMaxExpandRatio_ = ratio; }
     int GetCardMaxExpandRatio() const { return cardMaxExpandRatio_; }
 
+    // 手动窗口宽度覆盖（dp, 0=自动计算；>0 时作为最小宽度，
+    // 用于任务栏空闲区域检测异常导致窗口过窄的场景）
+    void SetWidthOverride(int widthDip) { widthOverrideDip_ = widthDip; }
+    int GetWidthOverride() const { return widthOverrideDip_; }
+
     // 显示模式（影响窗口尺寸计算）
     std::string GetDisplayMode() const { return displayMode_; }
     void SetDisplayMode(const std::string& mode) { displayMode_ = mode; }
@@ -162,6 +167,7 @@ private:
     int           dragOffsetY_{0};
     int           dynamicCardWidthDip_{0};  // 卡片模式动态宽度（DIPs），0=使用默认
     int           cardMaxExpandRatio_{0};   // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
+    int           widthOverrideDip_{0};     // 手动窗口宽度覆盖（DIPs），0=自动
     TaskbarPosition lastPosition_{TaskbarPosition::UNKNOWN};  // 用于检测方位变化（重置拖动偏移）
 
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"

@@ -134,6 +134,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 if (app.taskbarWindow) {
                     app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
                     app.taskbarWindow->SetCardMaxExpandRatio(cfg.Appearance().cardMaxExpandRatio);
+                    app.taskbarWindow->SetWidthOverride(cfg.Appearance().windowWidthOverride);
                     app.taskbarWindow->Reposition();
                 }
                 if (app.tray) {
@@ -168,6 +169,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
             if (app.taskbarWindow) {
                 app.taskbarWindow->SetDragOffset(
                     app.config->Position().offsetX, app.config->Position().offsetY);
+                app.taskbarWindow->SetWidthOverride(app.config->Appearance().windowWidthOverride);
                 app.taskbarWindow->Reposition();
             }
         }

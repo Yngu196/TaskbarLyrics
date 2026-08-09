@@ -84,6 +84,9 @@ constexpr int LYRIC_HEIGHT_BASE_DP = 28;
 /// 歌词窗口最大宽度（96 DPI 像素），水平任务栏使用
 constexpr int MAX_LYRIC_WIDTH_BASE_DP = 360;
 
+/// 手动窗口宽度覆盖的最大值（96 DPI 像素，0=自动计算）
+constexpr int WINDOW_WIDTH_OVERRIDE_MAX_DP = 600;
+
 /// 歌词窗口最小可用宽度（像素），防止窗口过窄
 constexpr int MIN_LYRIC_AVAILABLE_WIDTH = 100;
 

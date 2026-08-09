@@ -189,6 +189,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 应用配置中的显示模式（必须在 Reposition 之前，影响宽度计算）
     taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
     taskbarWindow.SetCardMaxExpandRatio(config.Appearance().cardMaxExpandRatio);
+    taskbarWindow.SetWidthOverride(config.Appearance().windowWidthOverride);
 
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);

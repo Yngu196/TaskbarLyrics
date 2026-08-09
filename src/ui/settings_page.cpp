@@ -634,9 +634,37 @@ void WindowPage::BuildContent(const moekoe::Config& cfg) {
         c1->AddChild(std::move(btn));
     }
     AddChild(std::move(c1));
+
+    // Card: 窗口尺寸（手动宽度覆盖，解决任务栏空闲区域检测异常导致窗口过窄的问题）
+    auto c2 = MakeCard("窗口尺寸");
+    {
+        auto hint = std::make_unique<TextBlock>();
+        hint->id = "widthHint";
+        hint->text = "自动检测宽度异常（歌词只显示封面和几个字）时可手动指定，0=自动";
+        hint->style = TextBlock::Style::Caption;
+        c2->AddChild(std::move(hint));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "windowWidthOverride";
+        s->label = "窗口宽度";
+        s->minValue = 0; s->maxValue = 600;
+        s->value = static_cast<float>(cfg.Appearance().windowWidthOverride);
+        s->suffix = " dp";
+        c2->AddChild(std::move(s));
+    }
+    AddChild(std::move(c2));
 }
 
 void WindowPage::CollectChanges(moekoe::Config& cfg) {
+    auto& ap = cfg.MutableAppearance();
+    for (auto& card : children_) {
+        for (auto& child : card->Children()) {
+            if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                if (s->id == "windowWidthOverride") ap.windowWidthOverride = static_cast<int>(s->value);
+            }
+        }
+    }
     // 重置位置通过回调处理，不修改配置字段
 }
 

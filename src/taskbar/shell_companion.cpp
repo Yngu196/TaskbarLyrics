@@ -322,7 +322,8 @@ void ShellCompanion::PositionLyricsInTaskbar(
     int dragOffsetX, int dragOffsetY,
     RECT& inOutLastPosRect,
     int dynamicWidthDip,
-    int cardMaxExpandRatio) {
+    int cardMaxExpandRatio,
+    int widthOverrideDip) {
     if (!lyricsWnd || !hTaskbar_) return;
 
     // 全屏隐藏期间跳过定位
@@ -469,16 +470,41 @@ void ShellCompanion::PositionLyricsInTaskbar(
         stableTaskbarRect_ = tbRect;
     }
 
+    // ── UIA 几何结果合理性校验 ──
+    // 子窗口矩形异常时 availableWidth 会被压缩到最小宽度（窗口只剩封面+几个字），
+    // 这里对检测结果做边界检查，非法时回退到不使用该子窗口（用整段任务栏宽度）。
+    if (foundTray) {
+        if (trayRect.right <= trayRect.left || trayRect.bottom <= trayRect.top ||
+            trayRect.left < tbRect.left || trayRect.left >= tbRect.right) {
+            LogDebug("[SHELL-COMPANION] Pos: trayRect invalid (%d,%d,%d,%d), ignore\n",
+                     trayRect.left, trayRect.top, trayRect.right, trayRect.bottom);
+            foundTray = false;
+        }
+    }
+    if (foundTaskList) {
+        const bool overlapTray = foundTray && (taskListRect.right >= trayRect.left - 2);
+        if (taskListRect.right <= taskListRect.left || taskListRect.bottom <= taskListRect.top ||
+            taskListRect.right < tbRect.left || taskListRect.right > tbRect.right ||
+            overlapTray) {
+            LogDebug("[SHELL-COMPANION] Pos: taskListRect invalid (%d,%d,%d,%d)"
+                     " overlapTray=%d, ignore\n",
+                     taskListRect.left, taskListRect.top, taskListRect.right, taskListRect.bottom,
+                     overlapTray ? 1 : 0);
+            foundTaskList = false;
+        }
+    }
+
     // 歌词区尺寸（根据显示模式选择不同的高度）
     const bool isCardMode = (displayMode == "card");
     const int lyricH = ::MulDiv(
         isCardMode ? constants::CARD_HEIGHT_BASE_DP : constants::LYRIC_HEIGHT_BASE_DP,
         info_.dpi, 96);
     int w = 0, h = lyricH, x = 0, y = 0;
+    int rightEdge = tbRect.right;
+    int availableWidth = 0;
 
     switch (info_.position) {
     case TaskbarPosition::BOTTOM: {
-        int rightEdge = tbRect.right;
         if (foundTray) {
             rightEdge = trayRect.left;
         }
@@ -510,20 +536,27 @@ void ShellCompanion::PositionLyricsInTaskbar(
             }
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip, info_.dpi, 96);
-        int availableWidth = rightEdge - tbRect.left;
+        availableWidth = rightEdge - tbRect.left;
         // Win10 守卫：MSTaskListWClass 覆盖整个任务栏时忽略 taskListRect
         if (foundTaskList && (taskListRect.right - taskListRect.left) < tbWidth * 0.9) {
             availableWidth = rightEdge - taskListRect.right;
         }
 
-        w = std::min(maxLyricWidth, std::max(availableWidth, constants::MIN_LYRIC_AVAILABLE_WIDTH));
+        // 手动宽度覆盖：作为最小宽度（不受 360 上限约束），
+        // 用于任务栏空闲区域检测异常导致窗口被压缩到过窄的场景
+        int targetW = std::min(maxLyricWidth,
+                               std::max(availableWidth, constants::MIN_LYRIC_AVAILABLE_WIDTH));
+        if (widthOverrideDip > 0) {
+            targetW = std::max(targetW, ::MulDiv(widthOverrideDip, info_.dpi, 96));
+        }
+        w = std::min(targetW, tbWidth - 2);
+        w = std::max(w, constants::MIN_WINDOW_WIDTH);
         x = rightEdge - w + dragOffsetX;
         y = tbRect.top + dragOffsetY;
         h = tbHeight;
         break;
     }
     case TaskbarPosition::TOP: {
-        int rightEdge = tbRect.right;
         if (foundTray) rightEdge = trayRect.left;
 
         // 卡片模式动态宽度：仅当测量值超过默认宽度时才扩展
@@ -538,13 +571,19 @@ void ShellCompanion::PositionLyricsInTaskbar(
             }
         }
         const int maxLyricWidth = ::MulDiv(cardMaxDip2, info_.dpi, 96);
-        int availableWidth = rightEdge - tbRect.left;
+        availableWidth = rightEdge - tbRect.left;
         // Win10 守卫：MSTaskListWClass 覆盖整个任务栏时忽略 taskListRect
         if (foundTaskList && (taskListRect.right - taskListRect.left) < tbWidth * 0.9) {
             availableWidth = rightEdge - taskListRect.right;
         }
 
-        w = std::min(maxLyricWidth, std::max(availableWidth, constants::MIN_LYRIC_AVAILABLE_WIDTH));
+        int targetW = std::min(maxLyricWidth,
+                               std::max(availableWidth, constants::MIN_LYRIC_AVAILABLE_WIDTH));
+        if (widthOverrideDip > 0) {
+            targetW = std::max(targetW, ::MulDiv(widthOverrideDip, info_.dpi, 96));
+        }
+        w = std::min(targetW, tbWidth - 2);
+        w = std::max(w, constants::MIN_WINDOW_WIDTH);
         x = rightEdge - w + dragOffsetX;
         y = tbRect.top + dragOffsetY;
         h = tbHeight;
@@ -552,6 +591,11 @@ void ShellCompanion::PositionLyricsInTaskbar(
     }
     case TaskbarPosition::LEFT: {
         w = ::MulDiv(constants::VERTICAL_TASKBAR_LYRIC_WIDTH_BASE_DP, info_.dpi, 96);
+        if (widthOverrideDip > 0) {
+            w = std::max(w, ::MulDiv(widthOverrideDip, info_.dpi, 96));
+        }
+        w = std::min(w, tbWidth - 2);
+        w = std::max(w, constants::MIN_WINDOW_WIDTH);
         x = tbRect.right - w;
 
         int availableBottom = tbRect.bottom;
@@ -570,6 +614,11 @@ void ShellCompanion::PositionLyricsInTaskbar(
     }
     case TaskbarPosition::RIGHT: {
         w = ::MulDiv(constants::VERTICAL_TASKBAR_LYRIC_WIDTH_BASE_DP, info_.dpi, 96);
+        if (widthOverrideDip > 0) {
+            w = std::max(w, ::MulDiv(widthOverrideDip, info_.dpi, 96));
+        }
+        w = std::min(w, tbWidth - 2);
+        w = std::max(w, constants::MIN_WINDOW_WIDTH);
         x = tbRect.left;
 
         int availableBottom = tbRect.bottom;
@@ -608,9 +657,18 @@ void ShellCompanion::PositionLyricsInTaskbar(
 
     // 调试日志
     LogDebug("[SHELL-COMPANION] Pos: pos=%d x=%d y=%d w=%d h=%d "
-             "tbRect=(%d,%d,%d,%d) dragOffX=%d\n",
+             "tbRect=(%d,%d,%d,%d) taskList=(%d,%d,%d,%d) foundTL=%d "
+             "tray=(%d,%d,%d,%d) foundTray=%d rebar=(%d,%d,%d,%d) foundRebar=%d "
+             "rightEdge=%d availableWidth=%d widthOverride=%d dragOffX=%d\n",
              static_cast<int>(info_.position), x, y, w, h,
              tbRect.left, tbRect.top, tbRect.right, tbRect.bottom,
+             taskListRect.left, taskListRect.top, taskListRect.right, taskListRect.bottom,
+             foundTaskList ? 1 : 0,
+             trayRect.left, trayRect.top, trayRect.right, trayRect.bottom,
+             foundTray ? 1 : 0,
+             rebarRect.left, rebarRect.top, rebarRect.right, rebarRect.bottom,
+             foundRebar ? 1 : 0,
+             rightEdge, availableWidth, widthOverrideDip,
              dragOffsetX);
 
     // 短路：坐标未变且窗口可见时跳过 SetWindowPos
