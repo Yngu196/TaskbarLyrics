@@ -1387,6 +1387,10 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                                 CollectAllChanges(tmpCfg);
                                 lyricsPage->UpdateForDisplayMode(newMode, tmpCfg);
                             }
+                            auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[4].get());
+                            if (advPage) {
+                                advPage->UpdateVisibility(newMode);
+                            }
                             ArrangeUI();
                         }
                         ApplyChanges();

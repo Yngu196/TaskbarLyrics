@@ -758,8 +758,9 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
     }
     AddChild(std::move(c1));
 
-    // Card: 卡片扩展
-    auto cExpand = MakeCard("卡片扩展");
+    // Card: 双行歌词扩展显示（仅双行模式可见）
+    auto cExpand = MakeCard("双行歌词扩展显示");
+    cExpand->id = "cardExpand";
     {
         auto cb = std::make_unique<ComboBox>();
         cb->id = "cardMaxExpandRatio";
@@ -768,6 +769,7 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
         cb->selectedIndex = app.cardMaxExpandRatio;
         cExpand->AddChild(std::move(cb));
     }
+    cExpand->SetVisible(app.displayMode == "card");
     AddChild(std::move(cExpand));
 
     // Card: 配置管理
@@ -808,6 +810,15 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
         c2->AddChild(std::move(btn));
     }
     AddChild(std::move(c2));
+}
+
+void AdvancedPage::UpdateVisibility(const std::string& displayMode) {
+    const bool isCard = (displayMode == "card");
+    for (auto& child : children_) {
+        if (child->id == "cardExpand") {
+            child->SetVisible(isCard);
+        }
+    }
 }
 
 void AdvancedPage::CollectChanges(moekoe::Config& cfg) {

@@ -82,6 +82,9 @@ public:
     std::string Subtitle() const override { return "高级设置（修改端口可能影响使用）"; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
+
+    // 根据 displayMode 更新仅双行模式可见的 Card 的可见性
+    void UpdateVisibility(const std::string& displayMode);
 };
 
 class AboutPage : public SettingsPage {
