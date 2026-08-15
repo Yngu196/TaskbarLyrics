@@ -614,7 +614,127 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
 }
 
 // ═══════════════════════════════════════
-// 页面 3：窗口
+// 页面 3：频谱
+// ═══════════════════════════════════════
+
+void SpectrumPage::BuildContent(const moekoe::Config& cfg) {
+    const auto& a = cfg.Appearance();
+
+    // Card: 纯音乐显示
+    auto c1 = MakeCard("纯音乐显示");
+    {
+        auto cb = std::make_unique<ComboBox>();
+        cb->id = "spectrumMode";
+        cb->label = "纯音乐时显示";
+        cb->items = {"动态频谱条", "\"纯音乐，请欣赏\"文字"};
+        cb->selectedIndex = (a.spectrumMode == "text") ? 1 : 0;
+        c1->AddChild(std::move(cb));
+    }
+    {
+        auto hint = std::make_unique<TextBlock>();
+        hint->text = "频谱仅在纯音乐（无歌词）时显示，有歌词时不受影响";
+        hint->style = TextBlock::Style::Caption;
+        c1->AddChild(std::move(hint));
+    }
+    AddChild(std::move(c1));
+
+    // Card: 频谱外观
+    auto c2 = MakeCard("频谱外观");
+    {
+        auto cr = std::make_unique<ColorRow>();
+        cr->id = "spectrumColor";
+        cr->label = "频谱条颜色";
+        cr->textValue = a.spectrumColor;
+        cr->colorValue = HexToColorF(a.spectrumColor);
+        c2->AddChild(std::move(cr));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "spectrumOpacity";
+        s->label = "柱透明度";
+        s->minValue = 10; s->maxValue = 100;
+        s->value = a.spectrumOpacity * 100.0f;
+        s->suffix = "%";
+        c2->AddChild(std::move(s));
+    }
+    AddChild(std::move(c2));
+
+    // Card: 频谱参数
+    auto c3 = MakeCard("频谱参数");
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "spectrumDbCeil";
+        s->label = "柱上限";
+        s->minValue = -40; s->maxValue = 0;
+        s->value = a.spectrumDbCeil;
+        s->suffix = " dB";
+        c3->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "spectrumDbFloor";
+        s->label = "柱下限";
+        s->minValue = -90; s->maxValue = -20;
+        s->value = a.spectrumDbFloor;
+        s->suffix = " dB";
+        c3->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "spectrumNumBands";
+        s->label = "柱数";
+        s->minValue = 8; s->maxValue = 64;
+        s->value = static_cast<float>(a.spectrumNumBands);
+        s->suffix = " 根";
+        c3->AddChild(std::move(s));
+    }
+    {
+        auto s = std::make_unique<Slider>();
+        s->id = "spectrumBarWidth";
+        s->label = "柱宽";
+        s->minValue = 0; s->maxValue = 12;
+        s->value = a.spectrumBarWidth;
+        s->suffix = " dp";
+        c3->AddChild(std::move(s));
+    }
+    {
+        auto hint = std::make_unique<TextBlock>();
+        hint->text = "上限越高柱子越容易到顶，下限越低安静段也能显示，柱宽 0 为自动";
+        hint->style = TextBlock::Style::Caption;
+        c3->AddChild(std::move(hint));
+    }
+    {
+        auto btn = std::make_unique<Button>();
+        btn->id = "resetSpectrum";
+        btn->text = "重置所有频谱参数";
+        c3->AddChild(std::move(btn));
+    }
+    AddChild(std::move(c3));
+}
+
+void SpectrumPage::CollectChanges(moekoe::Config& cfg) {
+    auto& ap = cfg.MutableAppearance();
+    for (auto& card : children_) {
+        for (auto& child : card->Children()) {
+            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                if (cb->id == "spectrumMode")
+                    ap.spectrumMode = (cb->selectedIndex == 1) ? "text" : "spectrum";
+            } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
+                if (cr->id == "spectrumColor")
+                    ap.spectrumColor = cr->textValue;
+            } else if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                if (s->id == "spectrumOpacity")      ap.spectrumOpacity = s->value / 100.0f;
+                else if (s->id == "spectrumDbCeil")  ap.spectrumDbCeil = s->value;
+                else if (s->id == "spectrumDbFloor") ap.spectrumDbFloor = s->value;
+                else if (s->id == "spectrumNumBands") ap.spectrumNumBands = static_cast<int>(s->value);
+                else if (s->id == "spectrumBarWidth") ap.spectrumBarWidth = s->value;
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════
+// 页面 4：窗口
 // ═══════════════════════════════════════
 
 void WindowPage::BuildContent(const moekoe::Config& cfg) {

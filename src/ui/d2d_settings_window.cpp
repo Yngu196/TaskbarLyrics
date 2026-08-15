@@ -1196,7 +1196,7 @@ void D2DSettingsWindow::BuildPages(const Config& cfg) {
     // 创建导航
     navView_ = std::make_unique<ui::NavView>();
     navView_->id = "navView";
-    navView_->BuildItems({"歌词", "外观", "窗口", "行为", "高级", "关于"});
+    navView_->BuildItems({"歌词", "外观", "频谱", "窗口", "行为", "高级", "关于"});
     navView_->SetOnPageChange([this](int idx) {
         currentPage_ = idx;
         v2ScrollOffset_ = 0;
@@ -1205,15 +1205,17 @@ void D2DSettingsWindow::BuildPages(const Config& cfg) {
 
     // 创建页面
     pages_.clear();
-    auto lyricsPage = std::make_unique<ui::LyricsPage>();       lyricsPage->BuildContent(cfg);
-    auto appearPage = std::make_unique<ui::AppearancePage>();   appearPage->BuildContent(cfg);
-    auto windowPage = std::make_unique<ui::WindowPage>();       windowPage->BuildContent(cfg);
-    auto behavPage  = std::make_unique<ui::BehaviorPage>();     behavPage->BuildContent(cfg);
-    auto advPage    = std::make_unique<ui::AdvancedPage>();     advPage->BuildContent(cfg);
-    auto aboutPage  = std::make_unique<ui::AboutPage>();        aboutPage->BuildContent(cfg);
+    auto lyricsPage   = std::make_unique<ui::LyricsPage>();     lyricsPage->BuildContent(cfg);
+    auto appearPage   = std::make_unique<ui::AppearancePage>(); appearPage->BuildContent(cfg);
+    auto spectrumPage = std::make_unique<ui::SpectrumPage>();   spectrumPage->BuildContent(cfg);
+    auto windowPage   = std::make_unique<ui::WindowPage>();     windowPage->BuildContent(cfg);
+    auto behavPage    = std::make_unique<ui::BehaviorPage>();   behavPage->BuildContent(cfg);
+    auto advPage      = std::make_unique<ui::AdvancedPage>();   advPage->BuildContent(cfg);
+    auto aboutPage    = std::make_unique<ui::AboutPage>();      aboutPage->BuildContent(cfg);
 
     pages_.push_back(std::move(lyricsPage));
     pages_.push_back(std::move(appearPage));
+    pages_.push_back(std::move(spectrumPage));
     pages_.push_back(std::move(windowPage));
     pages_.push_back(std::move(behavPage));
     pages_.push_back(std::move(advPage));
@@ -1387,7 +1389,7 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                                 CollectAllChanges(tmpCfg);
                                 lyricsPage->UpdateForDisplayMode(newMode, tmpCfg);
                             }
-                            auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[4].get());
+                            auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[5].get());
                             if (advPage) {
                                 advPage->UpdateVisibility(newMode);
                             }
@@ -1438,7 +1440,7 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
             } else if (btn->id == "resetPort") {
                 // 重置 WebSocket 端口为默认值 6520
                 if (auto* advPage = dynamic_cast<ui::AdvancedPage*>(
-                        pages_[4].get())) {
+                        pages_[5].get())) {
                     for (auto& card : advPage->Children()) {
                         for (auto& child : card->Children()) {
                             if (auto* lr = dynamic_cast<ui::LabelRow*>(child.get())) {
@@ -1466,6 +1468,30 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
             } else if (btn->id == "resetConfig") {
                 // 恢复默认配置
                 ResetConfigToDefaults();
+            } else if (btn->id == "resetSpectrum") {
+                // 重置所有频谱参数为默认值
+                if (auto* specPage = dynamic_cast<ui::SpectrumPage*>(pages_[2].get())) {
+                    for (auto& card : specPage->Children()) {
+                        for (auto& child : card->Children()) {
+                            if (auto* s = dynamic_cast<ui::Slider*>(child.get())) {
+                                if (s->id == "spectrumDbCeil")       s->value = -10.0f;
+                                else if (s->id == "spectrumDbFloor") s->value = -62.0f;
+                                else if (s->id == "spectrumOpacity") s->value = 100.0f;
+                                else if (s->id == "spectrumNumBands") s->value = 32.0f;
+                                else if (s->id == "spectrumBarWidth") s->value = 0.0f;
+                            } else if (auto* cr = dynamic_cast<ui::ColorRow*>(child.get())) {
+                                if (cr->id == "spectrumColor") {
+                                    cr->textValue = "#F0EFEA";
+                                    cr->colorValue = HexToColorF("#F0EFEA");
+                                }
+                            } else if (auto* cb = dynamic_cast<ui::ComboBox*>(child.get())) {
+                                if (cb->id == "spectrumMode") cb->selectedIndex = 0;
+                            }
+                        }
+                    }
+                }
+                ApplyChanges();
+                InvalidateRect(hwnd_, nullptr, FALSE);
             } else if (btn->OnClick()) {
                 btn->OnClick()(btn);
             }

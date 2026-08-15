@@ -35,7 +35,25 @@ void LyricsParser::UpdateLyrics(const LyricsData& data) {
 
 void LyricsParser::UpdatePlayerState(const PlayerState& state) {
     std::lock_guard<std::mutex> lock(mutex_);
-    state_ = state;
+
+    // MoeKoeMusic 的进度更新消息只含 playing/time，不含歌曲元数据
+    //（song/cover 均为空）：保留上一次的非空值，避免封面/歌名被清空
+    if (state.songTitle.empty() && state.coverArtUrl.empty() &&
+        !lastSongTitle_.empty()) {
+        PlayerState merged = state;
+        merged.songTitle   = lastSongTitle_;
+        merged.songName    = lastSongName_;
+        merged.coverArtUrl = lastCoverArtUrl_;
+        state_ = merged;
+    } else {
+        state_ = state;
+        if (!state.songTitle.empty()) {
+            lastSongTitle_   = state.songTitle;
+            lastSongName_    = state.songName;
+            lastCoverArtUrl_ = state.coverArtUrl;
+        }
+    }
+
     // 记录本地高精度时钟，用于 GetCurrentRenderState() 中推算时间
     lastUpdateWallTime_ = GetWallTimeSeconds();
 }

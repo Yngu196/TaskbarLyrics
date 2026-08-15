@@ -238,7 +238,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // 10.1) 启动频谱捕获（WASAPI loopback，始终运行，开销极低）
     app.spectrumCapture = std::make_unique<SpectrumCapture>();
-    app.spectrumCapture->Start();
+    app.spectrumCapture->Start(config.Advanced().websocketPort);
 
     app.wsClient = std::make_unique<WebSocketClient>();
     auto& wsClient = *app.wsClient;

@@ -53,6 +53,12 @@ private:
     // 本地时钟死推算：记录收到 playerState 时的本地时间
     // 用于在 GetCurrentRenderState() 中推算播放进度，使逐字高亮平滑推进
     mutable double lastUpdateWallTime_{0.0};
+
+    // 最近一次非空的歌曲元数据：MoeKoeMusic 的进度更新消息
+    // 只含 playing/time 不含歌曲信息，用于保留封面/歌名不被清空
+    std::string lastSongTitle_;
+    std::string lastSongName_;
+    std::string lastCoverArtUrl_;
 };
 
 } // namespace moekoe

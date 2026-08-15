@@ -87,6 +87,21 @@ struct AppearanceConfig {
     // 双行歌词模式各行垂直偏移（dp，负值=上移，正值=下移）
     int         cardLine1OffsetY{0};  // 首行（当前行）偏移
     int         cardLine2OffsetY{0};  // 第二行（下一行）偏移
+
+    // 纯音乐时频谱显示: "spectrum"=频谱条（默认） | "text"=显示"纯音乐，请欣赏"
+    std::string spectrumMode{"spectrum"};
+    // 频谱条颜色（hex，默认奶白色）
+    std::string spectrumColor{"#F0EFEA"};
+    // 频谱 dB 映射上限（dBFS，越大柱子越容易到顶）
+    float       spectrumDbCeil{-10.0f};
+    // 频谱 dB 映射下限（dBFS，越小底部越安静也能显示）
+    float       spectrumDbFloor{-62.0f};
+    // 频谱条透明度 [0~1]
+    float       spectrumOpacity{1.0f};
+    // 频谱柱数 [8~64]
+    int         spectrumNumBands{32};
+    // 频谱柱宽（dp，0=自动）
+    float       spectrumBarWidth{0.0f};
 };
 
 struct AdvancedConfig {

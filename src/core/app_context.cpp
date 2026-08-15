@@ -47,6 +47,12 @@ void ApplyRendererSettings(AppContext& app) {
         app.config->Appearance().fontFamily.c_str(), app.config->Appearance().fontSize,
         app.config->Appearance().normalOpacity);
     app.renderer->ApplySettings(app.config->Appearance());
+
+    // 同步频谱采集参数（dB 区间、柱数）
+    if (app.spectrumCapture) {
+        const auto& a = app.config->Appearance();
+        app.spectrumCapture->SetParams(a.spectrumDbCeil, a.spectrumDbFloor, a.spectrumNumBands);
+    }
 }
 
 // 帧定时器处理：从 parser 取渲染状态并驱动 renderer
@@ -97,7 +103,20 @@ void HandleFrameTick(AppContext& app) {
 
             // 3.1 集成频谱数据（纯音乐播放时使用）
             if (app.spectrumCapture && app.spectrumCapture->IsRunning()) {
-                state.spectrumBands = app.spectrumCapture->GetSpectrum(SPECTRUM_NUM_BANDS);
+                state.spectrumBands = app.spectrumCapture->GetSpectrum(app.config->Appearance().spectrumNumBands);
+
+                // 3.2 播放中但频谱无有效数据时提示采集线程重建会话
+                //（进程树在激活时快照，开始播放后才启动的音频渲染进程
+                //  需重新激活才能纳入捕获范围）
+                if (state.isPlaying) {
+                    bool hasSpectrum = false;
+                    for (float v : state.spectrumBands) {
+                        if (v > 0.01f) { hasSpectrum = true; break; }
+                    }
+                    if (!hasSpectrum) {
+                        app.spectrumCapture->NotifyPlaybackActive();
+                    }
+                }
             }
 
             // 3. 附加 UI 状态（悬停/拖动，用于判断是否显示控制按钮）

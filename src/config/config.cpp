@@ -196,6 +196,13 @@ bool Config::Load() {
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
             appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
+            appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
+            appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
+            appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
+            appearance_.spectrumDbFloor  = static_cast<float>(a.value("spectrum_db_floor",  appearance_.spectrumDbFloor));
+            appearance_.spectrumOpacity  = static_cast<float>(a.value("spectrum_opacity",   appearance_.spectrumOpacity));
+            appearance_.spectrumNumBands = a.value("spectrum_num_bands", appearance_.spectrumNumBands);
+            appearance_.spectrumBarWidth  = static_cast<float>(a.value("spectrum_bar_width", appearance_.spectrumBarWidth));
         }
 
         if (j.contains("advanced")) {
@@ -296,6 +303,13 @@ bool Config::Save() const {
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
         {"window_width_override", appearance_.windowWidthOverride},
+        {"spectrum_mode",  appearance_.spectrumMode},
+        {"spectrum_color", appearance_.spectrumColor},
+        {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
+        {"spectrum_db_floor",   appearance_.spectrumDbFloor},
+        {"spectrum_opacity",    appearance_.spectrumOpacity},
+        {"spectrum_num_bands",  appearance_.spectrumNumBands},
+        {"spectrum_bar_width",  appearance_.spectrumBarWidth},
     };
 
     j["advanced"] = {
@@ -364,6 +378,13 @@ bool Config::ExportToFile(const std::string& path) const {
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
         {"window_width_override", appearance_.windowWidthOverride},
+        {"spectrum_mode",  appearance_.spectrumMode},
+        {"spectrum_color", appearance_.spectrumColor},
+        {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
+        {"spectrum_db_floor",   appearance_.spectrumDbFloor},
+        {"spectrum_opacity",    appearance_.spectrumOpacity},
+        {"spectrum_num_bands",  appearance_.spectrumNumBands},
+        {"spectrum_bar_width",  appearance_.spectrumBarWidth},
     };
 
     j["advanced"] = {
@@ -435,6 +456,13 @@ bool Config::ImportFromFile(const std::string& path) {
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
             appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
+            appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
+            appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
+            appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
+            appearance_.spectrumDbFloor  = static_cast<float>(a.value("spectrum_db_floor",  appearance_.spectrumDbFloor));
+            appearance_.spectrumOpacity  = static_cast<float>(a.value("spectrum_opacity",   appearance_.spectrumOpacity));
+            appearance_.spectrumNumBands = a.value("spectrum_num_bands", appearance_.spectrumNumBands);
+            appearance_.spectrumBarWidth  = static_cast<float>(a.value("spectrum_bar_width", appearance_.spectrumBarWidth));
         }
 
         if (j.contains("advanced")) {

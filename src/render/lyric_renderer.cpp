@@ -270,25 +270,54 @@ void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
 // ═════════════════════════════════════════
 
 void TaskbarRenderer::DrawSpectrumBars(const std::vector<float>& bands, float x, float width, float y, float height, float alpha) {
-    if (bands.empty() || !renderTarget_) return;
+    if (bands.empty() || !renderTarget_ || !spectrumBrush_) return;
 
     const size_t n = bands.size();
-    const float totalGap = constants::SPECTRUM_BAR_GAP * (static_cast<float>(n) - 1);
-    const float availW = width;
-    const float barWidth = (std::max)(2.0f, (availW - totalGap) / static_cast<float>(n));
-    const float step = barWidth + constants::SPECTRUM_BAR_GAP;
-    const float startX = x;
+    const float gap = constants::SPECTRUM_BAR_GAP;
+    const float totalGap = gap * (static_cast<float>(n) - 1);
+    // 柱宽：配置值 > 0 时使用固定宽度，否则自动计算
+    const float autoWidth = (std::max)(3.0f, (width - totalGap) / static_cast<float>(n));
+    const float barWidth = (settings_.spectrumBarWidth > 0.5f)
+        ? settings_.spectrumBarWidth
+        : autoWidth;
+    const float step = barWidth + gap;
+    const float radius = barWidth * 0.5f;
+    const float centerY = y + height * 0.5f;
+
+    // 双层光晕：外层扩散大、透明度低；内层紧贴条身
+    const float glowInner = 1.5f;
+    const float glowOuter = 3.0f;
 
     for (size_t i = 0; i < n; ++i) {
-        float barH = bands[i] * height;
-        if (barH < constants::SPECTRUM_BAR_MIN_HEIGHT) barH = constants::SPECTRUM_BAR_MIN_HEIGHT;
-        const float barX = startX + static_cast<float>(i) * step;
-        const float barY = y + height - barH;
+        // 最低高度 = 条宽 → 安静频段显示为圆点（胶囊短到极限即圆形）
+        const float barH = (std::max)(barWidth, bands[i] * height);
+        const float barX = x + static_cast<float>(i) * step;
+        const float barY = centerY - barH * 0.5f;
 
-        D2D1_RECT_F rect = D2D1::RectF(barX, barY, barX + barWidth, barY + barH);
-        spectrumBrush_->SetOpacity(alpha * (0.12f + bands[i] * 0.88f));
-        renderTarget_->FillRectangle(rect, spectrumBrush_.Get());
+        // 外层光晕
+        D2D1_ROUNDED_RECT rrOuter = D2D1::RoundedRect(
+            D2D1::RectF(barX - glowOuter, barY - glowOuter,
+                        barX + barWidth + glowOuter, barY + barH + glowOuter),
+            radius + glowOuter, radius + glowOuter);
+        spectrumBrush_->SetOpacity(alpha * 0.06f);
+        renderTarget_->FillRoundedRectangle(rrOuter, spectrumBrush_.Get());
+
+        // 内层光晕
+        D2D1_ROUNDED_RECT rrInner = D2D1::RoundedRect(
+            D2D1::RectF(barX - glowInner, barY - glowInner,
+                        barX + barWidth + glowInner, barY + barH + glowInner),
+            radius + glowInner, radius + glowInner);
+        spectrumBrush_->SetOpacity(alpha * 0.14f);
+        renderTarget_->FillRoundedRectangle(rrInner, spectrumBrush_.Get());
+
+        // 主胶囊条：能量越高越不透明
+        D2D1_ROUNDED_RECT barRR = D2D1::RoundedRect(
+            D2D1::RectF(barX, barY, barX + barWidth, barY + barH),
+            radius, radius);
+        spectrumBrush_->SetOpacity(alpha * (0.80f + bands[i] * 0.20f));
+        renderTarget_->FillRoundedRectangle(barRR, spectrumBrush_.Get());
     }
+    spectrumBrush_->SetOpacity(1.0f);
 }
 
 // ═════ P1-②: 封面 fade-in 过渡动画 ═════

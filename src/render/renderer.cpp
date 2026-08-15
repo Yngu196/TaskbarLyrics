@@ -24,6 +24,19 @@ using renderer_utils::Utf8ToWide;
 using renderer_utils::FirstUtf8CharAsWide;
 using renderer_utils::GetCurrentTimeSeconds;
 
+namespace {
+
+// 频谱是否有有效信号（任一频段超过阈值）
+// 全零频谱（静音/暂停/未捕获到音频）视为无信号，不绘制
+bool SpectrumHasSignal(const std::vector<float>& bands) {
+    for (float v : bands) {
+        if (v > 0.02f) return true;
+    }
+    return false;
+}
+
+} // namespace
+
 TaskbarRenderer::TaskbarRenderer() : coverCtx_(std::make_shared<CoverDownloadCtx>()) {}
 
 TaskbarRenderer::~TaskbarRenderer() {
@@ -86,7 +99,9 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
             translationBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(ParseColor(settings_.highlightColor), spectrumBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(
+            ParseColor(settings_.spectrumColor, 1.0f),
+            spectrumBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
             ParseColor(settings_.cardCurrentColor, 1.0f),
             cardCurrentBrush_.GetAddressOf());
@@ -195,8 +210,10 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
             translationBrush_.GetAddressOf());
-        // 频谱画刷（使用高亮色）
-        renderTarget_->CreateSolidColorBrush(ParseColor(settings_.highlightColor), spectrumBrush_.GetAddressOf());
+        // 频谱画刷（用户自定义颜色，默认奶白色胶囊条 + 光晕）
+        renderTarget_->CreateSolidColorBrush(
+            ParseColor(settings_.spectrumColor, 1.0f),
+            spectrumBrush_.GetAddressOf());
         // 卡片模式专用颜色画刷
         renderTarget_->CreateSolidColorBrush(
             ParseColor(settings_.cardCurrentColor, 1.0f),
@@ -316,7 +333,9 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
             translationBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(ParseColor(settings_.highlightColor), spectrumBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(
+            ParseColor(settings_.spectrumColor, 1.0f),
+            spectrumBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
             ParseColor(settings_.cardCurrentColor, 1.0f),
             cardCurrentBrush_.GetAddressOf());
@@ -533,12 +552,13 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 RenderCardStyle(cardState);
             }
         } else if (state.isPlaying) {
-            // 纯音乐：封面 + 频谱
+            // 纯音乐：封面 + 频谱/文字
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
             const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float paddingX = constants::TEXT_PADDING_X;
             const bool showCover = settings_.enableCover;
+            const bool showText = (settings_.spectrumMode == "text");
             // 与有歌词时保持一致：纯音乐也绘制卡片毛玻璃背景
             DrawCardBackground();
             if (showCover) {
@@ -547,14 +567,23 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 DrawCoverArt(state.coverArtUrl, fallback, paddingX + coverOffsetPx,
                              (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
             }
-            if (!state.spectrumBands.empty()) {
-                const float specX = showCover ? (paddingX + coverSize + gap) : paddingX;
-                const float specW = static_cast<float>(width_) - specX - paddingX;
-                if (specW > 10.0f) {
-                    const float specH = constants::SPECTRUM_CARD_HEIGHT_DP * dpiScale;
-                    const float specY = (static_cast<float>(height_) - specH) * 0.5f;
-                    DrawSpectrumBars(state.spectrumBands, specX, specW, specY, specH);
+            const float contentX = showCover ? (paddingX + coverSize + gap) : paddingX;
+            const float contentW = static_cast<float>(width_) - contentX - paddingX;
+            if (showText) {
+                // 显示"纯音乐，请欣赏"文字
+                static const std::wstring kInstrumentalText = L"纯音乐，请欣赏";
+                if (cardCurrentFormat_ && cardCurrentBrush_ && contentW > 10.0f) {
+                    D2D1_RECT_F layout = D2D1::RectF(contentX, 0.0f,
+                        contentX + contentW, static_cast<float>(height_));
+                    renderTarget_->DrawTextW(
+                        kInstrumentalText.c_str(),
+                        static_cast<UINT32>(kInstrumentalText.size()),
+                        cardCurrentFormat_.Get(), layout, cardCurrentBrush_.Get());
                 }
+            } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f) {
+                const float specH = constants::SPECTRUM_CARD_HEIGHT_DP * dpiScale;
+                const float specY = (static_cast<float>(height_) - specH) * 0.5f;
+                DrawSpectrumBars(state.spectrumBands, contentX, contentW, specY, specH, settings_.spectrumOpacity);
             }
         }
     } else {
@@ -649,8 +678,9 @@ void TaskbarRenderer::Render(const RenderState& state) {
             }
         } else {
             if (state.isPlaying) {
-                // 单行歌词模式下无歌词时：封面（可选）+ 频谱
+                // 单行歌词模式下无歌词时：封面（可选）+ 频谱/文字
                 const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+                const bool showText = (settings_.spectrumMode == "text");
                 float contentX = vertPaddingX;
                 if (settings_.enableCover) {
                     const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
@@ -663,14 +693,20 @@ void TaskbarRenderer::Render(const RenderState& state) {
                                  coverY, coverSize);
                     contentX += coverSize + gap;
                 }
-                if (!state.spectrumBands.empty()) {
-                    const float specW = static_cast<float>(width_) - contentX - vertPaddingX;
-                    if (specW > 10.0f) {
-                        DrawSpectrumBars(state.spectrumBands, contentX, specW,
-                                         0.0f, static_cast<float>(height_));
+                const float contentW = static_cast<float>(width_) - contentX - vertPaddingX;
+                if (showText) {
+                    static const std::wstring kInstrumentalText = L"纯音乐，请欣赏";
+                    if (textFormat_ && normalBrush_ && contentW > 10.0f) {
+                        D2D1_RECT_F layout = D2D1::RectF(contentX, 0.0f,
+                            contentX + contentW, static_cast<float>(height_));
+                        renderTarget_->DrawTextW(
+                            kInstrumentalText.c_str(),
+                            static_cast<UINT32>(kInstrumentalText.size()),
+                            textFormat_.Get(), layout, normalBrush_.Get());
                     }
-                } else {
-                    DrawCentered(L"...", normalBrush_.Get(), 0.0f);
+                } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f) {
+                    DrawSpectrumBars(state.spectrumBands, contentX, contentW,
+                                     0.0f, static_cast<float>(height_), settings_.spectrumOpacity);
                 }
             }
         }

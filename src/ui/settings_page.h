@@ -60,6 +60,14 @@ public:
     void UpdateVisibility(const std::string& displayMode);
 };
 
+class SpectrumPage : public SettingsPage {
+public:
+    std::string Title() const override { return "频谱"; }
+    std::string Subtitle() const override { return "纯音乐时的频谱显示设置"; }
+    void BuildContent(const moekoe::Config& cfg) override;
+    void CollectChanges(moekoe::Config& cfg) override;
+};
+
 class WindowPage : public SettingsPage {
 public:
     std::string Title() const override { return "窗口"; }

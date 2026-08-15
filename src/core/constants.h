@@ -234,19 +234,34 @@ constexpr int PERF_STATS_INTERVAL_MS = 5000;
 // ═══════════════════════════════════════
 
 /// 插件版本号（与 CMakeLists.txt VERSION 同步）
-constexpr const char* PLUGIN_VERSION = "1.0.4";
+constexpr const char* PLUGIN_VERSION = "1.0.5";
 
 /// 频谱频段数
 constexpr int SPECTRUM_NUM_BANDS = 32;
 
 /// 卡片模式频谱高度（96 DPI）
-constexpr float SPECTRUM_CARD_HEIGHT_DP = 12.0f;
+constexpr float SPECTRUM_CARD_HEIGHT_DP = 32.0f;
 
 /// 频谱条间距（像素）
-constexpr float SPECTRUM_BAR_GAP = 1.0f;
+constexpr float SPECTRUM_BAR_GAP = 2.0f;
 
-/// 频谱条最小高度（像素）
-constexpr float SPECTRUM_BAR_MIN_HEIGHT = 2.0f;
+/// 频谱频率映射下限（Hz）
+constexpr float SPECTRUM_MIN_FREQ = 30.0f;
+
+/// 频谱频率映射上限（Hz）
+constexpr float SPECTRUM_MAX_FREQ = 16000.0f;
+
+/// 频谱 dB 映射下限（dBFS，低于此值视为静音）
+constexpr float SPECTRUM_DB_FLOOR = -62.0f;
+
+/// 频谱 dB 映射上限（dBFS）
+constexpr float SPECTRUM_DB_CEIL = -10.0f;
+
+/// 频谱上升平滑系数（保留旧值比例，越小响应越快）
+constexpr float SPECTRUM_SMOOTH_ATTACK = 0.50f;
+
+/// 频谱下降平滑系数（保留旧值比例，越大回落越慢）
+constexpr float SPECTRUM_SMOOTH_RELEASE = 0.88f;
 
 // ═══════════════════════════════════════
 // Settings 2.0 窗口尺寸（DIP，96 DPI 基准）
