@@ -24,6 +24,21 @@ static std::wstring Utf8ToWideLocal(const std::string& s) {
     return out;
 }
 
+// 预设色板：8 个常用颜色（含频谱默认米白、主题强调色等）
+static const std::vector<D2D1_COLOR_F>& GetPresetColors() {
+    static const std::vector<D2D1_COLOR_F> presets = {
+        D2D1::ColorF(0.941f, 0.937f, 0.918f),  // 米白 #F0EFEA（频谱默认）
+        D2D1::ColorF(0.000f, 0.471f, 0.831f),  // 经典蓝 #0078D4
+        D2D1::ColorF(0.545f, 0.361f, 0.965f),  // 紫色 #8B5CF6
+        D2D1::ColorF(0.063f, 0.725f, 0.506f),  // 薄荷绿 #10B981
+        D2D1::ColorF(0.925f, 0.282f, 0.600f),  // 玫瑰粉 #EC4899
+        D2D1::ColorF(0.937f, 0.267f, 0.267f),  // 红色 #EF4444
+        D2D1::ColorF(0.961f, 0.620f, 0.043f),  // 橙色 #F59E0B
+        D2D1::ColorF(0.294f, 0.333f, 0.388f),  // 深灰 #4B5563
+    };
+    return presets;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // 生命周期
 // ═══════════════════════════════════════════════════════════════════
@@ -38,7 +53,7 @@ void ColorPickerPopup::Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int
     GetClientRect(hwnd, &clientRc);
     const int clientW = static_cast<int>(clientRc.right / dpiScale);
     const int popupW = 224;
-    const int popupH = 220;
+    const int popupH = 290;
     int popupX = clientW - popupW - 8;
     int popupY = titleBarHeight + 16;
 
@@ -61,6 +76,20 @@ void ColorPickerPopup::Activate(HWND hwnd, const D2D1_COLOR_F& initialColor, int
 
     // "确定"按钮位置（Draw() 中计算后写入，此处给占位值）
     confirmRect_ = {};
+
+    // 预设色板区域（确认按钮下方）
+    const int presetY = popupY + 252;
+    const int swatchSize = 22;
+    const int swatchGap = 4;
+    const int numPresets = 8;
+    const int presetTotalW = numPresets * swatchSize + (numPresets - 1) * swatchGap;
+    const int presetStartX = popupX + (popupW - presetTotalW) / 2;
+    presetRect_ = {presetStartX, presetY, presetStartX + presetTotalW, presetY + swatchSize};
+    presetSwatchRects_.clear();
+    for (int i = 0; i < numPresets; ++i) {
+        int sx = presetStartX + i * (swatchSize + swatchGap);
+        presetSwatchRects_.push_back({sx, presetY, sx + swatchSize, presetY + swatchSize});
+    }
 
     active_ = true;
     SetCapture(hwnd);
@@ -106,6 +135,15 @@ ColorPickerPopup::ActionResult ColorPickerPopup::HandleMouseDown(int x, int y,
         float ny = std::clamp(static_cast<float>(y - barRect_.top) / bh, 0.0f, 1.0f);
         lum_ = 1.0f - ny;
         return ActionResult::Handled;
+    }
+
+    // 检查预设色板
+    const auto& presets = GetPresetColors();
+    for (size_t i = 0; i < presetSwatchRects_.size() && i < presets.size(); ++i) {
+        if (PtInRect(&presetSwatchRects_[i], {x, y})) {
+            RGBToHSL(presets[i], hue_, sat_, lum_);
+            return ActionResult::Handled;
+        }
     }
 
     // 检查是否在弹窗内（但在交互区域外）→ 不处理
@@ -162,14 +200,14 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
                     static_cast<float>(popupRect_.left),
                     static_cast<float>(popupRect_.top - scrollOffset),
                     static_cast<float>(popupRect_.right - popupRect_.left),
-                    static_cast<float>(popupRect_.bottom - popupRect_.top), 8.f);
+                    static_cast<float>(popupRect_.bottom - popupRect_.top), 6.f);
 
     rt->CreateSolidColorBrush(theme.border, &popupBorder);
     DrawRoundedRect(rt, popupBorder.Get(), 1.5f,
                     static_cast<float>(popupRect_.left),
                     static_cast<float>(popupRect_.top - scrollOffset),
                     static_cast<float>(popupRect_.right - popupRect_.left),
-                    static_cast<float>(popupRect_.bottom - popupRect_.top), 8.f);
+                    static_cast<float>(popupRect_.bottom - popupRect_.top), 6.f);
 
     // ── 绘制色板（Hue × Saturation 网格）──
     const int gw = gridRect_.right - gridRect_.left;
@@ -250,7 +288,7 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
     float barTopF = static_cast<float>(barRect_.top - scrollOffset);
     DrawRoundedRect(rt, popupBorder.Get(), 1.0f,
                     static_cast<float>(barRect_.left), barTopF,
-                    static_cast<float>(bw), static_cast<float>(bh), 4.f);
+                    static_cast<float>(bw), static_cast<float>(bh), 6.f);
 
     // 亮度条滑块指示
     int barCy = static_cast<int>((1.0f - lum_) * (bh - 1)) + barRect_.top - scrollOffset;
@@ -271,12 +309,12 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
     FillRoundedRect(rt, prevBr.Get(),
                     static_cast<float>(previewRect_.left), prevTop,
                     static_cast<float>(previewRect_.right - previewRect_.left),
-                    static_cast<float>(previewRect_.bottom - previewRect_.top), 4.f);
+                    static_cast<float>(previewRect_.bottom - previewRect_.top), 6.f);
     rt->CreateSolidColorBrush(theme.border, &prevBorderBr);
     DrawRoundedRect(rt, prevBorderBr.Get(), 1.0f,
                     static_cast<float>(previewRect_.left), prevTop,
                     static_cast<float>(previewRect_.right - previewRect_.left),
-                    static_cast<float>(previewRect_.bottom - previewRect_.top), 4.f);
+                    static_cast<float>(previewRect_.bottom - previewRect_.top), 6.f);
 
     // ── Hex 文本 ──
     std::string hexStr = ColorFToHex(previewColor);
@@ -292,7 +330,7 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
     const float btnY = static_cast<float>(previewRect_.bottom - scrollOffset + 6);
     ComPtr<ID2D1SolidColorBrush> confirmBg, confirmTxt;
     rt->CreateSolidColorBrush(theme.accent, &confirmBg);
-    FillRoundedRect(rt, confirmBg.Get(), btnX, btnY, btnW, btnH, 4.f);
+    FillRoundedRect(rt, confirmBg.Get(), btnX, btnY, btnW, btnH, 6.f);
     rt->CreateSolidColorBrush(D2D1::ColorF(1, 1, 1, 1), &confirmTxt);
     const wchar_t* okText = L"确定";
     DrawTextLine(rt, hintFmt, confirmTxt.Get(), okText, btnX + 12.f, btnY + 3.f, 36.f);
@@ -300,6 +338,35 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
     // 存储确认按钮区域供 HitTest 使用
     confirmRect_ = {static_cast<int>(btnX), static_cast<int>(btnY + scrollOffset),
                     static_cast<int>(btnX + btnW), static_cast<int>(btnY + scrollOffset + btnH)};
+
+    // ── 预设色板 ──
+    const auto& presets = GetPresetColors();
+    ComPtr<ID2D1SolidColorBrush> swatchBr, swatchBorderBr;
+    // 边框使用半透明灰色，确保在亮/暗背景下均可见
+    rt->CreateSolidColorBrush(D2D1::ColorF(0.5f, 0.5f, 0.5f, 0.6f), &swatchBorderBr);
+    D2D1_COLOR_F currentColor = HSLToRGB(hue_, sat_, lum_);
+    for (size_t i = 0; i < presetSwatchRects_.size() && i < presets.size(); ++i) {
+        const RECT& r = presetSwatchRects_[i];
+        float sx = static_cast<float>(r.left);
+        float sy = static_cast<float>(r.top - scrollOffset);
+        float sw = static_cast<float>(r.right - r.left);
+        float sh = static_cast<float>(r.bottom - r.top);
+
+        rt->CreateSolidColorBrush(presets[i], &swatchBr);
+        FillRoundedRect(rt, swatchBr.Get(), sx, sy, sw, sh, 4.f);
+
+        // 当前选中颜色匹配时，绘制高亮边框
+        bool isCurrent = (std::abs(presets[i].r - currentColor.r) < 0.01f &&
+                          std::abs(presets[i].g - currentColor.g) < 0.01f &&
+                          std::abs(presets[i].b - currentColor.b) < 0.01f);
+        if (isCurrent) {
+            ComPtr<ID2D1SolidColorBrush> selBr;
+            rt->CreateSolidColorBrush(theme.accent, &selBr);
+            DrawRoundedRect(rt, selBr.Get(), 2.0f, sx, sy, sw, sh, 4.f);
+        } else {
+            DrawRoundedRect(rt, swatchBorderBr.Get(), 1.0f, sx, sy, sw, sh, 4.f);
+        }
+    }
 }
 
 } // namespace moekoe

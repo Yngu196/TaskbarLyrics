@@ -541,6 +541,17 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     }
     cCardOffset->SetVisible(isCard);
     AddChild(std::move(cCardOffset));
+
+    // Card: 恢复默认
+    auto cReset = MakeCard("默认设置");
+    {
+        auto btn = std::make_unique<Button>();
+        btn->id = "resetAppearancePage";
+        btn->text = "恢复本页默认设置";
+        btn->isDanger = true;
+        cReset->AddChild(std::move(btn));
+    }
+    AddChild(std::move(cReset));
 }
 
 void AppearancePage::UpdateVisibility(const std::string& displayMode) {

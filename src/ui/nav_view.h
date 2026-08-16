@@ -19,8 +19,9 @@ class NavView : public UIElement {
 public:
     using PageChangeHandler = std::function<void(int pageIndex)>;
 
-    // 构建导航项
-    void BuildItems(const std::vector<std::string>& labels);
+    // 构建导航项（icons 可选，为 Segoe MDL2 Assets 码点）
+    void BuildItems(const std::vector<std::string>& labels,
+                    const std::vector<std::wstring>& icons = {});
 
     // 当前选中页
     int SelectedIndex() const { return selectedIndex_; }

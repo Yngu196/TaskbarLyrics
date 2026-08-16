@@ -37,11 +37,13 @@ static Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeTextFormat(
     return fmt;
 }
 
-void NavView::BuildItems(const std::vector<std::string>& labels) {
+void NavView::BuildItems(const std::vector<std::string>& labels,
+                         const std::vector<std::wstring>& icons) {
     children_.clear();
     for (int i = 0; i < static_cast<int>(labels.size()); ++i) {
         auto item = std::make_unique<NavItem>();
         item->label = labels[i];
+        if (i < static_cast<int>(icons.size())) item->icon = icons[i];
         item->pageIndex = i;
         item->selected = (i == selectedIndex_);
         item->id = "nav_" + std::to_string(i);

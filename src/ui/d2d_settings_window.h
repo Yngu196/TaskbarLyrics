@@ -107,6 +107,7 @@ private:
     void DrawV2();
     ui::UIElement* HitTestV2(int x, int y);
     void OnMouseDownV2(int x, int y);
+    void ExecuteButtonAction(ui::Button* btn);
     void OnMouseMoveV2(int x, int y);
     void OnMouseUpV2(int x, int y);
 

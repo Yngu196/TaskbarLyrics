@@ -726,6 +726,20 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
             hoverBg.Get());
     }
 
+    // 图标（Segoe MDL2 Assets）
+    float textX = x_ + 20;
+    if (!icon.empty()) {
+        auto iconFmt = MakeTextFormat(L"Segoe MDL2 Assets", 15);
+        if (iconFmt) {
+            iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto iconBrush = MakeBrush(rt, selected ? ctx.accent : ctx.TextSecondary());
+            rt->DrawTextW(icon.c_str(), static_cast<UINT32>(icon.size()),
+                          iconFmt.Get(), D2D1::RectF(x_ + 16, y_, x_ + 40, y_ + h_),
+                          iconBrush.Get());
+        }
+        textX = x_ + 44;
+    }
+
     // 文本
     auto fmt = MakeTextFormat(L"Segoe UI Variable", 14,
                               selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
@@ -734,7 +748,7 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         auto txtBrush = MakeBrush(rt, selected ? ctx.accent : ctx.TextSecondary());
         std::wstring wlabel = Utf8ToWide(label);
         rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_ + 20, y_, x_ + w_, y_ + h_),
+                      fmt.Get(), D2D1::RectF(textX, y_, x_ + w_, y_ + h_),
                       txtBrush.Get());
     }
 }

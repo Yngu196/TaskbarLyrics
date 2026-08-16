@@ -84,6 +84,8 @@ private:
     RECT barRect_{};           // 亮度条区域
     RECT previewRect_{};       // 预览色块区域
     RECT confirmRect_{};       // 确定按钮区域
+    RECT presetRect_{};        // 预设色板整体区域
+    std::vector<RECT> presetSwatchRects_{}; // 各预设色块区域
 };
 
 } // namespace moekoe

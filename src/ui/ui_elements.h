@@ -159,6 +159,7 @@ public:
 class NavItem : public UIElement {
 public:
     std::string label;
+    std::wstring icon;      // Segoe MDL2 Assets 图标码点（空=无图标）
     int pageIndex{0};       // 对应的页面索引
     bool selected{false};
 

@@ -570,7 +570,7 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
         c.a = hoverMin_ ? 0.8f : 0.f;
         rt->CreateSolidColorBrush(c, &minBg);
         if (hoverMin_) {
-            FillRoundedRect(rt, minBg.Get(), minX, btnY, btnSize, btnSize, 4.f);
+            FillRoundedRect(rt, minBg.Get(), minX, btnY, btnSize, btnSize, 6.f);
         }
         // 横线 ─
         ComPtr<ID2D1SolidColorBrush> minIcon;
@@ -587,7 +587,7 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
         c.a = hoverMax_ ? 0.8f : 0.f;
         rt->CreateSolidColorBrush(c, &maxBg);
         if (hoverMax_) {
-            FillRoundedRect(rt, maxBg.Get(), maxX, btnY, btnSize, btnSize, 4.f);
+            FillRoundedRect(rt, maxBg.Get(), maxX, btnY, btnSize, btnSize, 6.f);
         }
         ComPtr<ID2D1SolidColorBrush> maxIcon;
         rt->CreateSolidColorBrush(hoverMax_ ? theme_.text : theme_.textSecondary, &maxIcon);
@@ -625,7 +625,7 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
             : D2D1::ColorF(0, 0, 0, 0);
         rt->CreateSolidColorBrush(c, &closeBg);
         if (hoverClose_) {
-            FillRoundedRect(rt, closeBg.Get(), closeX, btnY, btnSize, btnSize, 4.f);
+            FillRoundedRect(rt, closeBg.Get(), closeX, btnY, btnSize, btnSize, 6.f);
         }
         // × 符号
         ComPtr<ID2D1SolidColorBrush> xIcon;
@@ -661,12 +661,12 @@ void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox
     ComPtr<ID2D1SolidColorBrush> shadowBrush1;
     rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0.4f), &shadowBrush1);
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX + 3, boxY + 3, boxX + boxW + 3, boxY + dropH + 3), 8, 8),
+        D2D1::RoundedRect(D2D1::RectF(boxX + 3, boxY + 3, boxX + boxW + 3, boxY + dropH + 3), 6, 6),
         shadowBrush1.Get());
     ComPtr<ID2D1SolidColorBrush> shadowBrush2;
     rt->CreateSolidColorBrush(D2D1::ColorF(0, 0, 0, 0.2f), &shadowBrush2);
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX + 1, boxY + 1, boxX + boxW + 1, boxY + dropH + 1), 8, 8),
+        D2D1::RoundedRect(D2D1::RectF(boxX + 1, boxY + 1, boxX + boxW + 1, boxY + dropH + 1), 6, 6),
         shadowBrush2.Get());
 
     // 下拉背景（基于主题 bg 色，亮暗模式自适应）
@@ -675,10 +675,10 @@ void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox
         D2D1::ColorF(theme_.bg.r * 1.2f, theme_.bg.g * 1.2f, theme_.bg.b * 1.2f, 1.0f), &dropBg);
     rt->CreateSolidColorBrush(drawCtx_.Border(), &dropBorder);
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 8, 8),
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 6, 6),
         dropBg.Get());
     rt->DrawRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 8, 8),
+        D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + dropH), 6, 6),
         dropBorder.Get(), 1);
 
     // 绘制每个选项
@@ -1196,7 +1196,8 @@ void D2DSettingsWindow::BuildPages(const Config& cfg) {
     // 创建导航
     navView_ = std::make_unique<ui::NavView>();
     navView_->id = "navView";
-    navView_->BuildItems({"歌词", "外观", "频谱", "窗口", "行为", "高级", "关于"});
+    navView_->BuildItems({"歌词", "外观", "频谱", "窗口", "行为", "高级", "关于"},
+                         {L"\uE8A1", L"\uE790", L"\uE950", L"\uE73F", L"\uE72C", L"\uE756", L"\uE946"});
     navView_->SetOnPageChange([this](int idx) {
         currentPage_ = idx;
         v2ScrollOffset_ = 0;
@@ -1426,75 +1427,12 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
             ArrangeUI();
             return;
         }
-        // Button 点击 → 实时应用
+        // Button → 设置按下状态，在 mouse up 时执行动作
         auto* btn = dynamic_cast<ui::Button*>(hit);
         if (btn) {
-            if (btn->id == "resetPos") {
-                // 重置位置
-                if (onConfigChanged_) {
-                    moekoe::Config tmp = currentConfig_;
-                    tmp.MutablePosition().offsetX = 0;
-                    tmp.MutablePosition().offsetY = 0;
-                    onConfigChanged_(tmp);
-                }
-            } else if (btn->id == "resetPort") {
-                // 重置 WebSocket 端口为默认值 6520
-                if (auto* advPage = dynamic_cast<ui::AdvancedPage*>(
-                        pages_[5].get())) {
-                    for (auto& card : advPage->Children()) {
-                        for (auto& child : card->Children()) {
-                            if (auto* lr = dynamic_cast<ui::LabelRow*>(child.get())) {
-                                if (lr->id == "wsPort") {
-                                    lr->textValue = "6520";
-                                }
-                            }
-                        }
-                    }
-                }
-                ApplyChanges();
-                InvalidateRect(hwnd_, nullptr, FALSE);
-            } else if (btn->id == "exportLog") {
-                // 导出日志文件
-                ExportLogFile();
-            } else if (btn->id == "exportDiagnostic") {
-                // 导出诊断信息
-                ExportDiagnosticInfo();
-            } else if (btn->id == "exportConfig") {
-                // 导出当前配置到文件
-                ExportCurrentConfig();
-            } else if (btn->id == "importConfig") {
-                // 从文件导入配置
-                ImportConfigFromFile();
-            } else if (btn->id == "resetConfig") {
-                // 恢复默认配置
-                ResetConfigToDefaults();
-            } else if (btn->id == "resetSpectrum") {
-                // 重置所有频谱参数为默认值
-                if (auto* specPage = dynamic_cast<ui::SpectrumPage*>(pages_[2].get())) {
-                    for (auto& card : specPage->Children()) {
-                        for (auto& child : card->Children()) {
-                            if (auto* s = dynamic_cast<ui::Slider*>(child.get())) {
-                                if (s->id == "spectrumDbCeil")       s->value = -10.0f;
-                                else if (s->id == "spectrumDbFloor") s->value = -62.0f;
-                                else if (s->id == "spectrumOpacity") s->value = 100.0f;
-                                else if (s->id == "spectrumNumBands") s->value = 32.0f;
-                                else if (s->id == "spectrumBarWidth") s->value = 0.0f;
-                            } else if (auto* cr = dynamic_cast<ui::ColorRow*>(child.get())) {
-                                if (cr->id == "spectrumColor") {
-                                    cr->textValue = "#F0EFEA";
-                                    cr->colorValue = HexToColorF("#F0EFEA");
-                                }
-                            } else if (auto* cb = dynamic_cast<ui::ComboBox*>(child.get())) {
-                                if (cb->id == "spectrumMode") cb->selectedIndex = 0;
-                            }
-                        }
-                    }
-                }
-                ApplyChanges();
-                InvalidateRect(hwnd_, nullptr, FALSE);
-            } else if (btn->OnClick()) {
-                btn->OnClick()(btn);
-            }
+            btn->pressed = true;
+            capturedElement_ = btn;
+            InvalidateRect(hwnd_, nullptr, FALSE);
             return;
         }
         // Slider 开始拖动（拖动结束才应用，见 OnMouseUpV2）
@@ -1689,9 +1627,95 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
             float ratio = std::clamp(relX / slider->Width(), 0.0f, 1.0f);
             slider->value = slider->minValue + ratio * (slider->maxValue - slider->minValue);
         }
+        // Button pressed 状态跟随鼠标位置
+        auto* capBtn = dynamic_cast<ui::Button*>(capturedElement_);
+        if (capBtn) {
+            capBtn->pressed = (hit == capBtn);
+        }
     }
 
     InvalidateRect(hwnd_, nullptr, FALSE);
+}
+
+void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
+    if (!btn) return;
+
+    if (btn->id == "resetPos") {
+        if (onConfigChanged_) {
+            moekoe::Config tmp = currentConfig_;
+            tmp.MutablePosition().offsetX = 0;
+            tmp.MutablePosition().offsetY = 0;
+            onConfigChanged_(tmp);
+        }
+    } else if (btn->id == "resetPort") {
+        if (auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[5].get())) {
+            for (auto& card : advPage->Children()) {
+                for (auto& child : card->Children()) {
+                    if (auto* lr = dynamic_cast<ui::LabelRow*>(child.get())) {
+                        if (lr->id == "wsPort") {
+                            lr->textValue = "6520";
+                        }
+                    }
+                }
+            }
+        }
+        ApplyChanges();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    } else if (btn->id == "exportLog") {
+        ExportLogFile();
+    } else if (btn->id == "exportDiagnostic") {
+        ExportDiagnosticInfo();
+    } else if (btn->id == "exportConfig") {
+        ExportCurrentConfig();
+    } else if (btn->id == "importConfig") {
+        ImportConfigFromFile();
+    } else if (btn->id == "resetConfig") {
+        ResetConfigToDefaults();
+    } else if (btn->id == "resetSpectrum") {
+        if (auto* specPage = dynamic_cast<ui::SpectrumPage*>(pages_[2].get())) {
+            for (auto& card : specPage->Children()) {
+                for (auto& child : card->Children()) {
+                    if (auto* s = dynamic_cast<ui::Slider*>(child.get())) {
+                        if (s->id == "spectrumDbCeil")       s->value = -10.0f;
+                        else if (s->id == "spectrumDbFloor") s->value = -62.0f;
+                        else if (s->id == "spectrumOpacity") s->value = 100.0f;
+                        else if (s->id == "spectrumNumBands") s->value = 32.0f;
+                        else if (s->id == "spectrumBarWidth") s->value = 0.0f;
+                    } else if (auto* cr = dynamic_cast<ui::ColorRow*>(child.get())) {
+                        if (cr->id == "spectrumColor") {
+                            cr->textValue = "#F0EFEA";
+                            cr->colorValue = HexToColorF("#F0EFEA");
+                        }
+                    } else if (auto* cb = dynamic_cast<ui::ComboBox*>(child.get())) {
+                        if (cb->id == "spectrumMode") cb->selectedIndex = 0;
+                    }
+                }
+            }
+        }
+        ApplyChanges();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    } else if (btn->id == "resetAppearancePage") {
+        // 保留当前 displayMode（由歌词页控制），仅重置外观参数
+        CollectAllChanges(editedConfig_);
+        std::string curDisplayMode = editedConfig_.Appearance().displayMode;
+        moekoe::Config defaultCfg;
+        defaultCfg.MutableAppearance().displayMode = curDisplayMode;
+        // Rebuild 会销毁外观页所有旧控件，清除可能指向它们的悬空指针
+        hoveredElement_ = nullptr;
+        pages_[1]->Rebuild(defaultCfg);
+        if (auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get()))
+            appearPage->UpdateVisibility(curDisplayMode);
+        ApplyChanges();
+        // settingsTheme 可能被重置，需同步窗口主题颜色
+        UpdateThemeColors();
+        BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
+        DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        CreateBgGradientBrush();
+        ArrangeUI();
+        InvalidateRect(hwnd_, nullptr, FALSE);
+    } else if (btn->OnClick()) {
+        btn->OnClick()(btn);
+    }
 }
 
 void D2DSettingsWindow::OnMouseUpV2(int x, int y) {
@@ -1701,6 +1725,16 @@ void D2DSettingsWindow::OnMouseUpV2(int x, int y) {
             slider->dragging = false;
             // 滑块拖动结束 → 实时应用
             ApplyChanges();
+        }
+        auto* btn = dynamic_cast<ui::Button*>(capturedElement_);
+        if (btn) {
+            btn->pressed = false;
+            // 检查鼠标是否仍在按钮上
+            ui::UIElement* hit = HitTestV2(x, y);
+            if (hit == btn) {
+                ExecuteButtonAction(btn);
+            }
+            InvalidateRect(hwnd_, nullptr, FALSE);
         }
         capturedElement_ = nullptr;
     }

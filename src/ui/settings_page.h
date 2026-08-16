@@ -28,6 +28,12 @@ public:
     // 从控件收集配置变更
     virtual void CollectChanges(moekoe::Config& cfg) = 0;
 
+    // 用指定配置重建页面（清除旧控件并重新 BuildContent）
+    void Rebuild(const moekoe::Config& cfg) {
+        children_.clear();
+        BuildContent(cfg);
+    }
+
     // UIElement 接口
     float MeasureWidth(float availWidth) override;
     float MeasureHeight(float availWidth) override;
