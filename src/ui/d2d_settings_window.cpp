@@ -1314,11 +1314,11 @@ void D2DSettingsWindow::DrawV2() {
         }
     }
 
-    // 绘制颜色选择器弹窗（在最上层，不受裁剪限制）
+    // 绘制颜色选择器弹窗（在最上层，不受裁剪和内容滚动影响）
     if (colorPicker_.IsActive()) {
         colorPicker_.Draw(renderTarget_.Get(), isDarkMode_, theme_,
                           valueFmt_.Get(), hintFmt_.Get(), textSecondaryBrush_.Get(),
-                          v2ScrollOffset_);
+                          0);
     }
 
     HRESULT hr = renderTarget_->EndDraw();
