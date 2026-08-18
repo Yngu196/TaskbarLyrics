@@ -27,17 +27,23 @@
 > 本项目与TranslucentTB、Wallpaper不存在兼容问题，可放心使用。
 
 - **Native Host 托管** — 随 MoeKoeMusic 自动启动/关闭，无需手动管理
-- **单行歌词卡拉OK效果** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
-- **双行歌词显示** — 双行歌词无歌词高亮、长歌词滚动效果，但独立字号和颜色配置
+- **单行歌词** — 基于 Direct2D + DirectWrite 渲染，逐字高亮渐变
+- **双行歌词** — 双行卡片布局 + 专辑封面（异步下载、圆角裁切、模糊背景）
+- **动态频谱显示** — 纯音乐/无歌词时显示频谱条，基于 WASAPI 进程级音频采集，柱数/柱宽/颜色等参数可调
+- **歌词切换动画** — 行切换淡入淡出 + 卡拉OK进度弹簧动画
 - **歌词位置微调** — 支持单行/双行歌词上下偏移，适配多显示器和特殊任务栏布局
 - **悬停控制按钮** — 鼠标悬停歌词时显示 ⏮ ⏸/▶ ⏭
 - **拖动定位** — 可在任务栏范围内自由拖动调整位置
 - **锁定模式** — 托盘菜单切换锁定位置 / 完全锁定
+- **手动窗口宽度** — 任务栏宽度检测异常时可手动指定歌词窗口宽度
 - **APPBAR 自动隐藏** — 任务栏自动隐藏时歌词窗口跟随显隐（此功能已放弃维护）
-- **多方向任务栏** — 支持底部 / 顶部 / 左侧 / 右侧任务栏 (待测试)
-- **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘设置界面
+- **多方向任务栏** — 支持底部 / 顶部 / 左侧 / 右侧任务栏（理论上来说，但未测试）
+- **D2D 原生设置界面** — 纯 Direct2D + DirectWrite 自绘，7 个设置页（歌词 / 外观 / 频谱 / 窗口 / 行为 / 高级 / 关于）
+- **四种配色主题** — 蓝 / 深色 / 浅色 / 白色主题，颜色选择器内置预设色板
 - **自定义字体** — 可使用本地已安装的字体
 - **歌词翻译支持** — 自动解析 KRC `[language:...]` 标签提取翻译数据
+- **诊断报告** — 一键导出系统与运行诊断信息，辅助问题排查
+- **安全模式降级** — 检测到冲突的任务栏美化工具时自动降级运行
 - **配置导入导出** — 支持将配置导出为 JSON 文件，方便分享和恢复
 
 ## 使用说明
@@ -56,9 +62,10 @@
 C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 ```
 
-或者直接在 MoeKoeMusic 的 插件市场 安装此插件。
-
-然后在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。授权后，需重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭（此功能需 MoeKoeMusic 版本 ≥ 1.6.6）。
+或者直接在 MoeKoeMusic 的 插件市场 安装此插件：
+- 在 MoeKoeMusic 插件管理页找到「任务栏歌词」→ 点击「本地程序授权」。
+- 然后在 MoeKoeMusic 的设置里的“系统”中开启“api模式”（建议手动开启，~~虽然本插件也能开启 MoeKoeMusic 的api模式~~）。
+- 重启MoeKoeMusic，之后程序将随 MoeKoeMusic 自动启动/关闭。
 
 ### 独立运行（不推荐）
 
@@ -68,7 +75,7 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 
 | 工具            | 版本          |
 | ------------- | ----------- |
-| Windows SDK   | 10.0.26100+ |
+| Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
 | MSVC 工具集      | 14.44+      |
 | CMake         | 3.20+       |
@@ -77,8 +84,9 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 ## 构建
 
 ```powershell
-# 安装依赖
-vcpkg install ixwebsocket:x64-windows-142 nlohmann-json:x64-windows-142
+# 安装依赖（经典模式；项目使用 vcpkg.json manifest 声明，含：
+# ixwebsocket / nlohmann-json / zlib / mbedtls / kissfft 五项）
+vcpkg install ixwebsocket:x64-windows-142 nlohmann-json:x64-windows-142 zlib:x64-windows-142 mbedtls:x64-windows-142 kissfft:x64-windows-142
 
 # 构建
 cmake --preset x64-Release
