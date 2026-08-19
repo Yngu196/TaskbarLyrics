@@ -332,13 +332,14 @@ list(APPEND HEADERS
     src/render/spectrum_capture.h
 )
 
-# taskbar/: 任务栏窗口 — 嵌入、定位、全屏检测、Shell 伴侣
+# taskbar/: 任务栏窗口 — 嵌入、定位、全屏检测、Shell 伴侣、多任务栏选择
 list(APPEND SOURCES
     src/taskbar/taskbar_window.cpp
     src/taskbar/taskbar_embedder.cpp
     src/taskbar/taskbar_geometry.cpp
     src/taskbar/fullscreen_detector.cpp
     src/taskbar/shell_companion.cpp
+    src/taskbar/taskbar_selector.cpp
 )
 list(APPEND HEADERS
     src/taskbar/taskbar_window.h
@@ -346,6 +347,7 @@ list(APPEND HEADERS
     src/taskbar/taskbar_geometry.h
     src/taskbar/fullscreen_detector.h
     src/taskbar/shell_companion.h
+    src/taskbar/taskbar_selector.h
 )
 
 # ui/: 用户界面 — 设置窗口、托盘图标、颜色选择器、配置对话框

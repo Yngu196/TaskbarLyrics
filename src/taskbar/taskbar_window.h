@@ -13,6 +13,7 @@
 #include "taskbar/shell_companion.h"
 #include "taskbar/taskbar_embedder.h"
 #include "taskbar/taskbar_geometry.h"
+#include "taskbar/taskbar_selector.h"
 #include "lyrics/lyrics_data.h"
 
 #include <windows.h>
@@ -52,7 +53,10 @@ public:
     HWND GetHandle() const { return hwnd_; }
 
     // 主循环每帧调用,检查任务栏尺寸变化并自适应
-    void CheckResize() { companion_.CheckResize(hwnd_); }
+    void CheckResize() {
+        UpdateTaskbarSelection();   // 多任务栏选择：按活动窗口/鼠标所在显示器切换绑定
+        companion_.CheckResize(hwnd_);
+    }
 
     // 强制重新计算位置(WM_DPICHANGED / WM_SETTINGCHANGE 时)
     void Reposition();
@@ -108,6 +112,12 @@ public:
     std::string GetDisplayMode() const { return displayMode_; }
     void SetDisplayMode(const std::string& mode) { displayMode_ = mode; }
 
+    // 任务栏显示位置模式（多任务栏选择器）：
+    //   mode: "auto"=自动跟随(按活动窗口/鼠标所在显示器切换,默认) | "manual"=手动指定(锁定到所选显示器任务栏)
+    //   manualIndex: 手动模式下的目标显示器序号（0-based），auto 模式下忽略
+    // 设置后立即触发一次目标任务栏重评估并即时切换
+    void SetDisplaySelectionMode(const std::string& mode, int manualIndex);
+
     // 是否处于垂直任务栏模式（LEFT / RIGHT）
     bool IsVerticalTaskbar() const { return companion_.IsVerticalTaskbar(); }
 
@@ -150,6 +160,10 @@ private:
     void SnapToEmptySpace();
     void ShowLyricsContextMenu();
 
+    // 多任务栏选择：每帧评估目标（活动窗口/鼠标所在显示器），
+    // 经防抖确认后切换绑定任务栏（GWLP_HWNDPARENT + ShellCompanion::Rebind）
+    void UpdateTaskbarSelection();
+
     // 状态
     HINSTANCE     hInstance_{nullptr};
     HWND          hwnd_{nullptr};
@@ -179,6 +193,9 @@ private:
 
     // ── v0.5.x: ShellCompanion 封装 Shell 层逻辑 ──
     ShellCompanion companion_;
+
+    // ── 多任务栏选择器（按活动窗口/鼠标所在显示器选择目标任务栏）──
+    TaskbarSelector selector_;
 };
 
 } // namespace moekoe

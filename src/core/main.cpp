@@ -190,6 +190,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
     taskbarWindow.SetCardMaxExpandRatio(config.Appearance().cardMaxExpandRatio);
     taskbarWindow.SetWidthOverride(config.Appearance().windowWidthOverride);
+    // 应用任务栏显示位置模式（自动跟随 / 手动指定），启动时恢复上次选择
+    taskbarWindow.SetDisplaySelectionMode(config.Appearance().displaySelectionMode,
+                                          config.Appearance().manualDisplayIndex);
 
     // 应用配置中的位置偏移
     taskbarWindow.SetDragOffset(config.Position().offsetX, config.Position().offsetY);

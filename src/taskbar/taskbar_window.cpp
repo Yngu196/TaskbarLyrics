@@ -141,6 +141,49 @@ void TaskbarWindow::Reposition() {
 }
 
 // ═════════════════════════════════════════
+// 多任务栏选择（每帧由 CheckResize 触发）
+// ═════════════════════════════════════════
+
+void TaskbarWindow::SetDisplaySelectionMode(const std::string& mode, int manualIndex) {
+    selector_.SetManualMode(mode == "manual");
+    selector_.SetManualIndex(manualIndex);
+
+    // 模式/目标变更：立即触发一次目标任务栏重评估与即时切换，
+    // 使"手动指定"锁定与"自动跟随"恢复都能即时生效，无需等待下一帧
+    UpdateTaskbarSelection();
+    // 若发生切换，UpdateTaskbarSelection 内部已重新定位；
+    // 未切换时也确保按当前任务栏刷新一次位置基准
+    Reposition();
+}
+
+void TaskbarWindow::UpdateTaskbarSelection() {
+    if (!hwnd_) return;
+
+    bool shouldSwitch = false;
+    HWND cur    = companion_.GetTaskbarHandle();
+    HWND target = selector_.SelectTarget(hwnd_, cur, shouldSwitch);
+    if (!shouldSwitch || !target || target == cur) return;
+    if (!::IsWindow(target)) return;
+
+    Log("[TASKBAR-WND] switch bound taskbar %p -> %p\n", cur, target);
+
+    // 更新 owned 窗口关系（Z-order 跟随新任务栏）
+    ::SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(target));
+
+    // 复用 Explorer 重启恢复路径：更新句柄 / 重检测方位 / 重装 WinEvent 钩子 / 重置稳定跟踪
+    companion_.Rebind(target, hwnd_);
+
+    // 跨任务栏切换：定位基准与拖动偏移不再适用，统一重置
+    lastPosRect_ = {-1, -1, -1, -1};
+    dragOffsetX_ = 0;
+    dragOffsetY_ = 0;
+    lastPosition_ = companion_.GetTaskbarInfo().position;
+
+    // 立即按新任务栏重新定位
+    InternalPosition();
+}
+
+// ═════════════════════════════════════════
 // 拖动后吸附
 // ═════════════════════════════════════════
 
@@ -472,6 +515,8 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         return 0;
     }
     case WM_DISPLAYCHANGE: {
+        // 显示器布局变化：强制任务栏选择器重新枚举全部任务栏
+        self->selector_.Reset();
         // 仅当任务栏方位真正变化时才重置偏移，避免睡眠唤醒误清零
         const TaskbarPosition prevPos = self->companion_.GetTaskbarInfo().position;
         self->companion_.Geometry().Detect(self->companion_.GetTaskbarHandle());
@@ -490,6 +535,8 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     case WM_POWERBROADCAST: {
         if (wParam == PBT_APMRESUMEAUTOMATIC) {
             LogDebug("[TASKBAR-WND] PBT_APMRESUMEAUTOMATIC: refreshing taskbar\n");
+            // 休眠唤醒：任务栏集合可能变化，强制选择器重新枚举
+            self->selector_.Reset();
             HWND hNewTaskbar = ShellCompanion::FindTaskbarHandle();
             if (hNewTaskbar && hNewTaskbar != self->companion_.GetTaskbarHandle()) {
                 ::SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hNewTaskbar));
@@ -543,6 +590,8 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
             if (hNewTaskbar) {
                 Log("[TASKBAR-WND] Explorer restart recovery: found new Shell_TrayWnd %p\n", hNewTaskbar);
+                // Explorer 重启后任务栏集合重建，强制选择器重新枚举
+                self->selector_.Reset();
                 // 重新绑定
                 ::SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(hNewTaskbar));
                 self->companion_.Rebind(hNewTaskbar, hwnd);

@@ -225,9 +225,11 @@ MoeKoeMusic-TaskbarLyrics/
 | `shell_companion.h/cpp`       | Shell 事件钩子 / 任务栏定位 / 生命周期管理       |
 | `fullscreen_detector.h/cpp`   | 全屏检测（8 帧防抖 + Shell 菜单抑制）          |
 | `taskbar_geometry.h/cpp`      | 任务栏几何查询（UIA 枚举 + 方位判断）           |
+| `taskbar_selector.h/cpp`      | 多任务栏选择（枚举主/副屏任务栏，按显示器决策切换；支持手动指定锁定某台显示器） |
 
 - 查找 `Shell_TrayWnd`，创建独立浮动 `Layered Window`
 - **窗口样式：** `WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE` + `WS_POPUP`
+- **多任务栏选择：** 每帧由 `CheckResize()` 触发 `UpdateTaskbarSelection()`，`TaskbarSelector` 枚举主任务栏 `Shell_TrayWnd` 与各副屏任务栏 `Shell_SecondaryTrayWnd`（EnumWindows 按类名收集 + MonitorFromWindow 建立显示器映射，1s 节流），按「活动窗口显示器 → 鼠标显示器 → 主任务栏」优先级决策，经 300ms 防抖确认后通过 `SetWindowLongPtr(GWLP_HWNDPARENT)` + `ShellCompanion::Rebind()` 切换绑定；显示器布局变化（`WM_DISPLAYCHANGE`）、休眠唤醒（`WM_POWERBROADCAST`）与 Explorer 重启恢复路径均会重置选择器枚举缓存。支持两种显示位置模式（设置 → 窗口页「显示位置」，仅多显示器时出现）：「自动跟随」（默认，即上述按活动窗口/鼠标决策逻辑）与「手动指定」（`SetManualMode(true)` + `SetManualIndex(n)` 锁定到所选显示器的任务栏，直接返回目标任务栏句柄、不参与自动决策与防抖；目标显示器无任务栏时回退主任务栏）。`displaySelectionMode` / `manualDisplayIndex` 字段经 config 的 Load/Save/Export/Import 持久化，启动时由 `main.cpp` 恢复，设置变更经 `tray_commands` 热更新回调即时生效。
 - **嵌入方式对比：**
 
 | 维度      | SetParent (原规划) | 浮动覆盖 (实际)       |
@@ -620,7 +622,7 @@ python scripts/pack_zip.py moeKoe-taskbar-lyrics/ moeKoe-taskbar-lyrics.zip
 | 场景             | 策略                                      |
 | -------------- | --------------------------------------- |
 | MoeKoeMusic 更新 | WebSocket 协议不变则无需更新                     |
-| 多显示器           | `MonitorFromWindow` + `GetMonitorInfo`  |
+| 多显示器           | `EnumWindows` 枚举主/副屏任务栏 + `MonitorFromWindow` 按显示器绑定，活动窗口/鼠标位置优先决策；窗口页支持「自动跟随 / 手动指定」两种显示位置模式，手动模式锁定到所选显示器 |
 | 任务栏自动隐藏        | `WM_SETTINGCHANGE` + 轮询 `CheckResize()` |
 | Win11 任务栏居中    | 浮动窗口天然兼容                                |
 

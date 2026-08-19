@@ -48,8 +48,11 @@ public:
     void CleanupUIA();
     IUIAutomation* GetUIA() const { return uia_; }
 
-    // 使用 UIA 枚举 Shell_TrayWnd 子窗口，获取关键区域的屏幕矩形
-    bool GetChildRectsByUIA(RECT& taskListRect, bool& foundTaskList,
+    // 使用 UIA 枚举任务栏子窗口，获取关键区域的屏幕矩形。
+    // hTaskbar 指定目标任务栏（主 Shell_TrayWnd 或副屏 Shell_SecondaryTrayWnd），
+    // 避免多显示器下固定查找主任务栏导致副屏定位错位。
+    bool GetChildRectsByUIA(HWND hTaskbar,
+                            RECT& taskListRect, bool& foundTaskList,
                             RECT& trayRect,    bool& foundTray,
                             RECT& rebarRect,   bool& foundRebar,
                             int   tbWidth);

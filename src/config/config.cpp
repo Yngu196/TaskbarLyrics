@@ -196,6 +196,8 @@ bool Config::Load() {
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
             appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
+            appearance_.displaySelectionMode = a.value("display_selection_mode", appearance_.displaySelectionMode);
+            appearance_.manualDisplayIndex   = a.value("manual_display_index",   appearance_.manualDisplayIndex);
             appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
             appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
             appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
@@ -303,6 +305,8 @@ bool Config::Save() const {
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
         {"window_width_override", appearance_.windowWidthOverride},
+        {"display_selection_mode", appearance_.displaySelectionMode},
+        {"manual_display_index",   appearance_.manualDisplayIndex},
         {"spectrum_mode",  appearance_.spectrumMode},
         {"spectrum_color", appearance_.spectrumColor},
         {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
@@ -378,6 +382,8 @@ bool Config::ExportToFile(const std::string& path) const {
         {"card_line1_offset_y", appearance_.cardLine1OffsetY},
         {"card_line2_offset_y", appearance_.cardLine2OffsetY},
         {"window_width_override", appearance_.windowWidthOverride},
+        {"display_selection_mode", appearance_.displaySelectionMode},
+        {"manual_display_index",   appearance_.manualDisplayIndex},
         {"spectrum_mode",  appearance_.spectrumMode},
         {"spectrum_color", appearance_.spectrumColor},
         {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
@@ -456,6 +462,8 @@ bool Config::ImportFromFile(const std::string& path) {
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
             appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
+            appearance_.displaySelectionMode = a.value("display_selection_mode", appearance_.displaySelectionMode);
+            appearance_.manualDisplayIndex   = a.value("manual_display_index",   appearance_.manualDisplayIndex);
             appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
             appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
             appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));

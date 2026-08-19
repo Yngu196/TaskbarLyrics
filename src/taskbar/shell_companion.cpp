@@ -79,7 +79,9 @@ void CALLBACK ShellCompanion::ShellMenuWinEventProc(
                      s_frozenTaskbarRect_.bottom);
         } else {
             // 降级：冷启动时 s_lastGoodTaskbarRect_ 尚未初始化
-            HWND tb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+            // 优先取当前绑定的任务栏（多显示器下可能是副屏 Shell_SecondaryTrayWnd）
+            HWND tb = s_instance_ ? s_instance_->GetTaskbarHandle() : nullptr;
+            if (!tb || !::IsWindow(tb)) tb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
             if (tb) {
                 ::GetWindowRect(tb, &s_frozenTaskbarRect_);
                 LogDebug("[SHELL-COMPANION] MENUPOPUPSTART: lock ON, frozen=(%d,%d,%d,%d)"
@@ -380,13 +382,13 @@ void ShellCompanion::PositionLyricsInTaskbar(
             // 临时置空 UIA 指针，GetChildRectsByUIA 会自动降级到 EnumChildWindows
             IUIAutomation* savedUia = geometry_.GetUIA();
             geometry_.CleanupUIA();
-            geometry_.GetChildRectsByUIA(taskListRect, foundTaskList,
+            geometry_.GetChildRectsByUIA(hTaskbar_, taskListRect, foundTaskList,
                                          trayRect, foundTray,
                                          rebarRect, foundRebar, tbWidth);
             // 恢复 UIA（下次非兼容模式时可用）
             if (savedUia) geometry_.InitUIA();
         } else {
-            geometry_.GetChildRectsByUIA(taskListRect, foundTaskList,
+            geometry_.GetChildRectsByUIA(hTaskbar_, taskListRect, foundTaskList,
                                          trayRect, foundTray,
                                          rebarRect, foundRebar, tbWidth);
         }
@@ -412,7 +414,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
             // 二次 UIA 查询
             bool fTL2, fTR2, fRB2;
             RECT tl2, tr2, rb2;
-            geometry_.GetChildRectsByUIA(tl2, fTL2, tr2, fTR2, rb2, fRB2, tbWidth);
+            geometry_.GetChildRectsByUIA(hTaskbar_, tl2, fTL2, tr2, fTR2, rb2, fRB2, tbWidth);
             if (fTL2) { taskListCheck = tl2; taskListCheckValid = true; }
             else if (foundTaskList) {
                 // UIA 失败降级：用 EnumChildWindows 做二次采样

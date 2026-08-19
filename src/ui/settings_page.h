@@ -80,6 +80,9 @@ public:
     std::string Subtitle() const override { return "调整歌词窗口位置和尺寸"; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
+
+    // 根据任务栏显示位置模式更新"指定显示器"下拉的可见性（仅手动指定时显示）
+    void UpdateVisibility(const std::string& selectionMode);
 };
 
 class BehaviorPage : public SettingsPage {

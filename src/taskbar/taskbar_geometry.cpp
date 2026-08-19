@@ -66,9 +66,12 @@ void TaskbarGeometry::CleanupUIA() {
     if (uia_) { uia_->Release(); uia_ = nullptr; }
 }
 
-bool TaskbarGeometry::GetChildRectsByUIA(RECT& tl, bool& fTL, RECT& tr, bool& fTR,
+bool TaskbarGeometry::GetChildRectsByUIA(HWND hTaskbar,
+                                          RECT& tl, bool& fTL, RECT& tr, bool& fTR,
                                           RECT& rb, bool& fRB, int tbW) {
     fTL = fTR = fRB = false;
+    if (!hTaskbar) hTaskbar = FindTaskbarHandle();
+    if (!hTaskbar) return false;
     if (!uia_) {
         // ── 降级：UIA 不可用（COM 未初始化或 CoCreateInstance 失败），回退到 EnumChildWindows ──
         // Win11 任务栏子窗口结构：
@@ -76,8 +79,7 @@ bool TaskbarGeometry::GetChildRectsByUIA(RECT& tl, bool& fTL, RECT& tr, bool& fT
         //   DesktopWindowContentBridge    → Win11 24H2+ 任务列表的替代类名（非标准）
         //   TrayNotifyWnd                 → 系统托盘（时钟、通知图标）
         //   ReBarWindow32                 → 工具栏容器
-        HWND hTB = ::FindWindowW(L"Shell_TrayWnd", nullptr);
-        if (!hTB) return false;
+        HWND hTB = hTaskbar;
         HWND hChild = ::GetWindow(hTB, GW_CHILD);
         while (hChild) {
             if (::IsWindowVisible(hChild)) {
@@ -102,9 +104,9 @@ bool TaskbarGeometry::GetChildRectsByUIA(RECT& tl, bool& fTL, RECT& tr, bool& fT
         return true;  // 降级成功
     }
 
-    // ── UIA 路径：通过 IUIAutomationElement 枚举 Shell_TrayWnd 子元素 ──
+    // ── UIA 路径：通过 IUIAutomationElement 枚举目标任务栏子元素 ──
     IUIAutomationElement* tbElem = nullptr;
-    HWND hTB = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+    HWND hTB = hTaskbar;
     if (FAILED(uia_->ElementFromHandle(hTB, &tbElem)) || !tbElem) return false;
 
     // 辅助 lambda：按 ClassName 查找子元素，提取其 CurrentBoundingRectangle

@@ -3,6 +3,7 @@
 #include "ui/settings_page.h"
 #include "ui/color_utils.h"
 #include "core/constants.h"
+#include "taskbar/taskbar_selector.h"
 
 using moekoe::Utf8ToWide;
 using moekoe::HexToColorF;
@@ -749,6 +750,41 @@ void SpectrumPage::CollectChanges(moekoe::Config& cfg) {
 // ═══════════════════════════════════════
 
 void WindowPage::BuildContent(const moekoe::Config& cfg) {
+    // Card: 显示位置（多任务栏选择，仅多显示器时出现）
+    if (TaskbarSelector::MonitorCount() > 1) {
+        auto c0 = MakeCard("显示位置");
+        c0->id = "displayPositionCard";
+        {
+            auto hint = std::make_unique<TextBlock>();
+            hint->id = "displayPosHint";
+            hint->text = "多显示器时选择歌词任务栏的跟随方式";
+            hint->style = TextBlock::Style::Caption;
+            c0->AddChild(std::move(hint));
+        }
+        {
+            auto cb = std::make_unique<ComboBox>();
+            cb->id = "displaySelectionMode";
+            cb->label = "跟随方式";
+            cb->items = {"自动跟随", "手动指定"};
+            cb->selectedIndex = (cfg.Appearance().displaySelectionMode == "manual") ? 1 : 0;
+            c0->AddChild(std::move(cb));
+        }
+        {
+            auto cb = std::make_unique<ComboBox>();
+            cb->id = "displayMonitor";
+            cb->label = "指定显示器";
+            cb->items = TaskbarSelector::MonitorLabels();
+            if (!cb->items.empty()) {
+                cb->selectedIndex = std::clamp(cfg.Appearance().manualDisplayIndex,
+                                               0, static_cast<int>(cb->items.size()) - 1);
+            }
+            // 仅"手动指定"模式下显示
+            cb->SetVisible(cfg.Appearance().displaySelectionMode == "manual");
+            c0->AddChild(std::move(cb));
+        }
+        AddChild(std::move(c0));
+    }
+
     auto c1 = MakeCard("位置");
     {
         auto hint = std::make_unique<TextBlock>();
@@ -793,10 +829,26 @@ void WindowPage::CollectChanges(moekoe::Config& cfg) {
         for (auto& child : card->Children()) {
             if (auto* s = dynamic_cast<Slider*>(child.get())) {
                 if (s->id == "windowWidthOverride") ap.windowWidthOverride = static_cast<int>(s->value);
+            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                if (cb->id == "displaySelectionMode")
+                    ap.displaySelectionMode = (cb->selectedIndex == 1) ? "manual" : "auto";
+                else if (cb->id == "displayMonitor")
+                    ap.manualDisplayIndex = cb->selectedIndex;
             }
         }
     }
     // 重置位置通过回调处理，不修改配置字段
+}
+
+void WindowPage::UpdateVisibility(const std::string& selectionMode) {
+    const bool isManual = (selectionMode == "manual");
+    for (auto& card : children_) {
+        for (auto& child : card->Children()) {
+            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                if (cb->id == "displayMonitor") cb->SetVisible(isManual);
+            }
+        }
+    }
 }
 
 // ═══════════════════════════════════════

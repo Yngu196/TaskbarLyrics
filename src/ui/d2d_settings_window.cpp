@@ -1396,6 +1396,15 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                             }
                             ArrangeUI();
                         }
+                        // displaySelectionMode 切换时更新窗口页"指定显示器"下拉的可见性
+                        if (combo->id == "displaySelectionMode") {
+                            std::string newMode = (combo->selectedIndex == 1) ? "manual" : "auto";
+                            auto* windowPage = dynamic_cast<ui::WindowPage*>(pages_[3].get());
+                            if (windowPage) {
+                                windowPage->UpdateVisibility(newMode);
+                            }
+                            ArrangeUI();
+                        }
                         ApplyChanges();
                     } else {
                         // 点击下拉区域外 → 关闭下拉（不选择）

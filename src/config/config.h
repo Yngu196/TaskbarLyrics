@@ -81,6 +81,12 @@ struct AppearanceConfig {
     // 用于任务栏空闲区域检测异常导致窗口被压缩到过窄的场景）
     int         windowWidthOverride{0};
 
+    // 任务栏显示位置模式: "auto"=自动跟随(默认,按活动窗口/鼠标所在显示器切换)
+    //                     | "manual"=手动指定(锁定到所选显示器的任务栏,不再跟随)
+    std::string displaySelectionMode{"auto"};
+    // 手动指定模式下的目标显示器序号（0-based，对应设置页下拉列表顺序）
+    int         manualDisplayIndex{0};
+
     // 歌词垂直偏移（单行/卡拉OK模式，dp，负值=上移，正值=下移）
     int         lyricOffsetY{0};
 
