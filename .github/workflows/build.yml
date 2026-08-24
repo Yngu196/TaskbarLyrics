@@ -38,6 +38,10 @@ jobs:
       always() &&
       (github.event_name != 'push' || needs.check.outputs.skip != 'true')
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
 
     steps:
       - name: Checkout
@@ -45,6 +49,8 @@ jobs:
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Install dependencies (vcpkg)
         shell: powershell
@@ -57,22 +63,23 @@ jobs:
             & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
           }
 
-          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet x64-windows --classic
+          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet ${{ matrix.arch }}-windows --classic
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          $installDir = "$vcpkgRoot\installed\x64-windows"
+          $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
           Write-Host "VCPKG_INSTALLED_DIR=$installDir"
           echo "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
 
       - name: Configure CMake
         shell: powershell
         run: |
-          cmake -B build -S . `
+          cmake -B build-${{ matrix.arch }} -S . `
+            -A ${{ matrix.arch }} `
             "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -- /v:minimal
+        run: cmake --build build-${{ matrix.arch }} --config Release -- /v:minimal
 
       - name: Copy VC++ Redist DLLs
         shell: powershell
@@ -80,18 +87,19 @@ jobs:
           # 从编译器路径推导 VC Redist CRT 目录
           $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
           if ($clPath) {
-            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
+            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/<arch>/cl.exe
             $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
             $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
-            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\x64\Microsoft.VC143.CRT"
+            $arch = "${{ matrix.arch }}"
+            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\$arch\Microsoft.VC143.CRT"
             if (!(Test-Path $crtDir)) {
-              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\x64\Microsoft.VC143.CRT"
+              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\$arch\Microsoft.VC143.CRT"
             }
             if (Test-Path $crtDir) {
               Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
+              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
               Write-Host "VC++ CRT DLLs copied successfully"
             } else {
               Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
@@ -100,7 +108,7 @@ jobs:
               foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
                 $src = Join-Path $sys32 $dll
                 if (Test-Path $src) {
-                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\" -Force
+                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
                   Write-Host "Copied $dll from System32"
                 }
               }
@@ -115,11 +123,18 @@ jobs:
           # upload-artifact@v4 会多包一层 zip，所以需要把插件目录塞进中间父目录
           # 这样 artifact zip 内部就是: moeKoe-taskbar-lyrics/manifest.json (深度=2)
           # 恰好符合 MoeKoeMusic installPluginFromZip 的检测规则
-          New-Item -ItemType Directory -Path artifact -Force
-          Copy-Item -Path moeKoe-taskbar-lyrics -Destination artifact/moeKoe-taskbar-lyrics -Recurse -Force
+          # x64 job 产完整包（根目录启动器 + x64/ 子目录）；arm64 job 只产 arm64/ 部分，
+          # 由 release 流程合并为单包双架构。
+          # 注意：Copy-Item 目标目录不可预创建，否则源会被整体嵌套进一层子目录
+          New-Item -ItemType Directory -Path artifact-${{ matrix.arch }} -Force
+          if ("${{ matrix.arch }}" -eq "x64") {
+            Copy-Item -Path moeKoe-taskbar-lyrics -Destination artifact-x64/moeKoe-taskbar-lyrics -Recurse -Force
+          } else {
+            Copy-Item -Path moeKoe-taskbar-lyrics/arm64 -Destination artifact-arm64/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MoeKoeTaskbarLyrics-x64
-          path: artifact/
+          name: MoeKoeTaskbarLyrics-${{ matrix.arch }}
+          path: artifact-${{ matrix.arch }}/

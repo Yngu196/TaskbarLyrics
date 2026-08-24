@@ -57,3 +57,9 @@ logs/
 # Misc
 Thumbs.db
 .DS_Store
+
+# Per-arch build output inside plugin package dir (launcher at root, x64/arm64 binaries)
+moeKoe-taskbar-lyrics/x64/
+moeKoe-taskbar-lyrics/arm64/
+# Local manual build dirs (build-x64 / build-arm64)
+build-*/

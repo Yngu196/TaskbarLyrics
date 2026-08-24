@@ -9,6 +9,37 @@ project(MoeKoeTaskbarLyrics
 # 使用 vcpkg 工具链会导致 MSVC 工具集不匹配（14.44 vs 14.42）的链接错误
 # 因此直接指定 vcpkg 安装目录下的头文件和库文件路径
 
+# ---- 目标架构检测（支持 x64 / ARM64 双架构构建） ----
+# 架构差异只在构建阶段体现，C++ 源码层保持架构无关。
+# 识别优先级：
+#   1. VS 多配置生成器 -> CMAKE_GENERATOR_PLATFORM（x64 / ARM64）
+#   2. 其他生成器（如 Ninja）-> CMAKE_SYSTEM_PROCESSOR（主机架构推断）
+if(DEFINED CMAKE_GENERATOR_PLATFORM AND NOT CMAKE_GENERATOR_PLATFORM STREQUAL "")
+    set(TARGET_ARCH "${CMAKE_GENERATOR_PLATFORM}")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|aarch64")
+    set(TARGET_ARCH "ARM64")
+else()
+    set(TARGET_ARCH "x64")
+endif()
+
+# 归一化架构名，并推导 vcpkg triplet 与 MSVC 运行时架构目录名
+string(TOLOWER "${TARGET_ARCH}" _arch_lower)
+if(_arch_lower MATCHES "arm64|aarch64")
+    set(TARGET_ARCH "arm64")
+    set(VCPKG_TRIPLET "arm64-windows")
+    set(MSVC_RUNTIME_ARCH "arm64")
+elseif(_arch_lower MATCHES "x64|amd64")
+    set(TARGET_ARCH "x64")
+    set(VCPKG_TRIPLET "x64-windows")
+    set(MSVC_RUNTIME_ARCH "x64")
+else()
+    message(FATAL_ERROR
+        "Unsupported target architecture: ${TARGET_ARCH}\n"
+        "MoeKoeTaskbarLyrics supports only x64 and ARM64.")
+endif()
+
+message(STATUS "Target architecture: ${TARGET_ARCH} (vcpkg triplet: ${VCPKG_TRIPLET})")
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -32,7 +63,7 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
         set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
     elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
         set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
-        foreach(_TRIPLET x64-windows-142 x64-windows)
+        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
             if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
                 set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
                 break()
@@ -40,7 +71,7 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
         endforeach()
     elseif(DEFINED ENV{VCPKG_ROOT})
         set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
-        foreach(_TRIPLET x64-windows-142 x64-windows)
+        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
             if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
                 set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
                 break()
@@ -51,10 +82,10 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
     # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
     if(NOT DEFINED VCPKG_INSTALLED_DIR)
         foreach(_CANDIDATE
-                "D:/vcpkg/installed/x64-windows-142"
-                "D:/vcpkg/installed/x64-windows"
-                "C:/vcpkg/installed/x64-windows-142"
-                "C:/vcpkg/installed/x64-windows")
+                "D:/vcpkg/installed/${VCPKG_TRIPLET}-142"
+                "D:/vcpkg/installed/${VCPKG_TRIPLET}"
+                "C:/vcpkg/installed/${VCPKG_TRIPLET}-142"
+                "C:/vcpkg/installed/${VCPKG_TRIPLET}")
             if(EXISTS "${_CANDIDATE}/include" AND EXISTS "${_CANDIDATE}/lib")
                 set(VCPKG_INSTALLED_DIR "${_CANDIDATE}")
                 break()
@@ -161,7 +192,7 @@ else()
     # VCPKG_INSTALLED_DIR（如 x64-windows-142）中，因此搜索时需覆盖多个 triplet。
     set(_IXWS_INSTALLED_CANDIDATES "${VCPKG_INSTALLED_DIR}")
     foreach(_root IN LISTS _IXWS_VCPKG_ROOTS)
-        foreach(_TRIPLET x64-windows-142 x64-windows)
+        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
             list(APPEND _IXWS_INSTALLED_CANDIDATES "${_root}/installed/${_TRIPLET}")
         endforeach()
     endforeach()
@@ -420,11 +451,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     UIAutomationCore   # UI Automation: 获取任务栏子窗口几何信息
 )
 
-# 输出到项目根目录下的 moeKoe-taskbar-lyrics 文件夹
+# 输出到项目根目录下的 moeKoe-taskbar-lyrics/<arch> 子文件夹（单包双架构布局）
 # 使用 _DEBUG/_RELEASE 两变量指向同一目录，避免 MSVC 多配置生成器追加 /Debug 子目录
+# 布局：moeKoe-taskbar-lyrics/{x64,arm64}/MoeKoeTaskbarLyrics.exe
+#       根目录入口 MoeKoeTaskbarLyrics.exe 为架构感知启动器（见下）
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics/${TARGET_ARCH}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics/${TARGET_ARCH}"
 )
 
 # 资源
@@ -467,10 +500,11 @@ if(MSVC)
 
     # 3) VC++ Redist CRT DLL（msvcp140 / vcruntime140 / vcruntime140_1）
     #    发布包中必须附带，避免用户机器缺失 VC Redist 导致启动失败
-    #    从编译器路径向上推导到 VC 根目录：
-    #      cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
-    #      Redist:  .../VC/Redist/MSVC/<ver>/x64/Microsoft.VC143.CRT/*.dll
-    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _crt_path)          # .../bin/Hostx64/x64
+    #    从编译器路径向上推导到 VC 根目录（对 x64 / ARM64 目标通用）：
+    #      x64   cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
+    #      arm64 cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/arm64/cl.exe
+    #      Redist:  .../VC/Redist/MSVC/<ver>/<arch>/Microsoft.VC143.CRT/*.dll
+    cmake_path(GET CMAKE_CXX_COMPILER PARENT_PATH _crt_path)          # .../bin/Hostx64/<arch>
     cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../bin/Hostx64
     cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../bin
     cmake_path(GET _crt_path PARENT_PATH _msvc_ver_path)              # .../Tools/MSVC/<ver>
@@ -479,16 +513,16 @@ if(MSVC)
     cmake_path(GET _crt_path PARENT_PATH _crt_path)                   # .../Tools
     cmake_path(GET _crt_path PARENT_PATH _vc_root)                    # .../VC
 
-    set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/x64/Microsoft.VC143.CRT")
+    set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/${MSVC_RUNTIME_ARCH}/Microsoft.VC143.CRT")
 
     if(NOT EXISTS "${_CRT_SRC_DIR}")
         # 备选：某些 VS 版本的 CRT 放在 onecore 子目录下
-        set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/onecore/x64/Microsoft.VC143.CRT")
+        set(_CRT_SRC_DIR "${_vc_root}/Redist/MSVC/${_msvc_ver}/onecore/${MSVC_RUNTIME_ARCH}/Microsoft.VC143.CRT")
     endif()
 
     if(NOT EXISTS "${_CRT_SRC_DIR}")
         message(WARNING "Cannot locate VC++ CRT DLL directory. "
-                        "Expected: ${_vc_root}/Redist/MSVC/${_msvc_ver}/x64/Microsoft.VC143.CRT. "
+                        "Expected: ${_vc_root}/Redist/MSVC/${_msvc_ver}/${MSVC_RUNTIME_ARCH}/Microsoft.VC143.CRT. "
                         "Please manually copy msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll to output.")
     else()
         message(STATUS "Copying VC++ CRT DLLs from: ${_CRT_SRC_DIR}")
@@ -503,6 +537,34 @@ if(MSVC)
         endforeach()
     endif()
 
+endif()
+
+# ──── 双架构启动器（仅 x64 构建） ────
+# 固定编译为 x64：x64 程序可在 ARM64 Windows 上经 x64 仿真运行，
+# 而 ARM64 程序无法在 x64 上运行，因此启动器必须是 x64。
+# 启动器检测系统【原生】架构后，拉起对应架构子目录的真实程序：
+#   moeKoe-taskbar-lyrics/x64/MoeKoeTaskbarLyrics.exe   (x64 系统)
+#   moeKoe-taskbar-lyrics/arm64/MoeKoeTaskbarLyrics.exe (ARM64 系统)
+# 产物输出到插件根目录，作为 MoeKoeMusic native host 的唯一入口。
+if(TARGET_ARCH STREQUAL "x64")
+    add_executable(MoeKoeTaskbarLyricsLauncher WIN32 src/launcher/launcher.cpp)
+
+    target_compile_definitions(MoeKoeTaskbarLyricsLauncher PRIVATE
+        _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+    )
+    target_compile_options(MoeKoeTaskbarLyricsLauncher PRIVATE
+        /W4 /permissive- /utf-8 /EHsc
+    )
+
+    set_target_properties(MoeKoeTaskbarLyricsLauncher PROPERTIES
+        # 输出到插件根目录（与主程序按架构分目录的输出区分开）
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/moeKoe-taskbar-lyrics"
+        # 文件名必须与 manifest.json 的 native host 入口一致
+        OUTPUT_NAME "MoeKoeTaskbarLyrics"
+        # 静态链接 CRT：插件根目录不附带任何 DLL，启动器必须完全自包含
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
 endif()
 
 # ──── 单元测试 ────

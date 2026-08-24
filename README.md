@@ -51,7 +51,7 @@
 
 > 如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。
 >
-> 本项目暂不支持32位系统，如果你想在32位系统上使用，可自行修改配置然后构建。
+> 本项目暂不支持32位系统。支持 Windows x64 与 Windows on ARM64（原生 ARM64），如果你需要在其他架构上使用，可自行修改配置然后构建。
 
 #### 本插件会自动开启 MoeKoeMusic 的API模式，但您需要重启MoeKoeMusic才会生效
 
@@ -78,26 +78,48 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 | ------------- | ----------- |
 | Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
-| MSVC 工具集      | 14.44+      |
+| MSVC 工具集      | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
 | CMake         | 3.20+       |
 | vcpkg         | latest      |
 
 ## 构建
 
+### 一键脚本（推荐）
+
+```powershell
+# x64 Release
+.\build.cmd release x64
+# ARM64 Release（本机需安装 VS2022 ARM64 工具链与 arm64-windows 依赖）
+.\build.cmd release arm64
+# 清理
+.\build.cmd clean x64
+```
+
+### 手动构建
+
 ```powershell
 # 安装依赖（经典模式；项目使用 vcpkg.json manifest 声明，含：
 # ixwebsocket / nlohmann-json / zlib / mbedtls / kissfft 五项）
+# x64：
 vcpkg install ixwebsocket:x64-windows-142 nlohmann-json:x64-windows-142 zlib:x64-windows-142 mbedtls:x64-windows-142 kissfft:x64-windows-142
+# ARM64：
+vcpkg install ixwebsocket:arm64-windows-142 nlohmann-json:arm64-windows-142 zlib:arm64-windows-142 mbedtls:arm64-windows-142 kissfft:arm64-windows-142
 
-# 构建
+# 构建（x64）
 cmake --preset x64-Release
 cmake --build --preset x64-Release
+# 构建（ARM64）
+cmake --preset ARM64-Release
+cmake --build --preset ARM64-Release
 
-# 打包发布
-python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
+# 打包发布（zip 内根目录固定为 moeKoe-taskbar-lyrics/，文件名可带架构后缀区分）
+python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-x64.zip
+python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-arm64.zip
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
+>
+> **ARM64 提示**：本项目为原生 ARM64（非 ARM64EC）。`kissfft-float.dll` 等依赖库需使用 arm64-windows triplet 重新编译；CI（build.yml / release.yml）已通过 matrix 自动构建 x64 与 arm64 双架构产物。
 
 ***
 

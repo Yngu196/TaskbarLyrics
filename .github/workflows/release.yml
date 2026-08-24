@@ -10,6 +10,10 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
 
     steps:
       - name: Checkout
@@ -19,6 +23,8 @@ jobs:
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Install dependencies (vcpkg)
         shell: powershell
@@ -31,22 +37,23 @@ jobs:
             & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
           }
 
-          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet x64-windows --classic
+          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet ${{ matrix.arch }}-windows --classic
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          $installDir = "$vcpkgRoot\installed\x64-windows"
+          $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
           Write-Host "VCPKG_INSTALLED_DIR=$installDir"
           echo "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
 
       - name: Configure CMake
         shell: powershell
         run: |
-          cmake -B build -S . `
+          cmake -B build-${{ matrix.arch }} -S . `
+            -A ${{ matrix.arch }} `
             "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -- /v:minimal
+        run: cmake --build build-${{ matrix.arch }} --config Release -- /v:minimal
 
       - name: Copy VC++ Redist DLLs
         shell: powershell
@@ -54,18 +61,19 @@ jobs:
           # 从编译器路径推导 VC Redist CRT 目录
           $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
           if ($clPath) {
-            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
+            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/<arch>/cl.exe
             $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
             $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
-            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\x64\Microsoft.VC143.CRT"
+            $arch = "${{ matrix.arch }}"
+            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\$arch\Microsoft.VC143.CRT"
             if (!(Test-Path $crtDir)) {
-              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\x64\Microsoft.VC143.CRT"
+              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\$arch\Microsoft.VC143.CRT"
             }
             if (Test-Path $crtDir) {
               Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
+              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
+              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
               Write-Host "VC++ CRT DLLs copied successfully"
             } else {
               Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
@@ -74,7 +82,7 @@ jobs:
               foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
                 $src = Join-Path $sys32 $dll
                 if (Test-Path $src) {
-                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\" -Force
+                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
                   Write-Host "Copied $dll from System32"
                 }
               }
@@ -86,7 +94,54 @@ jobs:
       - name: Package
         shell: powershell
         run: |
-          python scripts/pack_zip.py moeKoe-taskbar-lyrics moeKoe-taskbar-lyrics.zip
+          # 上传目录 artifact（不在此处打 zip）：release job 合并 x64 完整包 + arm64 部分
+          # 后统一 pack_zip，产出单包双架构 zip。
+          # x64 job 产完整包（根目录启动器 + x64/ 子目录）；arm64 job 只产 arm64/ 部分。
+          # 注意：Copy-Item 目标目录不可预创建，否则源会被整体嵌套进一层子目录
+          if ("${{ matrix.arch }}" -eq "x64") {
+            New-Item -ItemType Directory -Path artifact-x64 -Force
+            Copy-Item -Path moeKoe-taskbar-lyrics -Destination artifact-x64/moeKoe-taskbar-lyrics -Recurse -Force
+          } else {
+            New-Item -ItemType Directory -Path artifact-arm64 -Force
+            Copy-Item -Path moeKoe-taskbar-lyrics/arm64 -Destination artifact-arm64/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moeKoe-taskbar-lyrics-${{ matrix.arch }}
+          path: artifact-${{ matrix.arch }}/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史来获取上一个 tag
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Merge dual-arch package
+        shell: pwsh
+        run: |
+          # dist/ 由 merge-multiple 展开两个 artifact：
+          #   dist/moeKoe-taskbar-lyrics/        <- x64 job（根目录启动器 + x64/）
+          #   dist/moeKoe-taskbar-lyrics-arm64/  <- arm64 job（arm64/ 内容）
+          # 把 arm64 部分并入完整包 → 单包双架构，然后统一打 zip。
+          if (Test-Path "dist/moeKoe-taskbar-lyrics-arm64") {
+            # 目标不预创建：Copy-Item 目录时目标不存在会平铺内容，预创建会整体嵌套一层
+            Copy-Item -Path dist/moeKoe-taskbar-lyrics-arm64 -Destination dist/moeKoe-taskbar-lyrics/arm64 -Recurse -Force
+            Remove-Item -Path dist/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
+          }
+          python scripts/pack_zip.py dist/moeKoe-taskbar-lyrics dist/moeKoe-taskbar-lyrics.zip
 
       - name: Extract changelog for this version
         id: changelog
@@ -168,7 +223,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: moeKoe-taskbar-lyrics.zip
+          files: dist/*.zip
           body: ${{ steps.changelog.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
