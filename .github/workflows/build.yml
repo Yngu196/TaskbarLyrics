@@ -84,38 +84,28 @@ jobs:
       - name: Copy VC++ Redist DLLs
         shell: powershell
         run: |
-          # 从编译器路径推导 VC Redist CRT 目录
-          $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-          if ($clPath) {
-            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/<arch>/cl.exe
-            $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
-            $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
-            $arch = "${{ matrix.arch }}"
-            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\$arch\Microsoft.VC143.CRT"
-            if (!(Test-Path $crtDir)) {
-              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\$arch\Microsoft.VC143.CRT"
-            }
-            if (Test-Path $crtDir) {
-              Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Write-Host "VC++ CRT DLLs copied successfully"
-            } else {
-              Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
-              # Fallback: search System32
-              $sys32 = "$env:SystemRoot\System32"
-              foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
-                $src = Join-Path $sys32 $dll
-                if (Test-Path $src) {
-                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-                  Write-Host "Copied $dll from System32"
-                }
-              }
-            }
-          } else {
-            Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
+          # 直接用 msvc-dev-cmd 注入的 VCToolsRedistDir 定位 CRT，不再依赖 cl.exe 路径推导
+          # （arm64 job 的 PATH 指向 HostARM64\ARM64，在 x64 runner 上该目录不存在，
+          #  导致 Get-Command cl.exe 失败、整个复制被静默跳过）
+          $arch = "${{ matrix.arch }}"
+          $crtBase = $env:VCToolsRedistDir
+          if (-not $crtBase) { throw "VCToolsRedistDir not set" }
+
+          $crtDir = Join-Path $crtBase "$arch\Microsoft.VC143.CRT"
+          if (!(Test-Path $crtDir)) {
+            $crtDir = Join-Path $crtBase "onecore\$arch\Microsoft.VC143.CRT"
           }
+          if (!(Test-Path $crtDir)) {
+            # 显式失败而非静默降级，避免产物缺 CRT 却标 success
+            throw "VC++ CRT dir not found under $crtBase for arch $arch"
+          }
+
+          Write-Host "Copying VC++ CRT DLLs from: $crtDir"
+          Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
+          Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
+          Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
+          Write-Host "Copied to moeKoe-taskbar-lyrics\$arch\:"
+          Get-ChildItem "moeKoe-taskbar-lyrics\$arch" -Filter *.dll | Select-Object -ExpandProperty Name
 
       - name: Package for artifact
         shell: powershell
