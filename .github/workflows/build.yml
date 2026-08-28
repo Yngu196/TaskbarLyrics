@@ -86,20 +86,46 @@ jobs:
       - name: Copy VC++ Redist DLLs
         shell: powershell
         run: |
-          # 直接用 msvc-dev-cmd 注入的 VCToolsRedistDir 定位 CRT，不再依赖 cl.exe 路径推导
-          # （arm64 job 的 PATH 指向 HostARM64\ARM64，在 x64 runner 上该目录不存在，
-          #  导致 Get-Command cl.exe 失败、整个复制被静默跳过）
+          # 定位 VC Redist CRT 目录（优先本地 VCToolsRedistDir，多版本回退，最终 NuGet 兜底）
+          # 背景：arm64 job 的 PATH 指向 HostARM64\ARM64（x64 runner 上不存在）导致 cl.exe 推导失效；
+          #       runner 的 VS Redist 未必装全 arm64 CRT，需多级兜底而非静默跳过。
           $arch = "${{ matrix.arch }}"
-          $crtBase = $env:VCToolsRedistDir
-          if (-not $crtBase) { throw "VCToolsRedistDir not set" }
+          $crtDir = $null
 
-          $crtDir = Join-Path $crtBase "$arch\Microsoft.VC143.CRT"
-          if (!(Test-Path $crtDir)) {
-            $crtDir = Join-Path $crtBase "onecore\$arch\Microsoft.VC143.CRT"
+          $crtBase = $env:VCToolsRedistDir
+          if ($crtBase) {
+            $c1 = Join-Path $crtBase "$arch\Microsoft.VC143.CRT"
+            if (Test-Path $c1) { $crtDir = $c1 }
+            else {
+              $c2 = Join-Path $crtBase "onecore\$arch\Microsoft.VC143.CRT"
+              if (Test-Path $c2) { $crtDir = $c2 }
+            }
           }
-          if (!(Test-Path $crtDir)) {
-            # 显式失败而非静默降级，避免产物缺 CRT 却标 success
-            throw "VC++ CRT dir not found under $crtBase for arch $arch"
+
+          if (-not $crtDir) {
+            # 多版本回退：遍历 Redist\MSVC 下所有版本目录
+            $redistRoot = if ($crtBase) { Split-Path $crtBase -Parent } else { $null }
+            if ($redistRoot) {
+              Write-Host "Current Redist dir missing $arch CRT; searching older versions under $redistRoot"
+              foreach ($verDir in Get-ChildItem $redistRoot -Directory -ErrorAction SilentlyContinue) {
+                $p1 = Join-Path $verDir.FullName "$arch\Microsoft.VC143.CRT"
+                if (Test-Path $p1) { $crtDir = $p1; break }
+                $p2 = Join-Path $verDir.FullName "onecore\$arch\Microsoft.VC143.CRT"
+                if (Test-Path $p2) { $crtDir = $p2; break }
+              }
+            }
+          }
+
+          if (-not $crtDir) {
+            # 最终兜底：从 NuGet 拉取对应架构的官方 VC143 运行时
+            Write-Host "Local VC Redist has no $arch CRT; downloading runtime.win-$arch.Microsoft.VC143.CRT from NuGet"
+            $pkgName = "runtime.win-$arch.Microsoft.VC143.CRT"
+            $pkgDir = Join-Path $env:TEMP $pkgName
+            New-Item -ItemType Directory -Path $pkgDir -Force | Out-Null
+            Invoke-WebRequest -Uri "https://www.nuget.org/api/v2/package/$pkgName" -OutFile "$pkgDir.nupkg"
+            Expand-Archive -Path "$pkgDir.nupkg" -DestinationPath $pkgDir -Force
+            $crtDir = Join-Path $pkgDir "runtimes\win-$arch\native"
+            if (!(Test-Path $crtDir)) { throw "Unexpected NuGet package layout for $pkgName" }
           }
 
           Write-Host "Copying VC++ CRT DLLs from: $crtDir"
