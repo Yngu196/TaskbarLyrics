@@ -5,6 +5,8 @@ on:
     branches: ['**']
   pull_request:
     branches: ['**']
+  # 手动触发构建（不经过 check 每日限流，用于验证修复等场景）
+  workflow_dispatch:
 
 jobs:
   # 每天仅当日第一次 push 触发构建；pull_request 不受限制
