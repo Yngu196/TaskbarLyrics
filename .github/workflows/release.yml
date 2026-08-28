@@ -58,38 +58,47 @@ jobs:
       - name: Copy VC++ Redist DLLs
         shell: powershell
         run: |
-          # 从编译器路径推导 VC Redist CRT 目录
+          # 从编译器路径推导 VC Redist 根目录与工具集版本
           $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-          if ($clPath) {
-            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/<arch>/cl.exe
-            $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
-            $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
-            $arch = "${{ matrix.arch }}"
-            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\$arch\Microsoft.VC143.CRT"
-            if (!(Test-Path $crtDir)) {
-              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\$arch\Microsoft.VC143.CRT"
-            }
-            if (Test-Path $crtDir) {
-              Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-              Write-Host "VC++ CRT DLLs copied successfully"
-            } else {
-              Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
-              # Fallback: search System32
-              $sys32 = "$env:SystemRoot\System32"
-              foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
-                $src = Join-Path $sys32 $dll
-                if (Test-Path $src) {
-                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}\" -Force
-                  Write-Host "Copied $dll from System32"
-                }
-              }
-            }
-          } else {
-            Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
+          if (!$clPath) {
+            Write-Error "cl.exe not found, cannot locate VC++ Redist"
+            exit 1
           }
+          # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/<arch>/cl.exe
+          $msvcVerDir = Split-Path (Split-Path (Split-Path (Split-Path $clPath)))  # .../MSVC/<ver>
+          $msvcVer = Split-Path $msvcVerDir -Leaf
+          $vcRoot = Split-Path (Split-Path $msvcVerDir)  # .../VC
+          $arch = "${{ matrix.arch }}"
+          $destDir = "moeKoe-taskbar-lyrics\$arch"
+          $redistRoot = Join-Path $vcRoot "Redist\MSVC"
+          $crtDirs = @()
+          # 候选 1：当前工具集版本自带的 Redist（新版工具集通常缺失）
+          $crtDir = Join-Path $redistRoot "$msvcVer\$arch\Microsoft.VC143.CRT"
+          if (Test-Path $crtDir) { $crtDirs += $crtDir }
+          # 候选 2：同 Major 版本（如 14.44.x）其它 Redist 版本目录中匹配当前架构的 CRT。
+          # 本机已验证该方案：14.44.35207 无 Redist，改用 14.44.35112 的 arm64 CRT 成功。
+          # 按版本号倒序取最新；只取 $arch 子目录，绝不回退 System32（会取到 x64 DLL，
+          # 混入 arm64 目标导致架构不匹配）。
+          if (Test-Path $redistRoot) {
+            $majorPrefix = ($msvcVer -split '\.')[0..1] -join '.'
+            Get-ChildItem $redistRoot -Directory |
+              Where-Object { $_.Name -like "$majorPrefix*" } |
+              Sort-Object Name -Descending |
+              ForEach-Object {
+                $cand = Join-Path $_.FullName "$arch\Microsoft.VC143.CRT"
+                if ((Test-Path $cand) -and ($crtDirs -notcontains $cand)) { $crtDirs += $cand }
+              }
+          }
+          if ($crtDirs.Count -eq 0) {
+            Write-Error "No matching VC++ CRT directory found for arch=$arch under $redistRoot (toolset $msvcVer)"
+            exit 1
+          }
+          $srcDir = $crtDirs[0]
+          Write-Host "Copying VC++ CRT DLLs from: $srcDir"
+          Copy-Item -Path (Join-Path $srcDir "msvcp140.dll") -Destination "$destDir\" -Force
+          Copy-Item -Path (Join-Path $srcDir "vcruntime140.dll") -Destination "$destDir\" -Force
+          Copy-Item -Path (Join-Path $srcDir "vcruntime140_1.dll") -Destination "$destDir\" -Force
+          Write-Host "VC++ CRT DLLs copied successfully (arch=$arch)"
 
       - name: Package
         shell: powershell
@@ -142,6 +151,14 @@ jobs:
             Remove-Item -Path dist/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
           }
           python scripts/pack_zip.py dist/moeKoe-taskbar-lyrics dist/moeKoe-taskbar-lyrics.zip
+
+      - name: Verify package architecture
+        shell: pwsh
+        run: |
+          # 校验合并后单包双架构：根启动器=AMD64、x64/*=AMD64、arm64/*=ARM64
+          # 防止 CI 工具集差异导致混入错误架构产物（如 arm64 误用 x64 CRT DLL）。
+          # 任一 PE 架构与目录约定不符即非零退出，阻断 Release，不会发布错误架构的包。
+          python scripts/verify_package.py dist/moeKoe-taskbar-lyrics
 
       - name: Extract changelog for this version
         id: changelog

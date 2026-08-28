@@ -63,28 +63,20 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
         set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
     elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
         set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
-        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
-            if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
-                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
-                break()
-            endif()
-        endforeach()
+        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+        endif()
     elseif(DEFINED ENV{VCPKG_ROOT})
         set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
-        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
-            if(EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${_TRIPLET}/lib")
-                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${_TRIPLET}")
-                break()
-            endif()
-        endforeach()
+        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+        endif()
     endif()
 
     # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
     if(NOT DEFINED VCPKG_INSTALLED_DIR)
         foreach(_CANDIDATE
-                "D:/vcpkg/installed/${VCPKG_TRIPLET}-142"
                 "D:/vcpkg/installed/${VCPKG_TRIPLET}"
-                "C:/vcpkg/installed/${VCPKG_TRIPLET}-142"
                 "C:/vcpkg/installed/${VCPKG_TRIPLET}")
             if(EXISTS "${_CANDIDATE}/include" AND EXISTS "${_CANDIDATE}/lib")
                 set(VCPKG_INSTALLED_DIR "${_CANDIDATE}")
@@ -92,6 +84,20 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR)
             endif()
         endforeach()
     endif()
+endif()
+
+# ---- ARM64/x64 triplet 严格绑定校验（核心红线） ----
+# 所有第三方 native 库（zlib / mbedtls / kissfft / ixwebsocket）必须来自与目标架构一致的同一 triplet（x64-windows / arm64-windows）。
+# 禁止跨 triplet（含 -142 等历史变体）fallback 混用，否则 ARM64 构建可能在链接期混入 x64 库，产生难以诊断的架构错误。
+# 校验规则：VCPKG_INSTALLED_DIR 的最后一个路径组件必须等于目标 VCPKG_TRIPLET。
+cmake_path(GET VCPKG_INSTALLED_DIR FILENAME _vcpkg_dir_triplet)
+if(NOT _vcpkg_dir_triplet STREQUAL VCPKG_TRIPLET)
+    message(FATAL_ERROR
+        "VCPKG_INSTALLED_DIR (${VCPKG_INSTALLED_DIR}) resolves to triplet "
+        "'${_vcpkg_dir_triplet}', but target triplet is '${VCPKG_TRIPLET}'.\n"
+        "All third-party native libraries must come from the same target triplet "
+        "(${VCPKG_TRIPLET}); cross-triplet fallback (including -142 variants) is "
+        "forbidden to guarantee ARM64/x64 correctness.")
 endif()
 
 # 如果仍未找到，给出明确提示而非直接报错
@@ -188,14 +194,9 @@ if(EXISTS "${IXWEBSOCKET_SOURCE_DIR}/CMakeLists.txt")
     add_subdirectory("${IXWEBSOCKET_SOURCE_DIR}" "third_party/ixwebsocket_build")
 else()
     # Fallback: use pre-built lib
-    # ixwebsocket 可能仅安装在某个 triplet（如 x64-windows）而未安装在选定的
-    # VCPKG_INSTALLED_DIR（如 x64-windows-142）中，因此搜索时需覆盖多个 triplet。
+    # 严格绑定：ixwebsocket 预编译库只允许来自与目标架构一致的同一 triplet（即 VCPKG_INSTALLED_DIR）
+    # 禁止跨 triplet（含 -142 等历史变体）fallback，避免 ARM64 构建混入 x64 库导致 Bad Image / 链接错误
     set(_IXWS_INSTALLED_CANDIDATES "${VCPKG_INSTALLED_DIR}")
-    foreach(_root IN LISTS _IXWS_VCPKG_ROOTS)
-        foreach(_TRIPLET ${VCPKG_TRIPLET}-142 ${VCPKG_TRIPLET})
-            list(APPEND _IXWS_INSTALLED_CANDIDATES "${_root}/installed/${_TRIPLET}")
-        endforeach()
-    endforeach()
     list(REMOVE_DUPLICATES _IXWS_INSTALLED_CANDIDATES)
 
     if(NOT DEFINED IXWEBSOCKET_BUILD_DIR)

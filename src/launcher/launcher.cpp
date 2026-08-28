@@ -64,17 +64,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     const DWORD machine = DetectNativeMachine();
     const wchar_t* subdir = (machine == IMAGE_FILE_MACHINE_ARM64) ? L"arm64" : L"x64";
 
-    // 3. 组装真实程序路径；对应架构缺失时尝试另一架构（容错异常/不完整包）
-    std::wstring childPath = rootDir + L"\\" + subdir + L"\\MoeKoeTaskbarLyrics.exe";
+    // 3. 组装真实程序路径；目标架构子程序缺失时【直接明确报错】，不回退尝试另一架构。
+    //    跨架构 fallback 会掩盖打包错误（如 ARM64 包缺少 arm64/ 时静默运行 x64 子程序，
+    //    导致 ARM64 原生版本是否真正安装/生效无从判断），故必须失败显式化。
+    const std::wstring childPath = rootDir + L"\\" + subdir + L"\\MoeKoeTaskbarLyrics.exe";
     if (::GetFileAttributesW(childPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        subdir = (machine == IMAGE_FILE_MACHINE_ARM64) ? L"x64" : L"arm64";
-        childPath = rootDir + L"\\" + subdir + L"\\MoeKoeTaskbarLyrics.exe";
-        if (::GetFileAttributesW(childPath.c_str()) == INVALID_FILE_ATTRIBUTES) {
-            ::MessageBoxW(nullptr,
-                          L"未找到 MoeKoeTaskbarLyrics 程序文件（x64/arm64 均缺失），请重新安装插件。",
-                          L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONERROR);
-            return 3;
-        }
+        const wchar_t* archName = (machine == IMAGE_FILE_MACHINE_ARM64) ? L"ARM64" : L"x64";
+        const std::wstring msg =
+            L"未找到 " + std::wstring(archName) + L" 架构的 MoeKoeTaskbarLyrics 程序文件：\n" +
+            childPath + L"\n\n请重新安装插件。";
+        ::MessageBoxW(nullptr, msg.c_str(), L"MoeKoe Taskbar Lyrics", MB_OK | MB_ICONERROR);
+        return 3;
     }
 
     // 4. 继承 stdio 启动子进程（native messaging 管道透传）
