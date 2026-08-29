@@ -131,7 +131,12 @@ jobs:
           Write-Host "Copying VC++ CRT DLLs from: $crtDir"
           Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
           Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
-          Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
+          # vcruntime140_1.dll 仅供 x64/ARM64EC 使用：原生 ARM64 程序不会链接它
+          # （MSVC arm64 目标不产生该导入），且 VS arm64 Redist 中此文件实为 x64 二进制，
+          # 混入会触发 verify_package 架构校验失败并阻断发布，故 arm64 一律不复制。
+          if ($arch -ne "arm64") {
+            Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
+          }
           Write-Host "Copied to moeKoe-taskbar-lyrics\$arch\:"
           Get-ChildItem "moeKoe-taskbar-lyrics\$arch" -Filter *.dll | Select-Object -ExpandProperty Name
 

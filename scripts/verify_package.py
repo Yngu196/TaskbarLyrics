@@ -61,6 +61,35 @@ def expected_arch(rel, name):
     return None
 
 
+def check_structure(root):
+    """校验双架构包结构完整性。
+
+    必须同时存在：根目录 Launcher、x64/ 与 arm64/ 子目录，且 arm64/ 内至少一个 .exe。
+    目的：仅凭 PE 架构检查无法发现「arm64 artifact 丢失未合并」的情况——
+    若 arm64/ 整目录缺失，架构检查会因扫描不到任何 arm64 文件而 PASS，
+    导致发布出只有 x64 的包。此处把结构完整性作为硬性前置检查。
+    """
+    errors = []
+    launcher = os.path.join(root, "MoeKoeTaskbarLyrics.exe")
+    x64_dir = os.path.join(root, "x64")
+    arm64_dir = os.path.join(root, "arm64")
+
+    if not os.path.isfile(launcher):
+        errors.append("Launcher missing: MoeKoeTaskbarLyrics.exe")
+    if not os.path.isdir(x64_dir):
+        errors.append("x64 directory missing")
+    if not os.path.isdir(arm64_dir):
+        errors.append("arm64 directory missing")
+    else:
+        has_exe = any(
+            f.lower().endswith(".exe") and os.path.isfile(os.path.join(arm64_dir, f))
+            for f in os.listdir(arm64_dir)
+        )
+        if not has_exe:
+            errors.append("arm64 directory contains no .exe")
+    return errors
+
+
 def main():
     if len(sys.argv) != 2:
         print("Usage: python verify_package.py <moeKoe-taskbar-lyrics dir>")
@@ -69,6 +98,15 @@ def main():
     if not os.path.isdir(root):
         print("[ERROR] Directory not found: {0}".format(root))
         return 2
+
+    # 结构完整性前置检查：x64 与 arm64 两套必须都存在
+    struct_errors = check_structure(root)
+    for e in struct_errors:
+        print("[FAIL] {0}".format(e))
+    if struct_errors:
+        print()
+        print("[FAIL] Package structure incomplete (launcher + x64/ + arm64/ all required)")
+        return 1
 
     checked = 0
     failed = 0
