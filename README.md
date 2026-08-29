@@ -5,8 +5,8 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.4">
-    <img src="https://img.shields.io/badge/release-v1.0.4-blue" alt="release" />
+  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.5">
+    <img src="https://img.shields.io/badge/release-v1.0.5-blue" alt="release" />
   </a>
   <a href="https://github.com/Yngu196/TaskbarLyrics?tab=License-1-ov-file">
     <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
