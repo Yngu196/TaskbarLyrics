@@ -51,7 +51,7 @@
 
 > 如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。
 >
-> 本项目暂不支持32位系统。支持 Windows x64；Windows on ARM64（原生 ARM64）正在适配中——源码与构建配置已加入 ARM64 支持，尚待 ARM64 实机验证。如果你需要在其他架构上使用，可自行修改配置然后构建。
+> 本项目支持 Windows x64；Windows on ARM64（原生 ARM64）当前处于「发布测试」阶段。目前已发布x64/ARM64混合测试版，程序运行后会自动检测系统架构并选择对应的二进制运行。欢迎反馈。
 
 #### 本插件会自动开启 MoeKoeMusic 的API模式，但您需要重启MoeKoeMusic才会生效
 
@@ -121,14 +121,12 @@ cmake --build --preset ARM64-Release
 # 架构校验（逐文件检查根/Launcher、x64/*、arm64/* 的 PE Machine 字段）
 python scripts\verify_package.py moeKoe-taskbar-lyrics\
 
-# 打包发布（zip 内根目录固定为 moeKoe-taskbar-lyrics/，文件名可带架构后缀区分）
-python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-x64.zip
-python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-arm64.zip
+# 打包发布（pack_zip.py 按目录全量打包，根目录下同时含 x64/ 与 arm64/
+# 即为双架构混合包，只需打一个 zip；根启动器 Launcher 由 x64 构建生成）
+python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
->
-> **ARM64 提示**：本项目为原生 ARM64（非 ARM64EC），当前处于「正在适配 / 待实机验证」阶段。`kissfft-float.dll` 等依赖库需使用 arm64-windows triplet 重新编译；CI（build.yml / release.yml）已配置 ARM64 matrix 自动构建 x64 与 arm64 双架构产物，但 ARM64 产物尚未在真实 ARM64 Windows 设备上完成验证。
 
 ***
 
@@ -151,6 +149,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-arm64.zi
 - [项目状态文档.md](Docs/项目状态文档.md)
 - [版本更新日志.md](Docs/版本更新日志.md)
 - [常见问题自查.md](Docs/常见问题自查.md)
+- [高DPI测试矩阵.md](Docs/高DPI测试矩阵.md)
 - [计划书.md](Docs/计划书.md)
 
 ## 许可证

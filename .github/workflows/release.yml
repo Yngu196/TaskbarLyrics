@@ -111,7 +111,7 @@ jobs:
           if ($arch -ne "arm64") {
             Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "$destDir\" -Force
           }
-          Write-Host "Copied to $destDir:"
+          Write-Host "Copied to ${destDir}:"
           Get-ChildItem $destDir -Filter *.dll | Select-Object -ExpandProperty Name
 
       - name: Package
