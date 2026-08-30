@@ -16,9 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusText = document.getElementById('statusText');
     const wsStatus = document.getElementById('wsStatus');
     const processStatus = document.getElementById('processStatus');
-    const btnPrev = document.getElementById('btnPrev');
-    const btnToggle = document.getElementById('btnToggle');
-    const btnNext = document.getElementById('btnNext');
     const btnReconnect = document.getElementById('btnReconnect');
     const diagPanel = document.getElementById('diagPanel');
     const diagText = document.getElementById('diagText');
@@ -43,9 +40,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateConnectionUI(connected, extra = {}) {
         statusDot.className = 'status-dot ' + (connected ? 'on' : 'off');
-        wsStatus.textContent = connected ? '已连接' : (extra.reconnectAborted ? '重连中止' : (extra.reconnecting ? '重连中...' : '未连接'));
-        wsStatus.style.color = connected ? '#52c41a' : (extra.reconnectAborted ? '#faad14' : '#ff4d4f');
-        statusText.textContent = connected ? '已连接' : (extra.reconnectAborted ? '已达上限，请手动重连' : '等待连接');
+        // 将 WebSocket 连接状态映射为 API 模式状态：连接成功 = 开启，其余（未连接/重连中/重连中止）= 关闭
+        wsStatus.textContent = connected ? '开启' : '关闭';
+        wsStatus.style.color = connected ? '#52c41a' : '#ff4d4f';
+        statusText.textContent = connected ? '开启' : '关闭';
 
         // 增强状态信息：显示重连次数和最后连接时间
         if (extra.reconnectAttempts != null && !connected) {
@@ -205,19 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 定期刷新进程状态（每 5 秒）
     setInterval(detectProcessStatus, 5000);
 
-    // ---- 播放控制按钮 ----
-
-    btnPrev.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'control', command: 'prev' });
-    });
-
-    btnToggle.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'control', command: 'toggle' });
-    });
-
-    btnNext.addEventListener('click', () => {
-        chrome.runtime.sendMessage({ type: 'control', command: 'next' });
-    });
+    // ---- 重新连接按钮 ----
 
     btnReconnect.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'reconnect' }, () => {
