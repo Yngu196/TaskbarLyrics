@@ -119,7 +119,8 @@ private:
     /// 更新跑马灯状态机，返回当前应使用的水平滚动偏移量（像素）
     /// needRedraw: 输出参数，表示是否因为滚动动画需要重绘
     /// progress: 当前歌词高亮进度 [0.0, 1.0]，用于控制回位时机
-    float UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw);
+    /// availableWidth: 歌词实际可用宽度（已考虑封面偏移），用于计算正确的最大滚动偏移
+    float UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw, float availableWidth = 0.0f);
 
     HWND hwnd_{nullptr};
     UINT width_{0};
@@ -156,6 +157,7 @@ private:
     MarqueeState   marqueeState_{MarqueeState::Idle};
     float          scrollOffset_{0.0f};           // 当前水平滚动偏移（像素，正值=文本左移）
     double         stateStartTime_{0.0};          // 当前状态开始时间（QueryPerformanceCounter 秒）
+    double         marqueeLastUpdateTime_{0.0};   // 上次更新跑马灯的时间（用于帧间增量）
     std::string    marqueeLastText_;              // 上一次的歌词文本（用于检测歌词切换）
     float          marqueeTextWidth_{0.0f};       // 当前歌词文本的像素宽度（缓存）
     float          marqueeMaxOffset_{0.0f};       // 最大可滚动偏移量 = textWidth - availableWidth

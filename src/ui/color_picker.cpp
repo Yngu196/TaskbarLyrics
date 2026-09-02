@@ -27,7 +27,7 @@ static std::wstring Utf8ToWideLocal(const std::string& s) {
 // 预设色板：8 个常用颜色（含频谱默认米白、主题强调色等）
 static const std::vector<D2D1_COLOR_F>& GetPresetColors() {
     static const std::vector<D2D1_COLOR_F> presets = {
-        D2D1::ColorF(0.941f, 0.937f, 0.918f),  // 米白 #F0EFEA（频谱默认）
+        D2D1::ColorF(0.702f, 0.533f, 1.000f),  // 淡紫 #B388FF（频谱默认）
         D2D1::ColorF(0.000f, 0.471f, 0.831f),  // 经典蓝 #0078D4
         D2D1::ColorF(0.545f, 0.361f, 0.965f),  // 紫色 #8B5CF6
         D2D1::ColorF(0.063f, 0.725f, 0.506f),  // 薄荷绿 #10B981

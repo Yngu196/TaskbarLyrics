@@ -98,6 +98,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         cachedLayout_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         const float textLeft = paddingX - scrollOffset;
 
+        // 不裁剪：封面在 renderer 层后绘制，自然覆盖延伸到封面区域的文字
         renderTarget_->DrawTextLayout(
             D2D1::Point2F(textLeft, userOffsetY), cachedLayout_.Get(), normalBrush_.Get());
 
@@ -288,10 +289,14 @@ void TaskbarRenderer::DrawSpectrumBars(const std::vector<float>& bands, float x,
     const float glowInner = 1.5f;
     const float glowOuter = 3.0f;
 
+    // 居中：计算所有柱子的总宽度，在给定区域内居中排列
+    const float totalBarsWidth = static_cast<float>(n) * barWidth + static_cast<float>(n - 1) * gap;
+    const float startX = x + (width - totalBarsWidth) * 0.5f;
+
     for (size_t i = 0; i < n; ++i) {
         // 最低高度 = 条宽 → 安静频段显示为圆点（胶囊短到极限即圆形）
         const float barH = (std::max)(barWidth, bands[i] * height);
-        const float barX = x + static_cast<float>(i) * step;
+        const float barX = startX + static_cast<float>(i) * step;
         const float barY = centerY - barH * 0.5f;
 
         // 外层光晕
