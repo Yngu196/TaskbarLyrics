@@ -1,5 +1,5 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
-> **版本：** v1.0.5 | **语言：** C++17 | **平台：** Windows 10/11 (x64) | **协议：** GPL-3.0
+> **版本：** v1.0.6 Beta | **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** GPL-3.0
 
 ***
 
@@ -26,7 +26,7 @@ MoeKoeMusic 是 Electron + Vue 3 开源音乐播放器，**缺少任务栏歌词
 
 ### 1.4 项目结构
 
-源码按功能拆分为 8 个模块子目录（共 64 个源文件）：
+源码按功能拆分为 9 个模块子目录：
 
 ```
 MoeKoeMusic-TaskbarLyrics/
@@ -39,6 +39,8 @@ MoeKoeMusic-TaskbarLyrics/
 │   │   ├── crash_handler.h/cpp#   全局异常过滤器 + 崩溃日志
 │   │   ├── message_window.h/cpp # 隐式消息窗口（托盘/帧定时）
 │   │   └── constants.h        #   全局常量（端口/尺寸/消息号/频谱）
+│   ├── launcher/              # 架构感知启动器 (1)
+│   │   └── launcher.cpp       #   固定 x64 编译，检测系统原生架构后拉起 x64/ 或 arm64/ 主程序
 │   ├── lyrics/                # 歌词数据与解析 (6)
 │   │   ├── lyrics_data.h      #   LyricLine/PlayerState/RenderState 结构
 │   │   ├── lyrics_parser.h/cpp#   LRC/KRC 解析 + 二分查找当前行
@@ -80,14 +82,16 @@ MoeKoeMusic-TaskbarLyrics/
 │       ├── environment_check.h/cpp # 系统环境检查（最低 Build 19041）
 │       ├── compat_mode.h/cpp  #   安全模式/兼容标志
 │       └── diagnostic_exporter.h/cpp # 诊断报告导出
-├── moeKoe-taskbar-lyrics/     # Chrome Extension（manifest/background/native-bridge/icons）
-├── scripts/pack_zip.py        # 发布打包脚本
+├── moeKoe-taskbar-lyrics/     # Chrome Extension + 双架构产物目录（manifest/background/native-bridge/icons；构建后含根 Launcher + x64/ + arm64/）
+├── scripts/                   # 发布辅助脚本
+│   ├── pack_zip.py            #   目录全量打包为 zip（单包双架构混合包）
+│   └── verify_package.py      #   PE 架构 + 双架构目录结构校验
 ├── tests/                     # Catch2 单元测试
 │   ├── test_lyrics_parser.cpp
 │   └── test_krc_parser.cpp
 ├── third_party/               # 内置第三方库（httplib / concurrentqueue / ixwebsocket 源码）
-├── CMakeLists.txt             # v1.0.5（手动配置 vcpkg，绕过 toolchain）
-├── CMakePresets.json          # VS2022 x64-Debug/x64-Release
+├── CMakeLists.txt             # v1.0.6 Beta（手动配置 vcpkg，绕过 toolchain；架构 triplet 强绑定）
+├── CMakePresets.json          # VS2022 x64/ARM64 × Debug/Release 四个 preset（MSVC 14.44）
 ├── vcpkg.json                 # 依赖声明（ixwebsocket/nlohmann-json/zlib/mbedtls/kissfft）
 └── public/icons/icon256.png   # 插件中心图标
 ```
@@ -491,6 +495,17 @@ struct RenderState {
 - 统一封装 D2D 画刷创建、文本布局、WIC 位图加载/缩放/模糊等底层操作
 - 供主渲染器、卡片渲染、频谱绘制共用，避免重复代码
 
+### 3.17 架构感知启动器（v1.0.6 Beta）
+
+**文件：** `src/launcher/launcher.cpp`
+
+- **定位：** 发布包根目录的 `MoeKoeTaskbarLyrics.exe` 为启动器（Launcher），真正的插件主程序按架构放在 `x64/` 与 `arm64/` 子目录
+- **固定 x64 编译：** 启动器始终以 x64 目标编译（静态链接 CRT，自包含）；ARM64 Windows 内置 x64 仿真层可运行 x64 程序，因此同一入口在两种架构设备上都可用
+- **架构路由：** 启动时检测系统原生架构，原生 ARM64 → 拉起 `arm64/` 主程序，否则 → 拉起 `x64/` 主程序；检测优先 `IsWow64Process2`（其 `nativeMachine` 输出即宿主真实架构），失败回退 `GetNativeSystemInfo`
+- **禁用进程环境 API（关键）：** Launcher 固定 x64，在 ARM64 Windows 上经 x64 仿真层运行，因此判断系统架构**必须**用 `IsWow64Process2` 的 `nativeMachine` 或 `GetNativeSystemInfo` 这类返回宿主原生架构的 API；**严禁**用 `GetSystemInfo`、`PROCESSOR_ARCHITECTURE` 环境变量等反映「当前进程环境」的 API——它们在仿真环境下会误报 x64，导致 ARM64 设备被错误地拉起 x64 子程序
+- **无降级 fallback：** ARM64 设备上找不到 `arm64/` 目录时直接失败并提示，而非偷偷启动 x64 模拟版，避免用户误判运行架构
+- **打包约束：** 因主程序按架构拆分，发布包校验（`verify_package.py`）要求根目录 Launcher、`x64/`、`arm64/` 三者必须同时存在
+
 ***
 
 ## 4. 协议与接口
@@ -561,6 +576,7 @@ struct RenderState {
 | ------------- | ----------- |
 | Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
+| MSVC 工具集     | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
 | CMake         | 3.20+       |
 | vcpkg         | 最新版（manifest 模式） |
 
@@ -569,20 +585,22 @@ struct RenderState {
 ### 5.2 构建命令
 
 ```bash
-# 1. 安装依赖（vcpkg manifest 模式，按 vcpkg.json 自动解析）
-vcpkg install
+# 1. 安装依赖（vcpkg manifest 模式，按目标架构 triplet 安装）
+vcpkg install --triplet x64-windows
+vcpkg install --triplet arm64-windows     # 构建 ARM64 时
 
-# 2. 配置（CMakeLists 已内联处理 vcpkg 路径，绕过 toolchain；也可用 CMakePresets）
-cmake --preset x64-Release       # 或: cmake -B build -S .
-# 若 vcpkg 路径不同，需在 CMakeLists 的 VCPKG_ROOT 处调整
+# 2. 配置 + 构建（x64；显式传入对应 triplet 的 VCPKG_INSTALLED_DIR，
+#    保证第三方库与目标架构同一 triplet，禁止跨 triplet fallback）
+cmake --preset x64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\x64-windows"
+cmake --build --preset x64-Release
+# 配置 + 构建（ARM64）
+cmake --preset ARM64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\arm64-windows"
+cmake --build --preset ARM64-Release
 
-# 3. 构建
-cmake --build build --config Release
+# 3. 单元测试（Catch2）
+ctest --test-dir out/build/x64-Release -C Release
 
-# 4. 单元测试（Catch2）
-ctest --test-dir build -C Release
-
-# 产物: build/Release/MoeKoeTaskbarLyrics.exe（含 Release 依赖 DLL 复制）
+# 产物: 各架构主程序 + 根目录 Launcher（详见 5.4；也可用 build.cmd release all 一键产出完整发布目录）
 ```
 
 > **说明：** `CMakeLists.txt` 手动配置 vcpkg 依赖路径（不再依赖 `-DCMAKE_TOOLCHAIN_FILE`）；依赖优先走 vcpkg 安装，缺失时 `ixwebsocket` 自动回退为 `third_party` 内置源码编译。
@@ -603,8 +621,13 @@ ctest --test-dir build -C Release
 ### 5.4 发布打包
 
 ```bash
-python scripts/pack_zip.py moeKoe-taskbar-lyrics/ moeKoe-taskbar-lyrics.zip
-# 内部结构: moeKoe-taskbar-lyrics/{manifest.json, *.js, *.html, icons/, *.exe}
+# 架构校验（双架构目录结构 + 各 PE 文件架构，任一不符合即非零退出）
+python scripts/verify_package.py moeKoe-taskbar-lyrics/
+# 打包（pack_zip.py 按目录全量打包；目录内同时含根 Launcher + x64/ + arm64/ 即为单包双架构混合包，只需打一个 zip）
+python scripts/pack_zip.py moeKoe-taskbar-lyrics/ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
+# 内部结构: moeKoe-taskbar-lyrics/{manifest.json, *.js, *.html, icons/,
+#           MoeKoeTaskbarLyrics.exe(Launcher, x64), x64/**, arm64/**}
+# 根启动器固定 x64 编译（静态链接 CRT 自包含），ARM64 Windows 经内置 x64 仿真层运行后拉起 arm64 原生主程序
 ```
 
 ### 5.5 卸载
@@ -649,6 +672,7 @@ python scripts/pack_zip.py moeKoe-taskbar-lyrics/ moeKoe-taskbar-lyrics.zip
 
 | 功能      | 难度 | 优先级 | 状态      |
 | ------- | -- | --- | ------- |
+| ARM64 实机验证 | 中  | ⭐⭐⭐ | 🔜 发布测试阶段（v1.0.6 Beta） |
 | 绑定模式接入  | 低  | ⭐⭐  | ✅ 已实现（v1.0.3） |
 | 绑定模式增强  | 中  | ⭐⭐  | 🔜 待评估（进程生命周期联动优化） |
 | 支持其他播放器 | 高  | ⭐   | ❌ 新立项   |

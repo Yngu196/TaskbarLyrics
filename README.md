@@ -51,7 +51,7 @@
 
 > 如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。
 >
-> 本项目暂不支持32位系统，如果你想在32位系统上使用，可自行修改配置然后构建。
+> 本项目支持 Windows x64；Windows on ARM64（原生 ARM64）当前处于「发布测试」阶段。目前已发布x64/ARM64混合测试版，程序运行后会自动检测系统架构并选择对应的二进制运行。欢迎反馈。
 
 #### 本插件会自动开启 MoeKoeMusic 的API模式，但您需要重启MoeKoeMusic才会生效
 
@@ -78,23 +78,52 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 | ------------- | ----------- |
 | Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
-| MSVC 工具集      | 14.44+      |
+| MSVC 工具集      | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
 | CMake         | 3.20+       |
 | vcpkg         | latest      |
 
 ## 构建
 
+### 一键脚本（推荐）
+
 ```powershell
-# 安装依赖（经典模式；项目使用 vcpkg.json manifest 声明，含：
+# x64 Release
+.\build.cmd release x64
+# ARM64 Release（本机需安装 VS2022 ARM64 工具链与 arm64-windows 依赖）
+.\build.cmd release arm64
+# 全量构建发布包：依次构建 x64 → ARM64 → verify_package 架构校验 → pack_zip 打包
+.\build.cmd release all
+# 清理
+.\build.cmd clean x64
+```
+
+> 一键脚本构建时会自动向 CMake 显式传入 `VCPKG_INSTALLED_DIR`：
+> x64 → `<vcpkg>\installed\x64-windows`，ARM64 → `<vcpkg>\installed\arm64-windows`，
+> 保证所有第三方库与目标架构使用同一 triplet（禁止 -142 等跨 triplet fallback）。
+
+### 手动构建
+
+```powershell
+# 安装依赖（推荐使用 vcpkg.json manifest 按目标 triplet 安装：
 # ixwebsocket / nlohmann-json / zlib / mbedtls / kissfft 五项）
-vcpkg install ixwebsocket:x64-windows-142 nlohmann-json:x64-windows-142 zlib:x64-windows-142 mbedtls:x64-windows-142 kissfft:x64-windows-142
+# x64：
+vcpkg install --triplet x64-windows
+# ARM64：
+vcpkg install --triplet arm64-windows
 
-# 构建
-cmake --preset x64-Release
+# 构建（x64，显式传入对应 triplet 的 VCPKG_INSTALLED_DIR）
+cmake --preset x64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\x64-windows"
 cmake --build --preset x64-Release
+# 构建（ARM64）
+cmake --preset ARM64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\arm64-windows"
+cmake --build --preset ARM64-Release
 
-# 打包发布
-python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
+# 架构校验（逐文件检查根/Launcher、x64/*、arm64/* 的 PE Machine 字段）
+python scripts\verify_package.py moeKoe-taskbar-lyrics\
+
+# 打包发布（pack_zip.py 按目录全量打包，根目录下同时含 x64/ 与 arm64/
+# 即为双架构混合包，只需打一个 zip；根启动器 Launcher 由 x64 构建生成）
+python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
@@ -120,6 +149,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics.zip
 - [项目状态文档.md](Docs/项目状态文档.md)
 - [版本更新日志.md](Docs/版本更新日志.md)
 - [常见问题自查.md](Docs/常见问题自查.md)
+- [高DPI测试矩阵.md](Docs/高DPI测试矩阵.md)
 - [计划书.md](Docs/计划书.md)
 
 ## 许可证

@@ -10,6 +10,10 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
 
     steps:
       - name: Checkout
@@ -19,6 +23,8 @@ jobs:
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
 
       - name: Install dependencies (vcpkg)
         shell: powershell
@@ -31,62 +37,142 @@ jobs:
             & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
           }
 
-          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet x64-windows --classic
+          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet ${{ matrix.arch }}-windows --classic
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-          $installDir = "$vcpkgRoot\installed\x64-windows"
+          $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
           Write-Host "VCPKG_INSTALLED_DIR=$installDir"
           echo "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
 
       - name: Configure CMake
         shell: powershell
         run: |
-          cmake -B build -S . `
+          cmake -B build-${{ matrix.arch }} -S . `
+            -A ${{ matrix.arch }} `
             "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release -- /v:minimal
+        run: cmake --build build-${{ matrix.arch }} --config Release -- /v:minimal
 
       - name: Copy VC++ Redist DLLs
         shell: powershell
         run: |
-          # 从编译器路径推导 VC Redist CRT 目录
-          $clPath = (Get-Command cl.exe -ErrorAction SilentlyContinue).Source
-          if ($clPath) {
-            # cl.exe: .../VC/Tools/MSVC/<ver>/bin/Hostx64/x64/cl.exe
-            $vcRoot = (Split-Path (Split-Path (Split-Path (Split-Path (Split-Path $clPath)))))  # .../VC
-            $msvcVer = (Split-Path (Split-Path (Split-Path (Split-Path $clPath))) | Split-Path -Leaf)  # <ver>
-            $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\x64\Microsoft.VC143.CRT"
-            if (!(Test-Path $crtDir)) {
-              $crtDir = Join-Path $vcRoot "Redist\MSVC\$msvcVer\onecore\x64\Microsoft.VC143.CRT"
+          # 定位 VC Redist CRT 目录（优先本地 VCToolsRedistDir，多版本回退，最终仓库 ci/redist 兜底）
+          # 背景：arm64 job 的 PATH 指向 HostARM64\ARM64（x64 runner 上不存在）导致 cl.exe 推导失效；
+          #       runner 的 VS Redist 未必装全 arm64 CRT，需多级兜底而非静默跳过。
+          # 注意：本步骤逻辑须与 build.yml 保持一致，避免构建/发布两条链路行为不一致。
+          $arch = "${{ matrix.arch }}"
+          $destDir = "moeKoe-taskbar-lyrics\$arch"
+          $crtDir = $null
+
+          $crtBase = $env:VCToolsRedistDir
+          if ($crtBase) {
+            $c1 = Join-Path $crtBase "$arch\Microsoft.VC143.CRT"
+            if (Test-Path $c1) { $crtDir = $c1 }
+            else {
+              $c2 = Join-Path $crtBase "onecore\$arch\Microsoft.VC143.CRT"
+              if (Test-Path $c2) { $crtDir = $c2 }
             }
-            if (Test-Path $crtDir) {
-              Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-              Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\" -Force
-              Write-Host "VC++ CRT DLLs copied successfully"
-            } else {
-              Write-Host "WARNING: VC++ CRT directory not found at $crtDir"
-              # Fallback: search System32
-              $sys32 = "$env:SystemRoot\System32"
-              foreach ($dll in @("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll")) {
-                $src = Join-Path $sys32 $dll
-                if (Test-Path $src) {
-                  Copy-Item -Path $src -Destination "moeKoe-taskbar-lyrics\" -Force
-                  Write-Host "Copied $dll from System32"
-                }
+          }
+
+          if (-not $crtDir) {
+            # 多版本回退：遍历 Redist\MSVC 下所有版本目录
+            $redistRoot = if ($crtBase) { Split-Path $crtBase -Parent } else { $null }
+            if ($redistRoot) {
+              Write-Host "Current Redist dir missing $arch CRT; searching older versions under $redistRoot"
+              foreach ($verDir in Get-ChildItem $redistRoot -Directory -ErrorAction SilentlyContinue) {
+                $p1 = Join-Path $verDir.FullName "$arch\Microsoft.VC143.CRT"
+                if (Test-Path $p1) { $crtDir = $p1; break }
+                $p2 = Join-Path $verDir.FullName "onecore\$arch\Microsoft.VC143.CRT"
+                if (Test-Path $p2) { $crtDir = $p2; break }
               }
             }
-          } else {
-            Write-Host "WARNING: cl.exe not found, cannot locate VC++ Redist"
           }
+
+          if (-not $crtDir) {
+            # 兜底：使用仓库内随源码提交的官方 VC143 CRT（本机从 VS2022 Redist 14.44.35112 提取）
+            # 说明：runner 的 VS 未必装全各架构 Redist（arm64 常缺失），
+            #       nuget.org 也无官方 VC143 CRT 包，故随仓库携带。
+            $repoCrt = Join-Path "ci\redist\$arch" "Microsoft.VC143.CRT"
+            if (Test-Path $repoCrt) { $crtDir = (Resolve-Path $repoCrt).Path }
+          }
+          if (-not $crtDir) {
+            # 显式失败而非静默跳过，避免产物缺 CRT 却标 success
+            throw "VC++ CRT dir not found for arch $arch (local Redist, older versions, nor repo ci/redist)"
+          }
+
+          Write-Host "Copying VC++ CRT DLLs from: $crtDir"
+          Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "$destDir\" -Force
+          Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "$destDir\" -Force
+          # vcruntime140_1.dll 仅供 x64/ARM64EC 使用：原生 ARM64 程序不会链接它
+          # （MSVC arm64 目标不产生该导入），且 VS arm64 Redist 中此文件实为 x64 二进制，
+          # 混入会触发 verify_package 架构校验失败并阻断发布，故 arm64 一律不复制。
+          if ($arch -ne "arm64") {
+            Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "$destDir\" -Force
+          }
+          Write-Host "Copied to ${destDir}:"
+          Get-ChildItem $destDir -Filter *.dll | Select-Object -ExpandProperty Name
 
       - name: Package
         shell: powershell
         run: |
-          python scripts/pack_zip.py moeKoe-taskbar-lyrics moeKoe-taskbar-lyrics.zip
+          # 上传目录 artifact（不在此处打 zip）：release job 合并 x64 完整包 + arm64 部分
+          # 后统一 pack_zip，产出单包双架构 zip。
+          # x64 job 产完整包（根目录启动器 + x64/ 子目录）；arm64 job 只产 arm64/ 部分。
+          # 注意：Copy-Item 目标目录不可预创建，否则源会被整体嵌套进一层子目录
+          if ("${{ matrix.arch }}" -eq "x64") {
+            New-Item -ItemType Directory -Path artifact-x64 -Force
+            Copy-Item -Path moeKoe-taskbar-lyrics -Destination artifact-x64/moeKoe-taskbar-lyrics -Recurse -Force
+          } else {
+            New-Item -ItemType Directory -Path artifact-arm64 -Force
+            Copy-Item -Path moeKoe-taskbar-lyrics/arm64 -Destination artifact-arm64/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moeKoe-taskbar-lyrics-${{ matrix.arch }}
+          path: artifact-${{ matrix.arch }}/
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 需要完整历史来获取上一个 tag
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Merge dual-arch package
+        shell: pwsh
+        run: |
+          # dist/ 由 merge-multiple 展开两个 artifact：
+          #   dist/moeKoe-taskbar-lyrics/        <- x64 job（根目录启动器 + x64/）
+          #   dist/moeKoe-taskbar-lyrics-arm64/  <- arm64 job（arm64/ 内容）
+          # 把 arm64 部分并入完整包 → 单包双架构，然后统一打 zip。
+          if (Test-Path "dist/moeKoe-taskbar-lyrics-arm64") {
+            # 目标不预创建：Copy-Item 目录时目标不存在会平铺内容，预创建会整体嵌套一层
+            Copy-Item -Path dist/moeKoe-taskbar-lyrics-arm64 -Destination dist/moeKoe-taskbar-lyrics/arm64 -Recurse -Force
+            Remove-Item -Path dist/moeKoe-taskbar-lyrics-arm64 -Recurse -Force
+          }
+          python scripts/pack_zip.py dist/moeKoe-taskbar-lyrics dist/moeKoe-taskbar-lyrics.zip
+
+      - name: Verify package architecture
+        shell: pwsh
+        run: |
+          # 校验合并后单包双架构：根启动器=AMD64、x64/*=AMD64、arm64/*=ARM64
+          # 防止 CI 工具集差异导致混入错误架构产物（如 arm64 误用 x64 CRT DLL）。
+          # 任一 PE 架构与目录约定不符即非零退出，阻断 Release，不会发布错误架构的包。
+          python scripts/verify_package.py dist/moeKoe-taskbar-lyrics
 
       - name: Extract changelog for this version
         id: changelog
@@ -168,7 +254,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: moeKoe-taskbar-lyrics.zip
+          files: dist/*.zip
           body: ${{ steps.changelog.outputs.body }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

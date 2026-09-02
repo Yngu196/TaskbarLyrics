@@ -26,6 +26,32 @@
             },
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "installDir": "${sourceDir}/out/install/${presetName}"
+        },
+        {
+            "name": "ARM64-Debug",
+            "generator": "Visual Studio 17 2022",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Debug"
+            },
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}"
+        },
+        {
+            "name": "ARM64-Release",
+            "generator": "Visual Studio 17 2022",
+            "architecture": {
+                "value": "ARM64",
+                "strategy": "set"
+            },
+            "cacheVariables": {
+                "CMAKE_CONFIGURATION_TYPES": "Release"
+            },
+            "binaryDir": "${sourceDir}/out/build/${presetName}",
+            "installDir": "${sourceDir}/out/install/${presetName}"
         }
     ],
     "buildPresets": [
@@ -38,6 +64,18 @@
         {
             "name": "x64-Release",
             "configurePreset": "x64-Release",
+            "configuration": "Release",
+            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+        },
+        {
+            "name": "ARM64-Debug",
+            "configurePreset": "ARM64-Debug",
+            "configuration": "Debug",
+            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+        },
+        {
+            "name": "ARM64-Release",
+            "configurePreset": "ARM64-Release",
             "configuration": "Release",
             "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
         }
