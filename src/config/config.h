@@ -96,8 +96,8 @@ struct AppearanceConfig {
 
     // 纯音乐时频谱显示: "spectrum"=频谱条（默认） | "text"=显示"纯音乐，请欣赏"
     std::string spectrumMode{"spectrum"};
-    // 频谱条颜色（hex，默认奶白色）
-    std::string spectrumColor{"#F0EFEA"};
+    // 频谱条颜色（hex，默认淡紫色 #B388FF）
+    std::string spectrumColor{"#B388FF"};
     // 频谱 dB 映射上限（dBFS，越大柱子越容易到顶）
     float       spectrumDbCeil{-10.0f};
     // 频谱 dB 映射下限（dBFS，越小底部越安静也能显示）

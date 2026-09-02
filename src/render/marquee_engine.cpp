@@ -17,7 +17,7 @@ TaskbarRenderer::MarqueeMode TaskbarRenderer::ParseMarqueeMode(const std::string
     return MarqueeMode::Bounce;  // default
 }
 
-float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw) {
+float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw, float availableWidth) {
     needRedraw = false;
 
     const MarqueeMode mode = ParseMarqueeMode(settings_.marqueeMode);
@@ -32,8 +32,10 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         return 0.0f;
     }
 
-    const float paddingX = constants::TEXT_PADDING_X;
-    const float availableWidth = static_cast<FLOAT>(width_) - paddingX * 2.0f;
+    // 使用传入的实际可用宽度（已考虑封面偏移），未传入时回退到 TEXT_PADDING_X 对称计算
+    const float availWidth = (availableWidth > 0.0f)
+        ? availableWidth
+        : (static_cast<FLOAT>(width_) - constants::TEXT_PADDING_X * 2.0f);
 
     // 检测歌词文本变化 → 重置状态机
     if (lyricText != marqueeLastText_) {
@@ -49,7 +51,7 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
             Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
             if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
                     wText.c_str(), static_cast<UINT32>(wText.size()),
-                    textFormat_.Get(), availableWidth, static_cast<FLOAT>(height_),
+                    textFormat_.Get(), availWidth, static_cast<FLOAT>(height_),
                     layout.GetAddressOf()))) {
                 DWRITE_TEXT_METRICS m{};
                 if (SUCCEEDED(layout->GetMetrics(&m))) {
@@ -59,8 +61,8 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         }
 
         // 判断是否需要滚动：文本宽度 > 可用宽度
-        if (marqueeTextWidth_ > availableWidth + 1.0f) {
-            marqueeMaxOffset_ = marqueeTextWidth_ - availableWidth;
+        if (marqueeTextWidth_ > availWidth + 1.0f) {
+            marqueeMaxOffset_ = marqueeTextWidth_ - availWidth;
             // 长歌词直接进入滚动状态（跟随高亮进度），不需要先 Delay 等待。
             // Delay 仅用于 bounce 模式的回位后循环。
             marqueeState_ = MarqueeState::ScrollLeft;
@@ -71,6 +73,7 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         }
 
         stateStartTime_ = GetCurrentTimeSeconds();
+        marqueeLastUpdateTime_ = stateStartTime_;
         needRedraw = true;
         return 0.0f;
     }
@@ -88,11 +91,15 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
 
     // 计算有效滚动速度（超长歌词自动加速）
     float speed = settings_.marqueeSpeedPxPerSec;
-    if (marqueeTextWidth_ > availableWidth * constants::MARQUEE_SPEEDUP_THRESHOLD) {
+    if (marqueeTextWidth_ > availWidth * constants::MARQUEE_SPEEDUP_THRESHOLD) {
         // 超出越多越快，最高 3 倍速
-        const float ratio = marqueeTextWidth_ / availableWidth;
+        const float ratio = marqueeTextWidth_ / availWidth;
         speed *= std::min(ratio / constants::MARQUEE_SPEEDUP_THRESHOLD, 3.0f);
     }
+
+    // 帧间增量（秒），用于恒定速度的步进计算
+    const double frameDelta = (marqueeLastUpdateTime_ > 0.0) ? (now - marqueeLastUpdateTime_) : 0.016;
+    marqueeLastUpdateTime_ = now;
 
     switch (marqueeState_) {
     case MarqueeState::Idle:
@@ -103,17 +110,17 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueeDelayMs)) {
             marqueeState_ = MarqueeState::ScrollLeft;
             stateStartTime_ = now;
+            marqueeLastUpdateTime_ = now;
             scrollOffset_ = 0.0f;
         }
         return 0.0f;
 
     case MarqueeState::ScrollLeft: {
         // 基于高亮进度计算目标滚动位置，然后以恒定速度平滑逼近。
-        // 这样滚动速度始终为配置的 marqueeSpeedPxPerSec，不会出现先快后慢的突变。
         const float progressClamped = std::clamp(progress, 0.0f, 1.0f);
         const float targetOffset = progressClamped * marqueeMaxOffset_;
 
-        const float maxStep = static_cast<float>(elapsed) * speed;
+        const float maxStep = static_cast<float>(frameDelta) * speed;
         if (scrollOffset_ < targetOffset) {
             scrollOffset_ = std::min(scrollOffset_ + maxStep, targetOffset);
         } else if (scrollOffset_ > targetOffset) {
@@ -145,11 +152,12 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
             marqueeState_ = MarqueeState::ScrollRight;
             stateStartTime_ = now;
+            marqueeLastUpdateTime_ = now;
         }
         return marqueeMaxOffset_;
 
     case MarqueeState::ScrollRight: {
-        const float distance = static_cast<float>(elapsed) * speed;
+        const float distance = static_cast<float>(frameDelta) * speed;
         scrollOffset_ = marqueeMaxOffset_ - std::min(distance, marqueeMaxOffset_);
         needRedraw = true;
 

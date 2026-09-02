@@ -1692,8 +1692,9 @@ void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
                         else if (s->id == "spectrumBarWidth") s->value = 0.0f;
                     } else if (auto* cr = dynamic_cast<ui::ColorRow*>(child.get())) {
                         if (cr->id == "spectrumColor") {
-                            cr->textValue = "#F0EFEA";
-                            cr->colorValue = HexToColorF("#F0EFEA");
+                            moekoe::AppearanceConfig defApp;
+                            cr->textValue = defApp.spectrumColor;
+                            cr->colorValue = HexToColorF(cr->textValue);
                         }
                     } else if (auto* cb = dynamic_cast<ui::ComboBox*>(child.get())) {
                         if (cb->id == "spectrumMode") cb->selectedIndex = 0;

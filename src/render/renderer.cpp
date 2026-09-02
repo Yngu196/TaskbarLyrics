@@ -447,7 +447,20 @@ void TaskbarRenderer::Render(const RenderState& state) {
     bool marqueeNeedsRedraw = false;
     float scrollOffset = 0.0f;
     if (settings_.displayMode != "card") {
-        scrollOffset = UpdateMarquee(state.currentLine, static_cast<float>(state.progress), marqueeNeedsRedraw);
+        // 计算实际可用宽度（考虑封面偏移），传递给跑马灯引擎用于正确的最大滚动偏移
+        float padLeft = isVerticalTaskbar_
+            ? constants::TEXT_PADDING_X * 0.4f
+            : constants::TEXT_PADDING_X;
+        const float padRight = padLeft; // baseRightPadding（封面调整前）
+        const bool showLyrics = (state.hasLyrics && !state.currentLine.empty());
+        if (settings_.enableCover && showLyrics) {
+            const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+            const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+            const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
+            padLeft += coverSize + gap;
+        }
+        const float availWidth = static_cast<float>(width_) - padLeft - padRight;
+        scrollOffset = UpdateMarquee(state.currentLine, static_cast<float>(state.progress), marqueeNeedsRedraw, availWidth);
     }
 
     // 卡片模式歌词切换动画更新
@@ -614,19 +627,22 @@ void TaskbarRenderer::Render(const RenderState& state) {
         // 保存封面调整前的基础右 padding（歌词右边缘不随封面偏移）
         const float baseRightPadding = vertPaddingX;
 
-        // 封面绘制（单行歌词模式）：仅在显示歌词时绘制并让出歌词空间；
-        // 纯音乐无歌词时由下方 isPlaying 分支统一绘制封面 + 频谱，避免重复绘制
+        // 封面参数（单行歌词模式）：先调整 padding 让歌词在正确位置渲染，
+        // 封面在歌词绘制后绘制，自然覆盖延伸到封面区域的歌词文字
+        float coverLeft = 0.0f, coverTop = 0.0f, coverSize = 0.0f;
+        wchar_t coverFallback = L' ';
+        bool hasCover = false;
+
         if (settings_.enableCover && showLyrics) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-            const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+            coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
-            wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+            coverFallback = FirstUtf8CharAsWide(state.songName);
             // 封面垂直居中（coverSize 大于窗口高度时居顶）
-            const float coverY = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
-            DrawCoverArt(state.coverArtUrl, fallback,
-                         vertPaddingX + coverOffsetPx,
-                         coverY, coverSize);
+            coverTop = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
+            coverLeft = vertPaddingX + coverOffsetPx;
+            hasCover = true;
             // 歌词向右偏移，让出封面空间
             vertPaddingX += coverSize + gap;
         }
@@ -676,6 +692,10 @@ void TaskbarRenderer::Render(const RenderState& state) {
                     DrawTranslatedText(trW, padPtr, 1.0f, padRightPtr);
                 }
             }
+            // 歌词绘制完成后，在歌词上方绘制封面（覆盖延伸到封面区域的歌词文字）
+            if (hasCover) {
+                DrawCoverArt(state.coverArtUrl, coverFallback, coverLeft, coverTop, coverSize);
+            }
         } else {
             if (state.isPlaying) {
                 // 单行歌词模式下无歌词时：封面（可选）+ 频谱/文字
@@ -683,15 +703,15 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 const bool showText = (settings_.spectrumMode == "text");
                 float contentX = vertPaddingX;
                 if (settings_.enableCover) {
-                    const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+                    const float pmCoverSize = static_cast<float>(settings_.coverSize) * dpiScale;
                     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
                     const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
                     wchar_t fallback = FirstUtf8CharAsWide(state.songName);
-                    const float coverY = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
+                    const float coverY = std::max(0.0f, (static_cast<float>(height_) - pmCoverSize) / 2.0f);
                     DrawCoverArt(state.coverArtUrl, fallback,
                                  vertPaddingX + coverOffsetPx,
-                                 coverY, coverSize);
-                    contentX += coverSize + gap;
+                                 coverY, pmCoverSize);
+                    contentX += pmCoverSize + gap;
                 }
                 const float contentW = static_cast<float>(width_) - contentX - vertPaddingX;
                 if (showText) {
