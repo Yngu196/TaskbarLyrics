@@ -239,6 +239,10 @@ constexpr const char* PLUGIN_VERSION = "1.0.6";
 /// 频谱频段数
 constexpr int SPECTRUM_NUM_BANDS = 32;
 
+/// 频谱频段数允许范围（配置与运行时防御性边界）
+constexpr int SPECTRUM_MIN_BANDS = 8;
+constexpr int SPECTRUM_MAX_BANDS = 64;
+
 /// 卡片模式频谱高度（96 DPI）
 constexpr float SPECTRUM_CARD_HEIGHT_DP = 32.0f;
 

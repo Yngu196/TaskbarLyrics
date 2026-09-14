@@ -68,8 +68,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     }
 
     // 单实例保护：避免多个进程竞争任务栏窗口导致闪烁/消息丢失
-    ::CreateMutexW(nullptr, FALSE, L"MoeKoeTaskbarLyrics_Mutex");
+    HANDLE instanceMutex = ::CreateMutexW(nullptr, FALSE, L"MoeKoeTaskbarLyrics_Mutex");
     if (::GetLastError() == ERROR_ALREADY_EXISTS) {
+        Log("[STARTUP] Duplicate instance detected (pid=%lu), exiting\n",
+            ::GetCurrentProcessId());
+        if (instanceMutex) ::CloseHandle(instanceMutex);
         return 0;
     }
 
@@ -544,18 +547,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
 
     // 关闭 Native Host stdin 线程
     // 注意：getline 在 stdin 上阻塞，无法可靠中断，
-    // 设置 running_=false 后给 500ms 优雅退出时间，超时则 detach
+    // 设置 running_=false，并取消 stdin 管道上的同步读，再安全 join。
     Log("[SHUTDOWN] Stopping Native Host stdin thread...\n");
     nativeHost.RequestShutdown();
     if (stdinThread.joinable()) {
-        DWORD waitResult = ::WaitForSingleObject(stdinThread.native_handle(), 500);
-        if (waitResult == WAIT_TIMEOUT) {
-            Log("[SHUTDOWN] stdin thread did not exit in 500ms, detaching\n");
-            stdinThread.detach();
-        } else {
-            stdinThread.join();
-            Log("[SHUTDOWN] stdin thread joined\n");
+        // getline 可能阻塞在管道 ReadFile；CancelSynchronousIo 可安全解除该线程的阻塞。
+        if (!::CancelSynchronousIo(stdinThread.native_handle())) {
+            Log("[SHUTDOWN] CancelSynchronousIo failed: %lu\n", ::GetLastError());
         }
+        stdinThread.join();
+        Log("[SHUTDOWN] stdin thread joined\n");
     }
 
     ::KillTimer(hMsgWnd, 1);

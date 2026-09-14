@@ -18,6 +18,31 @@
 
 namespace moekoe {
 
+void Config::NormalizeValues() {
+    appearance_.normalOpacity = std::clamp(appearance_.normalOpacity, 0.0, 1.0);
+    appearance_.fontSize = std::clamp(appearance_.fontSize, 10, 28);
+    appearance_.cardFontSizeCurrent = std::clamp(appearance_.cardFontSizeCurrent, 10, 20);
+    appearance_.cardFontSizeNext = std::clamp(appearance_.cardFontSizeNext, 8, 18);
+    appearance_.marqueeDelayMs = std::clamp(appearance_.marqueeDelayMs, 0, 10000);
+    appearance_.marqueePauseMs = std::clamp(appearance_.marqueePauseMs, 0, 10000);
+    appearance_.marqueeSpeedPxPerSec = std::clamp(appearance_.marqueeSpeedPxPerSec, 10.0f, 500.0f);
+    appearance_.windowWidthOverride = std::clamp(
+        appearance_.windowWidthOverride, 0, constants::WINDOW_WIDTH_OVERRIDE_MAX_DP);
+    appearance_.spectrumDbFloor = std::clamp(appearance_.spectrumDbFloor, -120.0f, -1.0f);
+    appearance_.spectrumDbCeil = std::clamp(appearance_.spectrumDbCeil, -120.0f, 0.0f);
+    if (appearance_.spectrumDbFloor >= appearance_.spectrumDbCeil) {
+        appearance_.spectrumDbFloor = constants::SPECTRUM_DB_FLOOR;
+        appearance_.spectrumDbCeil = constants::SPECTRUM_DB_CEIL;
+    }
+    appearance_.spectrumOpacity = std::clamp(appearance_.spectrumOpacity, 0.0f, 1.0f);
+    appearance_.spectrumNumBands = std::clamp(
+        appearance_.spectrumNumBands, constants::SPECTRUM_MIN_BANDS, constants::SPECTRUM_MAX_BANDS);
+    appearance_.spectrumBarWidth = std::clamp(appearance_.spectrumBarWidth, 0.0f, 100.0f);
+    advanced_.websocketPort = std::clamp(advanced_.websocketPort, 1024, 65535);
+    advanced_.httpServerPort = std::clamp(advanced_.httpServerPort, 1024, 65535);
+    advanced_.refreshRateHz = std::clamp(advanced_.refreshRateHz, 1, 120);
+}
+
 // ── 本地辅助函数：UTF-8 ↔ 宽字符转换 ──
 static std::string WideToUtf8(const std::wstring& ws) {
     if (ws.empty()) return {};
@@ -225,18 +250,7 @@ bool Config::Load() {
         }
 
         // 范围验证：将异常值 clamp 到合理区间
-        appearance_.normalOpacity       = std::clamp(appearance_.normalOpacity, 0.0, 1.0);
-        appearance_.fontSize            = std::clamp(appearance_.fontSize, 10, 28);
-        appearance_.cardFontSizeCurrent  = std::clamp(appearance_.cardFontSizeCurrent, 10, 20);
-        appearance_.cardFontSizeNext     = std::clamp(appearance_.cardFontSizeNext, 8, 18);
-        appearance_.marqueeDelayMs      = std::clamp(appearance_.marqueeDelayMs, 0, 10000);
-        appearance_.marqueePauseMs      = std::clamp(appearance_.marqueePauseMs, 0, 10000);
-        appearance_.marqueeSpeedPxPerSec = std::clamp(appearance_.marqueeSpeedPxPerSec, 10.0f, 500.0f);
-        appearance_.windowWidthOverride = std::clamp(
-            appearance_.windowWidthOverride, 0, constants::WINDOW_WIDTH_OVERRIDE_MAX_DP);
-        advanced_.websocketPort   = std::clamp(advanced_.websocketPort, 1024, 65535);
-        advanced_.httpServerPort  = std::clamp(advanced_.httpServerPort, 1024, 65535);
-        advanced_.refreshRateHz   = std::clamp(advanced_.refreshRateHz, 1, 120);
+        NormalizeValues();
 
         // 打印加载结果
         moekoe::Log("[CONFIG] Loaded: hl=%s nl=%s font=%s size=%d opacity=%.2f karaoke=%d trans=%d\n",
@@ -483,6 +497,7 @@ bool Config::ImportFromFile(const std::string& path) {
         }
 
         // 导入时不覆盖位置（位置与具体机器/显示器相关）
+        NormalizeValues();
         Save();
         moekoe::Log("[CONFIG] Imported from %s\n", path.c_str());
         return true;

@@ -81,6 +81,8 @@ private:
 
     // 重连线程
     std::thread reconnectThread_;
+    // WebSocket stop/析构线程；由 Disconnect() join，避免对象析构后后台线程悬空。
+    std::thread cleanupThread_;
     std::mutex   stateMutex_;
 };
 

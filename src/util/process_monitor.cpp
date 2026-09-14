@@ -90,16 +90,8 @@ void ProcessMonitor::Start(const std::wstring& exeName,
 void ProcessMonitor::Stop() {
     running_.store(false);
     if (monitorThread_.joinable()) {
-        DWORD waitResult = ::WaitForSingleObject(
-            monitorThread_.native_handle(),
-            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-        if (waitResult == WAIT_TIMEOUT) {
-            moekoe::Log("[PM] Monitor thread join timed out (%d ms), detaching\n",
-                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-            monitorThread_.detach();
-        } else {
-            monitorThread_.join();
-        }
+        // 轮询循环每 100ms 检查 running_；必须 join，避免 detached 线程访问已析构对象。
+        monitorThread_.join();
     }
 }
 

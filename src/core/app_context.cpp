@@ -105,6 +105,22 @@ void HandleFrameTick(AppContext& app) {
             if (app.spectrumCapture && app.spectrumCapture->IsRunning()) {
                 state.spectrumBands = app.spectrumCapture->GetSpectrum(app.config->Appearance().spectrumNumBands);
 
+                // 频谱专用诊断：每秒记录一次状态，区分“纯音乐判定成功但采集为空”
+                // 与“采集已有数据但渲染被配置/尺寸过滤”两类问题。
+                if (app.config->Advanced().debugLog) {
+                    static ULONGLONG lastSpectrumLog = 0;
+                    const ULONGLONG nowSpectrumLog = ::GetTickCount64();
+                    if (lastSpectrumLog == 0 || nowSpectrumLog - lastSpectrumLog >= 1000) {
+                        float maxBand = 0.0f;
+                        for (float v : state.spectrumBands) maxBand = (std::max)(maxBand, v);
+                        Log("[Spectrum] frame: playing=%d lyrics=%d mode=%s bands=%zu max=%.4f\n",
+                            (int)state.isPlaying, (int)state.hasLyrics,
+                            app.config->Appearance().spectrumMode.c_str(),
+                            state.spectrumBands.size(), maxBand);
+                        lastSpectrumLog = nowSpectrumLog;
+                    }
+                }
+
                 // 3.2 播放中但频谱无有效数据时提示采集线程重建会话
                 //（进程树在激活时快照，开始播放后才启动的音频渲染进程
                 //  需重新激活才能纳入捕获范围）

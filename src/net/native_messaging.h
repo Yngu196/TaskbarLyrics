@@ -11,6 +11,7 @@
 //   发出: {"type":"message","payload":{...}}   上报事件
 #pragma once
 
+#include <atomic>
 #include <string>
 #include <cstdint>
 #include <functional>
@@ -51,14 +52,14 @@ public:
     void SendPayloadEvent(const nlohmann::json& payload);
 
     // 是否已收到 shutdown 指令
-    bool IsShutdown() const { return !running_; }
+    bool IsShutdown() const { return !running_.load(); }
 
     // 请求关闭：设置停止标志并关闭 stdin 句柄以解除 getline 阻塞
     void RequestShutdown();
 
 private:
     MessageHandler handler_;
-    bool running_ = true;
+    std::atomic<bool> running_{true};
 };
 
 } // namespace moekoe

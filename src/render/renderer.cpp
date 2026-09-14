@@ -26,13 +26,11 @@ using renderer_utils::GetCurrentTimeSeconds;
 
 namespace {
 
-// 频谱是否有有效信号（任一频段超过阈值）
-// 全零频谱（静音/暂停/未捕获到音频）视为无信号，不绘制
+// 频谱数据是否可绘制。只要采集线程已经发布了频段，就绘制最低高度的
+// 胶囊条；静音时显示一排圆点比整块空白更能表明频谱通道已启用，
+// 同时避免低音量/蓝牙设备的能量被固定阈值误过滤。
 bool SpectrumHasSignal(const std::vector<float>& bands) {
-    for (float v : bands) {
-        if (v > 0.02f) return true;
-    }
-    return false;
+    return !bands.empty();
 }
 
 } // namespace
@@ -502,10 +500,18 @@ void TaskbarRenderer::Render(const RenderState& state) {
                          state.spectrumBands != lastState_.spectrumBands ||
                          std::abs(state.progress - lastState_.progress) > 0.001);
     // 跑马灯滚动动画期间也需要重绘
-    // 卡片模式无跑马灯：无封面图时每帧重绘（确保 fallback 始终可见），
-    // 有封面图后按需重绘（state 变化时才更新）
-    const bool needCardRedraw = (settings_.displayMode == "card" && settings_.enableCover && !d2dCoverBitmap_);
-    if (!stateChanged && !marqueeNeedsRedraw && !needCardRedraw && !cardScrollNeedsRedraw && !kP3NeedsRedraw) {
+    // 异步封面下载完成后，队列可能在两次状态消息之间才收到数据；
+    // 即使歌词/频谱状态没有变化，也必须主动进入渲染流程消费队列，
+    // 否则只能等鼠标悬停触发 WM_RENDER_UPDATE 才显示真实封面。
+    const bool coverQueuePending = coverCtx_ &&
+        (coverCtx_->coverLoadInProgress.load(std::memory_order_acquire) ||
+         coverCtx_->pendingCoverQueue.size_approx() > 0);
+    // 无封面位图时持续重绘，确保下载结果和 fallback 都能及时落屏。
+    const bool needCoverRedraw = settings_.enableCover &&
+        ((state.isPlaying && !state.coverArtUrl.empty() && !d2dCoverBitmap_) ||
+         coverQueuePending);
+    if (!stateChanged && !marqueeNeedsRedraw && !needCoverRedraw &&
+        !cardScrollNeedsRedraw && !kP3NeedsRedraw) {
         return;
     }
 

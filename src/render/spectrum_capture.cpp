@@ -88,6 +88,10 @@ void ApplyHannWindow(std::vector<float>& buf) {
 // 频段内取峰值（取均值会稀释高频宽频段的幅度）
 void LogBands(const std::vector<float>& magnitudes, int numBands,
               float sampleRate, std::vector<float>& outBands) {
+    if (numBands <= 0 || !std::isfinite(sampleRate) || sampleRate <= 0.0f) {
+        outBands.clear();
+        return;
+    }
     outBands.assign(static_cast<size_t>(numBands), 0.0f);
     const size_t numBins = magnitudes.size();
     if (numBins == 0) return;
@@ -115,6 +119,10 @@ void LogBands(const std::vector<float>& magnitudes, int numBands,
 // Hann 窗下满幅正弦的 bin 峰值约为 FFT_SIZE/4，以此为 0 dBFS 基准；
 // 固定 dB 区间映射取代逐帧最大值归一化，安静段不再被拉满
 float MagToNormalized(float mag, float dbFloor, float dbCeil) {
+    if (!std::isfinite(mag) || !std::isfinite(dbFloor) ||
+        !std::isfinite(dbCeil) || dbCeil <= dbFloor) {
+        return 0.0f;
+    }
     const float db = 20.0f * std::log10(mag / (FFT_SIZE / 4.0f) + 1e-9f);
     const float v = (db - dbFloor) / (dbCeil - dbFloor);
     return (std::min)(1.0f, (std::max)(0.0f, v));
@@ -192,6 +200,13 @@ bool PathContainsMoekoe(const std::wstring& path) {
     lower.reserve(path.size());
     for (wchar_t c : path) {
         lower += static_cast<wchar_t>(std::towlower(c));
+    }
+    // 项目目录通常是 MoeKoeMusic-plugin，不能因此把插件自身或
+    // 另一个调试实例误判成播放器。仅把不含 taskbarlyrics/plugin
+    // 标识的 MoeKoe 路径作为“改名播放器”的候选。
+    if (lower.find(L"taskbarlyrics") != std::wstring::npos ||
+        lower.find(L"plugin") != std::wstring::npos) {
+        return false;
     }
     return lower.find(L"moekoe") != std::wstring::npos;
 }
@@ -562,15 +577,24 @@ HRESULT StartSystemLoopback(CaptureSession* out) {
         return FAILED(hr) ? hr : E_FAIL;
     }
 
-    WAVEFORMATEX* pwfx = nullptr;
-    hr = client->GetMixFormat(&pwfx);
-    if (SUCCEEDED(hr) && !ParseWaveFormat(pwfx, &out->fmt)) {
-        hr = E_NOINTERFACE;  // 不支持的混音格式
-    }
+    // 请求固定的 float32/48k 格式，避免设备原生混音格式为 24/32-bit
+    // PCM 时被 ParseWaveFormat 拒绝。AUTOCONVERTPCM 由音频引擎完成转换，
+    // 这样系统回环与进程回环共享同一套 FFT 输入格式。
+    WAVEFORMATEX requested{};
+    requested.wFormatTag = WAVE_FORMAT_IEEE_FLOAT;
+    requested.nChannels = 2;
+    requested.nSamplesPerSec = 48000;
+    requested.wBitsPerSample = 32;
+    requested.nBlockAlign = requested.nChannels * requested.wBitsPerSample / 8;
+    requested.nAvgBytesPerSec = requested.nSamplesPerSec * requested.nBlockAlign;
+    hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
+                            AUDCLNT_STREAMFLAGS_LOOPBACK |
+                                AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM,
+                            100000, 0, &requested, nullptr);
     if (SUCCEEDED(hr)) {
-        hr = client->Initialize(AUDCLNT_SHAREMODE_SHARED,
-                                AUDCLNT_STREAMFLAGS_LOOPBACK,
-                                100000, 0, pwfx, nullptr);  // 10ms 缓冲
+        out->fmt.isFloat = true;
+        out->fmt.channels = 2;
+        out->fmt.sampleRate = 48000;
     }
     if (SUCCEEDED(hr)) {
         hr = client->GetService(__uuidof(IAudioCaptureClient),
@@ -579,7 +603,6 @@ HRESULT StartSystemLoopback(CaptureSession* out) {
     if (SUCCEEDED(hr)) {
         hr = client->Start();
     }
-    if (pwfx) ::CoTaskMemFree(pwfx);
     if (SUCCEEDED(hr)) {
         out->client = client;
     } else {
@@ -635,6 +658,7 @@ struct SpectrumCapture::Impl {
     float                       dbCeil{constants::SPECTRUM_DB_CEIL};
     float                       dbFloor{constants::SPECTRUM_DB_FLOOR};
     int                         numBands{constants::SPECTRUM_NUM_BANDS};
+    std::mutex                  paramsMutex;
     std::atomic<bool>           paramsDirty{false};
 
     void PushMonoLocked(float v) {
@@ -704,15 +728,24 @@ struct SpectrumCapture::Impl {
             fftMags[static_cast<size_t>(i)] = std::sqrt(re * re + im * im);
         }
 
-        // 参数变更时重新分配缓冲区
+        // 参数变更时重新分配缓冲区；使用快照避免设置界面与采集线程并发读写。
+        float localDbFloor;
+        float localDbCeil;
+        int localNumBands;
+        {
+            std::lock_guard<std::mutex> lock(paramsMutex);
+            localDbFloor = dbFloor;
+            localDbCeil = dbCeil;
+            localNumBands = numBands;
+        }
         if (paramsDirty.exchange(false)) {
-            bandScratch.assign(static_cast<size_t>(numBands), 0.0f);
+            bandScratch.assign(static_cast<size_t>(localNumBands), 0.0f);
             smoothSpectrum.clear();  // 重新初始化平滑缓冲
         }
 
-        LogBands(fftMags, numBands,
+        LogBands(fftMags, localNumBands,
                  static_cast<float>(fmt.sampleRate), bandScratch);
-        for (float& v : bandScratch) v = MagToNormalized(v, dbFloor, dbCeil);
+        for (float& v : bandScratch) v = MagToNormalized(v, localDbFloor, localDbCeil);
 
         // 非对称平滑：上升快（跟拍），下降慢（余晖）
         if (smoothSpectrum.size() != bandScratch.size()) {
@@ -763,6 +796,14 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
     fftInput.assign(FFT_SIZE, 0.0f);
     fftOut.assign(FFT_SIZE / 2 + 1, kiss_fft_cpx{0.0f, 0.0f});
     fftMags.assign(FFT_SIZE / 2, 0.0f);
+    {
+        std::lock_guard<std::mutex> lock(paramsMutex);
+        numBands = std::clamp(numBands, constants::SPECTRUM_MIN_BANDS, constants::SPECTRUM_MAX_BANDS);
+        if (dbFloor >= dbCeil) {
+            dbFloor = constants::SPECTRUM_DB_FLOOR;
+            dbCeil = constants::SPECTRUM_DB_CEIL;
+        }
+    }
     bandScratch.assign(static_cast<size_t>(numBands), 0.0f);
 
     bool firstFindAttempt = true;   // 首次查找时输出父链诊断日志
@@ -798,6 +839,17 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
                 // 找不到 MoeKoeMusic 进程：等待其出现并重试（日志限频 ~30s 一次）
                 if ((findRetryCount++ % 15) == 0) {
                     Log("[Spectrum] Player process not found (retry %d)\n", findRetryCount);
+                }
+                // 播放器可能已在运行但 WebSocket 端口/父链暂时不可见。
+                // 主线程在播放中会发送 reactivateHint，此时短期使用系统回环，
+                // 避免纯音乐界面长期只有封面而没有频谱。
+                if (reactivateHint.exchange(false)) {
+                    hr = StartSystemLoopback(&session);
+                    systemTimed = SUCCEEDED(hr);
+                    if (systemTimed) {
+                        systemFallbackUntil = ::GetTickCount64() + kSystemFallbackMs;
+                        Log("[Spectrum] Player process not found; system loopback started\n");
+                    }
                 }
             } else {
                 findRetryCount = 0;
@@ -986,16 +1038,9 @@ void SpectrumCapture::Stop() {
 
     running_ = false;
     if (impl_->captureThread && impl_->captureThread->joinable()) {
-        DWORD waitResult = ::WaitForSingleObject(
-            impl_->captureThread->native_handle(),
-            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-        if (waitResult == WAIT_TIMEOUT) {
-            Log("[Spectrum] Thread join timed out (%d ms), detaching\n",
-                moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-            impl_->captureThread->detach();
-        } else {
-            impl_->captureThread->join();
-        }
+        // CaptureLoop 的等待均有上限且会检查 running_；必须 join，
+        // 否则 detached 线程会在 impl_ 析构后继续访问成员。
+        impl_->captureThread->join();
     }
     impl_->captureThread.reset();
 }
@@ -1005,17 +1050,32 @@ void SpectrumCapture::NotifyPlaybackActive() {
 }
 
 void SpectrumCapture::SetParams(float dbCeil, float dbFloor, int numBands) {
-    impl_->dbCeil  = dbCeil;
-    impl_->dbFloor = dbFloor;
-    impl_->numBands = numBands;
+    numBands = std::clamp(numBands, constants::SPECTRUM_MIN_BANDS, constants::SPECTRUM_MAX_BANDS);
+    dbFloor = std::clamp(dbFloor, -120.0f, -1.0f);
+    dbCeil = std::clamp(dbCeil, -120.0f, 0.0f);
+    if (dbFloor >= dbCeil) {
+        dbFloor = constants::SPECTRUM_DB_FLOOR;
+        dbCeil = constants::SPECTRUM_DB_CEIL;
+    }
+    {
+        std::lock_guard<std::mutex> lock(impl_->paramsMutex);
+        impl_->dbCeil = dbCeil;
+        impl_->dbFloor = dbFloor;
+        impl_->numBands = numBands;
+    }
     impl_->paramsDirty.store(true);
 }
 
 std::vector<float> SpectrumCapture::GetSpectrum(int numBands) {
     if (!running_.load()) return {};
+    numBands = std::clamp(numBands, constants::SPECTRUM_MIN_BANDS, constants::SPECTRUM_MAX_BANDS);
 
     std::lock_guard<std::mutex> lock(impl_->spectrumMutex);
-    if (impl_->spectrumOutput.empty()) return {};
+    // 采集线程刚启动或正在重建会话时尚未完成第一帧 FFT：返回一组零值，
+    // 让渲染层显示最低高度的频谱胶囊，而不是把整个纯音乐区域清空。
+    if (impl_->spectrumOutput.empty()) {
+        return std::vector<float>(static_cast<size_t>(numBands), 0.0f);
+    }
 
     // 如果请求的频段数与内部不同，重新映射
     if (numBands == static_cast<int>(impl_->spectrumOutput.size())) {

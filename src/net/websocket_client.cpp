@@ -76,18 +76,15 @@ void WebSocketClient::Disconnect() {
     stopRequested_.store(true);
     reconnectNow_.store(false);
 
+    if (cleanupThread_.joinable()) {
+        cleanupThread_.join();
+    }
+
     // 先等待 reconnectThread 退出，避免 ix::WebSocket::stop() 与 reconnectThread 死锁
     if (reconnectThread_.joinable()) {
-        DWORD waitResult = ::WaitForSingleObject(
-            reconnectThread_.native_handle(),
-            moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-        if (waitResult == WAIT_TIMEOUT) {
-            moekoe::Log("[WS] Reconnect thread join timed out (%d ms), detaching\n",
-                       moekoe::constants::THREAD_JOIN_TIMEOUT_MS);
-            reconnectThread_.detach();
-        } else {
-            reconnectThread_.join();
-        }
+        // ReconnectLoop 的等待粒度为 100ms，stopRequested_ 可快速打断；
+        // 必须 join，不能让线程继续使用 this。
+        reconnectThread_.join();
     }
 
     // reconnectThread 已退出后再关闭 client
@@ -98,17 +95,17 @@ void WebSocketClient::Disconnect() {
     if (client_) {
         auto wsPtr = std::move(client_);  // 取走所有权
         client_.reset();
-        // 在独立线程中执行 stop + 析构，detach 让其自行完成
-        // 不等待：主线程必须继续执行后续关闭步骤
-        std::thread([wsPtr = std::move(wsPtr)]() mutable {
+        // 在独立线程中执行 stop + 析构，但由本对象持有线程并在 Disconnect 返回前 join。
+        cleanupThread_ = std::thread([wsPtr = std::move(wsPtr)]() mutable {
             try { wsPtr->stop(); } catch (const std::exception& e) {
                 LogError("[WS] Exception during async stop: %s\n", e.what());
             } catch (...) {
                 LogError("[WS] Unknown exception during async stop\n");
             }
             // wsPtr 离开作用域自动析构
-        }).detach();
-        Log("[WS] WebSocket cleanup detached (async)\n");
+        });
+        cleanupThread_.join();
+        Log("[WS] WebSocket cleanup joined\n");
     }
 
     if (connected_.exchange(false)) {

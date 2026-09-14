@@ -176,6 +176,9 @@ public:
     static bool IsUsingFallbackToken();
 
 private:
+    // 对文件加载、导入和运行时编辑统一执行范围校验。
+    void NormalizeValues();
+
     // 注册表 Run 键方案
     bool SetAutoStartRegistry(bool enable);
     static std::string GetAutoStartRegistryKey();
