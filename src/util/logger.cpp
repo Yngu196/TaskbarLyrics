@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include <mutex>
 #include <windows.h>
 
@@ -14,9 +15,9 @@ namespace moekoe {
 
 namespace {
 
-std::string g_logPath;
-bool      g_enabled = true;   // 默认开启，InitLogger 后由 config 覆盖
-LogLevel  g_minLevel = LogLevel::Info;  // 默认输出 Info 及以上级别
+std::string              g_logPath;
+std::atomic<bool>        g_enabled{true};   // 默认开启，InitLogger 后由 config 覆盖
+std::atomic<LogLevel>    g_minLevel{LogLevel::Info};  // 默认输出 Info 及以上级别
 std::mutex g_logMutex;        // 线程安全：WebSocket 线程可能同时写日志
 
 // 日志轮转：超过此大小（字节）时备份旧日志
@@ -47,7 +48,8 @@ void RotateLogIfNeeded() {
 
 // 级别检查：低于 g_minLevel 的日志被丢弃
 inline bool ShouldOutput(LogLevel level) {
-    return static_cast<int>(level) >= static_cast<int>(g_minLevel);
+    return static_cast<int>(level) >=
+           static_cast<int>(g_minLevel.load(std::memory_order_relaxed));
 }
 
 // 写入时间戳前缀 [HH:MM:SS.mmm]
@@ -60,7 +62,7 @@ void WriteTimestamp(FILE* f) {
 
 // 带级别前缀的内部写入：先输出时间戳 + 短前缀 [D]/[W]/[E]/[F]，再输出用户消息
 void WriteWithPrefix(const char* prefix, const char* fmt, va_list args) {
-    if (!g_enabled || g_logPath.empty()) return;
+    if (!g_enabled.load(std::memory_order_relaxed) || g_logPath.empty()) return;
 
     std::lock_guard<std::mutex> lock(g_logMutex);
     RotateLogIfNeeded();
@@ -91,11 +93,11 @@ void InitLogger() {
 }
 
 void SetLogEnabled(bool enabled) {
-    g_enabled = enabled;
+    g_enabled.store(enabled, std::memory_order_relaxed);
 }
 
 void SetLogLevel(LogLevel level) {
-    g_minLevel = level;
+    g_minLevel.store(level, std::memory_order_relaxed);
 }
 
 std::string GetLogPath() {
@@ -111,7 +113,8 @@ void LogDebug(const char* fmt, ...) {
 }
 
 void Log(const char* fmt, ...) {
-    if (!g_enabled || g_logPath.empty() || !ShouldOutput(LogLevel::Info)) return;
+    if (!g_enabled.load(std::memory_order_relaxed) || g_logPath.empty() ||
+        !ShouldOutput(LogLevel::Info)) return;
 
     std::lock_guard<std::mutex> lock(g_logMutex);
     RotateLogIfNeeded();
@@ -126,7 +129,8 @@ void Log(const char* fmt, ...) {
 }
 
 void Log(const std::string& msg) {
-    if (!g_enabled || g_logPath.empty() || !ShouldOutput(LogLevel::Info)) return;
+    if (!g_enabled.load(std::memory_order_relaxed) || g_logPath.empty() ||
+        !ShouldOutput(LogLevel::Info)) return;
 
     std::lock_guard<std::mutex> lock(g_logMutex);
     RotateLogIfNeeded();

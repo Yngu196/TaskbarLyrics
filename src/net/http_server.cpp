@@ -58,7 +58,16 @@ HttpServer::~HttpServer() {
 }
 
 bool HttpServer::Start(int port) {
-    if (running_.load()) return true;
+    std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+
+    // serverThread_ 在 ServerLoop 返回后仍然是 joinable；先回收已经结束的
+    // 线程，避免下一次赋值给 joinable std::thread 触发 std::terminate。
+    // 启动阶段 running_ 可能仍为 false，但线程已经存在，此时视为已启动，
+    // 由调用方稍后通过 Stop() 统一回收。
+    if (serverThread_.joinable()) {
+        if (running_.load()) return true;
+        serverThread_.join();
+    }
 
     // 拒绝在 fallback token 下启动 HTTP 服务：
     // 此时鉴权形同虚设，任何本机进程都能用固定字符串访问所有接口。
@@ -74,24 +83,38 @@ bool HttpServer::Start(int port) {
 }
 
 void HttpServer::Stop() {
-    if (!running_.load()) return;
-    stopRequested_.store(true);
+    int port = 0;
+    {
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        // running_ 只在 ServerLoop 开始监听后才置 true；如果 Stop 紧跟在
+        // Start 后调用，必须仍依据 joinable 回收启动中的线程。
+        if (!serverThread_.joinable()) {
+            running_.store(false);
+            return;
+        }
+        stopRequested_.store(true);
+        port = port_;
+    }
 
     // Poke the listening socket to wake up accept()
     SOCKET tmp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (tmp != INVALID_SOCKET) {
         sockaddr_in addr{};
         addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(port_));
+        addr.sin_port = htons(static_cast<u_short>(port));
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         connect(tmp, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
         closesocket(tmp);
     }
 
-    if (serverThread_.joinable()) {
+    {
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        if (serverThread_.joinable()) {
         // listen() 已由 stopRequested_ + svr.stop() 唤醒；必须 join，
         // 否则 ServerLoop 仍会访问已析构的 HttpServer 成员。
-        serverThread_.join();
+            serverThread_.join();
+        }
+        running_.store(false);
     }
 }
 
