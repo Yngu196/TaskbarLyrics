@@ -234,6 +234,15 @@ void HttpServer::ServerLoop(int port) {
         svr.stop();
     });
 
+    // Stop() may race with thread startup, before listen() has entered its
+    // accept loop.  In that case do not enter listen at all; otherwise the
+    // wake-up connect can be missed and the lifecycle join would block.
+    if (stopRequested_.load()) {
+        if (stopper.joinable()) stopper.join();
+        running_.store(false);
+        return;
+    }
+
     if (!svr.listen("127.0.0.1", port)) {
         int err = WSAGetLastError();
         Log("[HTTP] listen failed on port %d: WSA error %d\n", port, err);

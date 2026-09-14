@@ -718,13 +718,59 @@ if(BUILD_TESTING AND _catch2_ready)
 
     add_test(NAME KrcParser COMMAND $<TARGET_FILE:test_krc_parser> -s)
 
+    # 测试目标：频谱纯数学逻辑（不依赖 WASAPI/D2D，适合 CI）
+    add_executable(test_spectrum_math
+        tests/test_spectrum_math.cpp
+    )
+    target_include_directories(test_spectrum_math PRIVATE
+        src
+        ${CMAKE_SOURCE_DIR}/third_party
+    )
+    if(MSVC)
+        target_compile_options(test_spectrum_math PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_spectrum_math PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        set_target_properties(test_spectrum_math PROPERTIES WIN32_EXECUTABLE OFF)
+    endif()
+    target_link_libraries(test_spectrum_math PRIVATE Catch2::Catch2 Threads::Threads)
+    add_test(NAME SpectrumMath COMMAND $<TARGET_FILE:test_spectrum_math> -s)
+
+    # 测试目标：HTTP 服务线程生命周期（不依赖真实配置/注册表）
+    add_executable(test_http_lifecycle
+        tests/test_http_lifecycle.cpp
+        src/net/http_server.cpp
+        src/util/logger.cpp
+    )
+    target_include_directories(test_http_lifecycle PRIVATE
+        src
+        ${CMAKE_SOURCE_DIR}/third_party
+        ${NLOHMANN_JSON_INCLUDE_DIR}
+        ${HTTPLIB_INCLUDE_DIR}
+    )
+    if(MSVC)
+        target_compile_options(test_http_lifecycle PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_http_lifecycle PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        set_target_properties(test_http_lifecycle PROPERTIES WIN32_EXECUTABLE OFF)
+    endif()
+    target_link_libraries(test_http_lifecycle PRIVATE
+        Catch2::Catch2 Threads::Threads ws2_32
+    )
+    add_test(NAME HttpLifecycle COMMAND $<TARGET_FILE:test_http_lifecycle> -s)
+
     # 复制 VC++ Redist CRT DLL 到测试可执行文件输出目录
     # 测试 exe 用 /MD 动态链接运行时，需要 msvcp140.dll / vcruntime140.dll /
     # vcruntime140_1.dll。主程序通过 POST_BUILD 已复制，但测试目标默认不会，
     # 缺失时 Windows 会从 PATH 加载旧版本 msvcp140.dll，导致 std::mutex 等
     # STL 同步原语在运行时崩溃（STATUS_ACCESS_VIOLATION）。
     if(MSVC AND EXISTS "${_CRT_SRC_DIR}")
-        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser)
+        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser test_spectrum_math test_http_lifecycle)
             foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
                 if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                     add_custom_command(TARGET ${_TEST_TARGET} POST_BUILD

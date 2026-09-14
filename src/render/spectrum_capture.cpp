@@ -19,6 +19,7 @@
 #include <iphlpapi.h>
 
 #include "render/spectrum_capture.h"
+#include "render/spectrum_math.h"
 #include "core/constants.h"
 #include "util/logger.h"
 
@@ -82,50 +83,6 @@ void ApplyHannWindow(std::vector<float>& buf) {
         float w = 0.5f * (1.0f - std::cos(2.0f * 3.14159265358979323846f * static_cast<float>(i) / static_cast<float>(n - 1)));
         buf[i] *= w;
     }
-}
-
-// 对数频段合并：将 FFT 幅值 bins 映射到 numBands 个对数间距频段
-// 频段内取峰值（取均值会稀释高频宽频段的幅度）
-void LogBands(const std::vector<float>& magnitudes, int numBands,
-              float sampleRate, std::vector<float>& outBands) {
-    if (numBands <= 0 || !std::isfinite(sampleRate) || sampleRate <= 0.0f) {
-        outBands.clear();
-        return;
-    }
-    outBands.assign(static_cast<size_t>(numBands), 0.0f);
-    const size_t numBins = magnitudes.size();
-    if (numBins == 0) return;
-
-    const float freqPerBin = sampleRate / static_cast<float>(FFT_SIZE);
-    const float logMin = std::log10(constants::SPECTRUM_MIN_FREQ);
-    const float logMax = std::log10(constants::SPECTRUM_MAX_FREQ);
-
-    for (int b = 0; b < numBands; ++b) {
-        const float t = static_cast<float>(b) / static_cast<float>(numBands);
-        const float freqLow = std::pow(10.0f, logMin + t * (logMax - logMin));
-        const float freqHigh = std::pow(10.0f, logMin + (t + 1.0f / static_cast<float>(numBands)) * (logMax - logMin));
-        const int binLow = (std::max)(0, static_cast<int>(freqLow / freqPerBin));
-        const int binHigh = (std::min)(static_cast<int>(numBins) - 1, static_cast<int>(freqHigh / freqPerBin));
-
-        float peak = 0.0f;
-        for (int i = binLow; i <= binHigh; ++i) {
-            peak = (std::max)(peak, magnitudes[static_cast<size_t>(i)]);
-        }
-        outBands[static_cast<size_t>(b)] = peak;
-    }
-}
-
-// 幅值 → dBFS → [0,1]
-// Hann 窗下满幅正弦的 bin 峰值约为 FFT_SIZE/4，以此为 0 dBFS 基准；
-// 固定 dB 区间映射取代逐帧最大值归一化，安静段不再被拉满
-float MagToNormalized(float mag, float dbFloor, float dbCeil) {
-    if (!std::isfinite(mag) || !std::isfinite(dbFloor) ||
-        !std::isfinite(dbCeil) || dbCeil <= dbFloor) {
-        return 0.0f;
-    }
-    const float db = 20.0f * std::log10(mag / (FFT_SIZE / 4.0f) + 1e-9f);
-    const float v = (db - dbFloor) / (dbCeil - dbFloor);
-    return (std::min)(1.0f, (std::max)(0.0f, v));
 }
 
 // ─────────────────────────────────────────
@@ -743,9 +700,11 @@ struct SpectrumCapture::Impl {
             smoothSpectrum.clear();  // 重新初始化平滑缓冲
         }
 
-        LogBands(fftMags, localNumBands,
-                 static_cast<float>(fmt.sampleRate), bandScratch);
-        for (float& v : bandScratch) v = MagToNormalized(v, localDbFloor, localDbCeil);
+        spectrum_math::LogBands(fftMags, localNumBands,
+                                static_cast<float>(fmt.sampleRate), FFT_SIZE, bandScratch);
+        for (float& v : bandScratch) {
+            v = spectrum_math::MagToNormalized(v, localDbFloor, localDbCeil, FFT_SIZE);
+        }
 
         // 非对称平滑：上升快（跟拍），下降慢（余晖）
         if (smoothSpectrum.size() != bandScratch.size()) {
