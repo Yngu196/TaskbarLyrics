@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="moeKoe-taskbar-lyrics/icons/icon256.png" width="200" alt="Taskbar Lyrics" />
+  <img src="icons/icon256.png" width="200" alt="Taskbar Lyrics" />
 </p>
 
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
@@ -14,7 +14,13 @@
 
 </p>
 
-<p align="center">在 Windows 任务栏上显示歌词，支持单行、双行歌词、显示歌曲封面、播放控制和歌词翻译</p>
+<p align="center">在 Windows 任务栏上显示歌词，支持单行、双行歌词、歌曲封面、播放控制、歌词翻译和纯音乐频谱</p>
+
+## 项目简介
+
+MoeKoeMusic TaskbarLyrics 是 MoeKoeMusic 的 Windows 任务栏歌词插件。程序以 Native Host 方式运行，通过本地 HTTP/WebSocket 接收播放状态、歌词和封面数据，并使用 Direct2D/DirectWrite 绘制任务栏窗口。
+
+项目主要面向 Windows x64；ARM64 版本处于发布测试阶段。源代码采用 C++17，构建系统使用 CMake Presets，第三方依赖通过 vcpkg 管理。
 
 > MoeKoeMusic TaskbarLyrics 正在收集用户反馈，欢迎在 [GitHub Issues](https://github.com/Yngu196/TaskbarLyrics/issues)/[Discussion](https://github.com/Yngu196/TaskbarLyrics/discussions/17) 提交问题/建议或填写兼容性反馈！
 ### 如果您遇到不显示歌词的问题，请优先检测MoeKoeMusic的api模式是否开启，如果未开启，请先开启api模式。如果已开启，请关闭后重新开启，然后重启MoeKoeMusic一到两次。如果问题仍然存在，请提交 issue。
@@ -47,7 +53,7 @@
 - **安全模式降级** — 检测到冲突的任务栏美化工具时自动降级运行
 - **配置导入导出** — 支持将配置导出为 JSON 文件，方便分享和恢复
 
-## 使用说明
+## 安装与使用
 
 > 如果您在使用过程中遇到问题，可以先查看[常见问题自查](Docs/常见问题自查.md)，如果问题仍然存在，请提交 issue。
 >
@@ -82,7 +88,18 @@ C:\Users\用户名\AppData\Roaming\moekoemusic\extensions
 | CMake         | 3.20+       |
 | vcpkg         | latest      |
 
-## 构建
+## 从 Visual Studio 构建
+
+1. 安装 Visual Studio 2022，并勾选“使用 C++ 的桌面开发”、Windows SDK 和 CMake 工具。
+2. 用 Visual Studio 打开项目根目录中的 `CMakeLists.txt`，等待 CMake 配置完成。
+3. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择“无配置”。
+4. 选择“生成 → 生成全部”，或右键 `MoeKoeTaskbarLyrics` 目标并选择“生成”。
+5. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，否则 Windows 可能锁定输出文件。
+6. 测试目标可在“测试资源管理器”中运行。
+
+如果“配置任务/CMake 设置”不可用，关闭解决方案后重新打开 `CMakeLists.txt`；仍未恢复时删除对应 `out/build/<preset>` 缓存并重新配置。
+
+## 命令行构建与测试
 
 ### 一键脚本（推荐）
 
@@ -118,6 +135,9 @@ cmake --build --preset x64-Release
 cmake --preset ARM64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\arm64-windows"
 cmake --build --preset ARM64-Release
 
+# 运行自动化测试（x64 Release）
+ctest --test-dir out\build\x64-Release -C Release --output-on-failure
+
 # 架构校验（逐文件检查根/Launcher、x64/*、arm64/* 的 PE Machine 字段）
 python scripts\verify_package.py moeKoe-taskbar-lyrics\
 
@@ -127,6 +147,31 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 ```
 
 > **注意**：由于 ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需要使用相同版本工具集。`CMakePresets.json` 已配置自动传递 `/p:PlatformToolsetVersion=14.44.35207`。
+
+当前自动化测试覆盖歌词解析、KRC 解析、频谱数学映射以及 HTTP 服务 Start/Stop 生命周期。WASAPI、Direct2D 设备丢失和 Explorer 重启属于真实 Windows 环境集成测试范围。
+
+***
+
+## 常见问题
+
+### Visual Studio 无法生成或链接失败
+
+- 确认选择了正确的平台（通常为 `x64`），不要使用“无配置”。
+- 关闭正在运行的 `MoeKoeTaskbarLyrics.exe` 后再重新生成。
+- 检查 vcpkg triplet 与目标架构一致：x64 使用 `x64-windows`，ARM64 使用 `arm64-windows`。
+- 删除 `out/build/<preset>` 后重新执行 CMake 配置，可解决缓存或工具链切换问题。
+
+### 纯音乐时没有频谱
+
+确认播放器正在输出音频，并在设置中开启频谱。进程级采集不可用时程序会尝试系统回环采集；可通过“导出诊断报告”检查 WASAPI 初始化、采样率和设备状态。
+
+### 歌词或封面不显示
+
+确认 MoeKoeMusic 已开启 API 模式并重启一次。若仍无效，请查看 `debug.log`，并附上诊断报告和播放器版本提交 Issue。
+
+### 任务栏位置异常
+
+暂时关闭桌面/任务栏美化工具，检查多显示器绑定和手动窗口宽度设置；部分 APPBAR 自动隐藏场景仍属于兼容性限制。
 
 ***
 
