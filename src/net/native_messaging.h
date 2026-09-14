@@ -15,6 +15,7 @@
 #include <string>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <nlohmann/json.hpp>
 
 namespace moekoe {
@@ -60,6 +61,9 @@ public:
 private:
     MessageHandler handler_;
     std::atomic<bool> running_{true};
+    // stdin 线程和主线程都可能发送响应/事件；必须保证一行 JSON
+    // 原子写出，避免 stdout 内容交错破坏 Native Messaging 协议。
+    std::mutex outputMutex_;
 };
 
 } // namespace moekoe

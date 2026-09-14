@@ -83,6 +83,7 @@ void NativeMessagingHost::SendEvent(const NativeHostEvent& event) {
     j["type"] = "message";
     j["payload"] = event.payload;
 
+    std::lock_guard<std::mutex> lock(outputMutex_);
     std::cout << j.dump() << '\n' << std::flush;
 }
 
@@ -95,7 +96,7 @@ void NativeMessagingHost::RequestShutdown() {
     // 注意：不尝试关闭 stdin 句柄来解除 getline 阻塞。
     // GetStdHandle 返回的伪句柄不能安全 CloseHandle，
     // 而 DuplicateHandle + CloseHandle 副本不会影响原始管道。
-    // stdin 线程会在主进程退出后自动终止，或由主线程在 join 超时后 detach。
+    // 主线程会在退出流程中取消同步 I/O 并 join stdin 线程。
     Log("[NATIVE-HOST] Shutdown requested (running_=false)\n");
 }
 

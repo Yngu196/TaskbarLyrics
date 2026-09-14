@@ -276,6 +276,9 @@ void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
 }
 
 void TaskbarRenderer::Shutdown() {
+    // 封面下载 worker 可能正在 URLMon 阻塞；先发取消并 join，
+    // 确保 renderer 的共享上下文和 D2D 资源不会在后台线程之后失效。
+    if (coverCtx_) coverCtx_->CancelAndJoin();
     cardNextBrush_.Reset();
     cardCurrentBrush_.Reset();
     cardBackgroundBrush_.Reset();
@@ -285,6 +288,7 @@ void TaskbarRenderer::Shutdown() {
     blurredBgBitmapW_ = 0.0f;
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
     coverCtx_->coverLoadInProgress.store(false, std::memory_order_release);
+    coverCtx_->cancelRequested.store(false, std::memory_order_release);
     coverCtx_->coverDownloadGen.store(0, std::memory_order_release);  // 重置代际计数器
     {
         // 排空无锁队列中可能残留的封面数据

@@ -5,6 +5,7 @@
 #include "core/constants.h"
 #include "util/logger.h"
 
+#include <urlmon.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -12,6 +13,57 @@
 #include <thread>
 
 namespace moekoe {
+
+namespace {
+
+// URLMon 下载回调：允许渲染器在切歌/退出时中止正在进行的下载。
+class CoverDownloadCallback final : public IBindStatusCallback {
+public:
+    explicit CoverDownloadCallback(std::atomic<bool>* cancel) : cancel_(cancel) {}
+    virtual ~CoverDownloadCallback() = default;
+
+    ULONG STDMETHODCALLTYPE AddRef() override { return static_cast<ULONG>(::InterlockedIncrement(&refs_)); }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG refs = static_cast<ULONG>(::InterlockedDecrement(&refs_));
+        if (refs == 0) delete this;
+        return refs;
+    }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** out) override {
+        if (!out) return E_POINTER;
+        if (riid == IID_IUnknown || riid == IID_IBindStatusCallback) {
+            *out = static_cast<IBindStatusCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *out = nullptr;
+        return E_NOINTERFACE;
+    }
+    HRESULT STDMETHODCALLTYPE OnStartBinding(DWORD, IBinding*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetPriority(LONG* priority) override {
+        if (!priority) return E_POINTER;
+        *priority = THREAD_PRIORITY_NORMAL;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnLowResource(DWORD) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnProgress(ULONG, ULONG, ULONG, LPCWSTR) override {
+        return cancel_ && cancel_->load(std::memory_order_acquire) ? E_ABORT : S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnStopBinding(HRESULT, LPCWSTR) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE GetBindInfo(DWORD* bindFlags, BINDINFO* bindInfo) override {
+        if (!bindFlags || !bindInfo) return E_POINTER;
+        *bindFlags = BINDF_PULLDATA | BINDF_ASYNCHRONOUS;
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE OnDataAvailable(DWORD, DWORD, FORMATETC*, STGMEDIUM*) override { return S_OK; }
+    HRESULT STDMETHODCALLTYPE OnObjectAvailable(REFIID, IUnknown*) override { return S_OK; }
+
+private:
+    std::atomic<bool>* cancel_;
+    LONG refs_{1};
+};
+
+} // namespace
+
 using renderer_utils::Utf8ToWide;
 using renderer_utils::FirstUtf8CharAsWide;
 using renderer_utils::GetCurrentTimeSeconds;
@@ -275,6 +327,10 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
     // 使用代际计数器 coverDownloadGen 解决切歌时旧下载未完成导致新封面被跳过的竞态：
     // URL 变化时 gen++，下载线程完成后比对 gen——不匹配则丢弃过期结果。
     if (!url.empty() && url != cachedCoverUrl_) {
+        // 同一时刻只保留一个下载任务。旧任务收到取消信号并回收后，
+        // 才启动新任务，避免快速切歌累积 detached 线程。
+        coverCtx_->CancelAndJoin();
+        coverCtx_->cancelRequested.store(false, std::memory_order_release);
         cachedCoverUrl_ = url;
         d2dCoverBitmap_.Reset();       // 立即清除旧位图，切歌瞬间显示兜底符号
         coverFadingIn_ = false;        // 重置 fade-in 状态，下次封面到位时重新触发
@@ -292,22 +348,29 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
         // detached 线程不再依赖 this——renderer 析构后仍可安全访问队列与状态。
         std::shared_ptr<CoverDownloadCtx> ctx = coverCtx_;
         bool debugLog = debugLog_;
-        std::thread([ctx, targetUrl, gen, debugLog]() {
+        std::thread downloadWorker([ctx, targetUrl, gen, debugLog]() {
             // 下载到临时文件，然后读入内存立即删除（避免磁盘持久化）
             wchar_t tempPath[MAX_PATH] = {0};
             ::GetTempPathW(MAX_PATH, tempPath);
             wchar_t tempFile[MAX_PATH] = {0};
-            ::GetTempFileNameW(tempPath, L"mkl_", 0, tempFile);
+            if (!::GetTempFileNameW(tempPath, L"mkl_", 0, tempFile)) {
+                ctx->coverLoadInProgress.store(false, std::memory_order_release);
+                return;
+            }
 
             std::wstring wUrl(targetUrl.begin(), targetUrl.end());
-            HRESULT hr = ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, nullptr);
+            auto* callback = new (std::nothrow) CoverDownloadCallback(&ctx->cancelRequested);
+            HRESULT hr = callback
+                ? ::URLDownloadToFileW(nullptr, wUrl.c_str(), tempFile, 0, callback)
+                : E_OUTOFMEMORY;
+            if (callback) callback->Release();
 
             // 代际校验：若期间又切歌（gen != ctx->coverDownloadGen），丢弃过期下载结果
             int curGen = ctx->coverDownloadGen.load(std::memory_order_relaxed);
-            if (gen != curGen) {
+            if (gen != curGen || ctx->cancelRequested.load(std::memory_order_acquire)) {
                 ::DeleteFileW(tempFile);
                 ctx->coverLoadInProgress.store(false, std::memory_order_release);
-                if (debugLog) Log("[COVER] Discard stale download (gen=%d, cur=%d)\n", gen, curGen);
+                if (debugLog) Log("[COVER] Cancel/discard download (gen=%d, cur=%d)\n", gen, curGen);
                 return;
             }
 
@@ -335,7 +398,11 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
             ctx->coverLoadInProgress.store(false, std::memory_order_release);
             if (debugLog) Log("[COVER] Download %s, url='%.60s'\n",
                 SUCCEEDED(hr) ? "OK" : "FAIL", targetUrl.c_str());
-        }).detach();
+        });
+        {
+            std::lock_guard<std::mutex> lock(coverCtx_->workerMutex);
+            coverCtx_->worker = std::move(downloadWorker);
+        }
     }
 
     // ═════ 消费后台下载结果：从内存直接解码 ═════
