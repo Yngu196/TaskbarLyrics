@@ -12,7 +12,7 @@ void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, 
     if (!renderTarget_ || !textFormat_ || !brush || text.empty()) return;
     
     // 水平偏移量（像素）
-    const float paddingX = constants::TEXT_PADDING_X;
+    const float paddingX = constants::TEXT_PADDING_X * static_cast<float>(dpi_) / 96.0f;
     
     D2D1_RECT_F layout = D2D1::RectF(
         paddingX, yOffset,
@@ -36,7 +36,8 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
 
-    const float paddingX = overridePaddingLeft ? *overridePaddingLeft : constants::TEXT_PADDING_X;
+    const float paddingX = overridePaddingLeft ? *overridePaddingLeft
+        : constants::TEXT_PADDING_X * static_cast<float>(dpi_) / 96.0f;
     const float rightPaddingX = overridePaddingRight ? *overridePaddingRight : paddingX;
     const float availableWidth = static_cast<FLOAT>(width_) - paddingX - rightPaddingX;
     // 应用用户设置的垂直偏移（dp → px）
@@ -98,7 +99,9 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         cachedLayout_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
         const float textLeft = paddingX - scrollOffset;
 
-        // 不裁剪：封面在 renderer 层后绘制，自然覆盖延伸到封面区域的文字
+        // 跑马灯文本会向左移动，必须裁剪到实际歌词区域；否则有封面时，
+        // 滚动后的文字会穿透到封面左侧/下方（封面并不能可靠遮住透明区域）。
+        renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         renderTarget_->DrawTextLayout(
             D2D1::Point2F(textLeft, userOffsetY), cachedLayout_.Get(), normalBrush_.Get());
 
@@ -115,6 +118,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->PopAxisAlignedClip();
             }
         }
+        renderTarget_->PopAxisAlignedClip();
     } else {
         // ═══════ 非滚动模式：居中显示 ═══════
         // 裁剪到 layoutRect，避免长歌词文本溢出覆盖封面
@@ -152,7 +156,8 @@ void TaskbarRenderer::DrawTranslatedText(const std::wstring& text,
     if (!translationFormat_ || !translationBrush_ || text.empty()) return;
 
     // 水平偏移量（像素）：支持垂直模式下的自定义内边距
-    const float paddingX = overridePaddingLeft ? *overridePaddingLeft : constants::TEXT_PADDING_X;
+    const float paddingX = overridePaddingLeft ? *overridePaddingLeft
+        : constants::TEXT_PADDING_X * static_cast<float>(dpi_) / 96.0f;
     const float rightPaddingX = overridePaddingRight ? *overridePaddingRight : paddingX;
     // 应用用户设置的垂直偏移
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -185,15 +190,16 @@ void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
     if (isVerticalTaskbar_) {
         // ── 垂直任务栏：按钮垂直堆叠（窄窗口放不下水平排列）──
         const FLOAT btnSize = std::min(w * 0.7f, 28.0f);
-        const FLOAT spacing = constants::BUTTON_SPACING;
+        const FLOAT dpiScale = static_cast<FLOAT>(dpi_) / 96.0f;
+        const FLOAT spacing = constants::BUTTON_SPACING * dpiScale;
         const FLOAT totalBtnHeight = btnSize * 3.0f + spacing * 2.0f;
         const FLOAT btnX = (w - btnSize) / 2.0f;
         const FLOAT startY = (h - totalBtnHeight) / 2.0f;
 
         // 半透明背景（竖条）
         D2D1_RECT_F bgRect = D2D1::RectF(
-            btnX - constants::BUTTON_BG_PADDING_X, startY - constants::BUTTON_BG_PADDING_Y,
-            btnX + btnSize + constants::BUTTON_BG_PADDING_X, startY + totalBtnHeight + constants::BUTTON_BG_PADDING_Y);
+            btnX - constants::BUTTON_BG_PADDING_X * dpiScale, startY - constants::BUTTON_BG_PADDING_Y * dpiScale,
+            btnX + btnSize + constants::BUTTON_BG_PADDING_X * dpiScale, startY + totalBtnHeight + constants::BUTTON_BG_PADDING_Y * dpiScale);
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
@@ -225,15 +231,16 @@ void TaskbarRenderer::DrawHoverControls(bool isPlaying) {
     } else {
         // ── 水平任务栏：按钮水平排列（原有逻辑）──
         const FLOAT btnSize = h * 0.7f;
-        const FLOAT spacing = constants::BUTTON_SPACING;
+        const FLOAT dpiScale = static_cast<FLOAT>(dpi_) / 96.0f;
+        const FLOAT spacing = constants::BUTTON_SPACING * dpiScale;
         const FLOAT totalBtnWidth = btnSize * 3.0f + spacing * 2.0f;
         const FLOAT startX = (w - totalBtnWidth) / 2.0f;
         const FLOAT btnY = (h - btnSize) / 2.0f;
 
         // 半透明背景
         D2D1_RECT_F bgRect = D2D1::RectF(
-            startX - constants::BUTTON_BG_PADDING_X, btnY - constants::BUTTON_BG_PADDING_Y,
-            startX + totalBtnWidth + constants::BUTTON_BG_PADDING_X, btnY + btnSize + constants::BUTTON_BG_PADDING_Y);
+            startX - constants::BUTTON_BG_PADDING_X * dpiScale, btnY - constants::BUTTON_BG_PADDING_Y * dpiScale,
+            startX + totalBtnWidth + constants::BUTTON_BG_PADDING_X * dpiScale, btnY + btnSize + constants::BUTTON_BG_PADDING_Y * dpiScale);
         Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> bgBrush;
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.15f),
@@ -274,13 +281,17 @@ void TaskbarRenderer::DrawSpectrumBars(const std::vector<float>& bands, float x,
     if (bands.empty() || !renderTarget_ || !spectrumBrush_) return;
 
     const size_t n = bands.size();
-    const float gap = constants::SPECTRUM_BAR_GAP;
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float gap = std::min(constants::SPECTRUM_BAR_GAP * dpiScale,
+                               n > 1 ? width / static_cast<float>(n - 1) : 0.0f);
     const float totalGap = gap * (static_cast<float>(n) - 1);
     // 柱宽：配置值 > 0 时使用固定宽度，否则自动计算
     const float autoWidth = (std::max)(3.0f, (width - totalGap) / static_cast<float>(n));
+    const float maxBarWidth = std::max(1.0f,
+        (width - totalGap) / static_cast<float>(n));
     const float barWidth = (settings_.spectrumBarWidth > 0.5f)
-        ? settings_.spectrumBarWidth
-        : autoWidth;
+        ? std::min(settings_.spectrumBarWidth * dpiScale, maxBarWidth)
+        : std::min(autoWidth, maxBarWidth);
     const float step = barWidth + gap;
     const float radius = barWidth * 0.5f;
     const float centerY = y + height * 0.5f;

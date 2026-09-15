@@ -12,7 +12,9 @@ using renderer_utils::Utf8ToWide;
 using renderer_utils::GetCurrentTimeSeconds;
 
 TaskbarRenderer::MarqueeMode TaskbarRenderer::ParseMarqueeMode(const std::string& mode) {
-    if (mode == "loop" || mode == "Loop") return MarqueeMode::Loop;
+    // 旧版本的 loop 配置不再提供，统一回退到往返滚动，避免升级后出现
+    // UI 没有对应选项但内部仍执行旧循环逻辑的状态。
+    if (mode == "loop" || mode == "Loop") return MarqueeMode::Bounce;
     if (mode == "off" || mode == "Off")   return MarqueeMode::Off;
     return MarqueeMode::Bounce;  // default
 }
@@ -35,7 +37,8 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
     // 使用传入的实际可用宽度（已考虑封面偏移），未传入时回退到 TEXT_PADDING_X 对称计算
     const float availWidth = (availableWidth > 0.0f)
         ? availableWidth
-        : (static_cast<FLOAT>(width_) - constants::TEXT_PADDING_X * 2.0f);
+        : (static_cast<FLOAT>(width_) - constants::TEXT_PADDING_X * 2.0f *
+           static_cast<float>(dpi_) / 96.0f);
 
     // 检测歌词文本变化 → 重置状态机
     if (lyricText != marqueeLastText_) {
@@ -134,15 +137,8 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         // 2. 高亮进度已完成（progress >= 1.0）
         if (scrollOffset_ >= marqueeMaxOffset_ && progress >= 1.0f) {
             scrollOffset_ = marqueeMaxOffset_;
-            if (mode == MarqueeMode::Bounce) {
-                marqueeState_ = MarqueeState::PauseRight;
-                stateStartTime_ = now;
-            } else {
-                // Loop 模式：立即回到 Delay 重新开始
-                marqueeState_ = MarqueeState::Delay;
-                stateStartTime_ = now;
-                scrollOffset_ = 0.0f;
-            }
+            marqueeState_ = MarqueeState::PauseRight;
+            stateStartTime_ = now;
         }
         return scrollOffset_;
     }

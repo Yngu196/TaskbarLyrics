@@ -230,6 +230,14 @@ void TaskbarRenderer::CreateRenderTarget() {
 
     wicBitmap_.Reset();
     renderTarget_.Reset();
+    d2dCoverBitmap_.Reset();
+    blurredCoverBg_.Reset();
+    blurredBgBrush_.Reset();
+    blurredBgBitmapW_ = 0.0f;
+    cachedCoverUrl_.clear();
+    cachedLayout_.Reset();
+    cachedKaraokeText_.clear();
+    cachedTextWidth_ = 0.0f;
     // 依赖旧 renderTarget 的 Layer/Geometry 一并失效
     coverLayer_.Reset();
     coverClipGeo_.Reset();
@@ -256,6 +264,48 @@ void TaskbarRenderer::CreateRenderTarget() {
     }
 }
 
+void TaskbarRenderer::ReleasePresentResources() {
+    if (presentMemDC_) {
+        ::DeleteDC(presentMemDC_);
+        presentMemDC_ = nullptr;
+    }
+    if (presentBitmap_) {
+        ::DeleteObject(presentBitmap_);
+        presentBitmap_ = nullptr;
+    }
+    presentBits_ = nullptr;
+    presentWidth_ = presentHeight_ = 0;
+}
+
+bool TaskbarRenderer::EnsurePresentResources() {
+    if (presentMemDC_ && presentBitmap_ && presentBits_ &&
+        presentWidth_ == width_ && presentHeight_ == height_) {
+        return true;
+    }
+    ReleasePresentResources();
+    HDC screen = ::GetDC(nullptr);
+    if (!screen) return false;
+    presentMemDC_ = ::CreateCompatibleDC(screen);
+    BITMAPINFO bmi{};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = static_cast<LONG>(width_);
+    bmi.bmiHeader.biHeight = -static_cast<LONG>(height_);
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+    presentBitmap_ = static_cast<HBITMAP>(::CreateDIBSection(
+        screen, &bmi, DIB_RGB_COLORS, &presentBits_, nullptr, 0));
+    ::ReleaseDC(nullptr, screen);
+    if (!presentMemDC_ || !presentBitmap_ || !presentBits_) {
+        ReleasePresentResources();
+        return false;
+    }
+    ::SelectObject(presentMemDC_, presentBitmap_);
+    presentWidth_ = width_;
+    presentHeight_ = height_;
+    return true;
+}
+
 void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
     settings_ = s;
     cardTranslationMode_ = s.cardTranslationMode;
@@ -279,6 +329,7 @@ void TaskbarRenderer::Shutdown() {
     // 封面下载 worker 可能正在 URLMon 阻塞；先发取消并 join，
     // 确保 renderer 的共享上下文和 D2D 资源不会在后台线程之后失效。
     if (coverCtx_) coverCtx_->CancelAndJoin();
+    ReleasePresentResources();
     cardNextBrush_.Reset();
     cardCurrentBrush_.Reset();
     cardBackgroundBrush_.Reset();
@@ -320,6 +371,7 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
     width_  = width;
     height_ = height;
     dpi_    = dpi;
+    ReleasePresentResources();
     CreateRenderTarget();
     if (renderTarget_) {
         highlightBrush_.Reset();
@@ -388,24 +440,19 @@ void TaskbarRenderer::PresentToLayeredWindow() {
     hr = lock->GetDataPointer(&cbSize, &pData);
     if (FAILED(hr) || !pData) return;
 
+    if (!EnsurePresentResources()) return;
+    const UINT dstStride = width_ * 4;
+    const UINT srcStride = cbStride;
+    const UINT rowBytes = (std::min)(dstStride, srcStride);
+    auto* dst = static_cast<BYTE*>(presentBits_);
+    for (UINT y = 0; y < height_; ++y) {
+        memcpy(dst + static_cast<size_t>(y) * dstStride,
+               pData + static_cast<size_t>(y) * srcStride, rowBytes);
+    }
+
     HDC hdcScreen = ::GetDC(nullptr);
-    HDC hdcMem = ::CreateCompatibleDC(hdcScreen);
-
-    BITMAPINFO bmi = {};
-    bmi.bmiHeader.biSize        = sizeof(BITMAPINFOHEADER);
-    bmi.bmiHeader.biWidth       = static_cast<LONG>(width_);
-    bmi.bmiHeader.biHeight      = -static_cast<LONG>(height_);
-    bmi.bmiHeader.biPlanes      = 1;
-    bmi.bmiHeader.biBitCount    = 32;
-    bmi.bmiHeader.biCompression = BI_RGB;
-
-    VOID* pBits = nullptr;
-    HBITMAP hBmp = ::CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &pBits, nullptr, 0);
-    if (hBmp && pBits) {
-        const UINT totalBytes = width_ * height_ * 4;
-        memcpy(pBits, pData, std::min<UINT>(totalBytes, cbSize));
-
-        HBITMAP hOld = static_cast<HBITMAP>(::SelectObject(hdcMem, hBmp));
+    if (!hdcScreen) return;
+    if (presentMemDC_ && presentBitmap_) {
 
         POINT ptSrc = { 0, 0 };
         SIZE sz = { static_cast<LONG>(width_), static_cast<LONG>(height_) };
@@ -422,13 +469,11 @@ void TaskbarRenderer::PresentToLayeredWindow() {
 
         BOOL result = ::UpdateLayeredWindow(
             hwnd_, hdcScreen, &ptDst, &sz,
-            hdcMem, &ptSrc, 0, &bf, ULW_ALPHA);
-
-        ::SelectObject(hdcMem, hOld);
-        ::DeleteObject(hBmp);
+            presentMemDC_, &ptSrc, 0, &bf, ULW_ALPHA);
+        if (!result) {
+            Log("[PRESENT] UpdateLayeredWindow failed: %lu\n", ::GetLastError());
+        }
     }
-
-    ::DeleteDC(hdcMem);
     ::ReleaseDC(nullptr, hdcScreen);
 }
 
@@ -450,13 +495,13 @@ void TaskbarRenderer::Render(const RenderState& state) {
     float scrollOffset = 0.0f;
     if (settings_.displayMode != "card") {
         // 计算实际可用宽度（考虑封面偏移），传递给跑马灯引擎用于正确的最大滚动偏移
+        const float dpiScale = static_cast<float>(dpi_) / 96.0f;
         float padLeft = isVerticalTaskbar_
-            ? constants::TEXT_PADDING_X * 0.4f
-            : constants::TEXT_PADDING_X;
+            ? constants::TEXT_PADDING_X * 0.4f * dpiScale
+            : constants::TEXT_PADDING_X * dpiScale;
         const float padRight = padLeft; // baseRightPadding（封面调整前）
         const bool showLyrics = (state.hasLyrics && !state.currentLine.empty());
         if (settings_.enableCover && showLyrics) {
-            const float dpiScale = static_cast<float>(dpi_) / 96.0f;
             const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             padLeft += coverSize + gap;
@@ -468,7 +513,8 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 卡片模式歌词切换动画更新
     bool cardScrollNeedsRedraw = false;
     if (settings_.displayMode == "card") {
-        cardScrollNeedsRedraw = UpdateCardAnim(state.currentLine, state.nextLine);
+        cardScrollNeedsRedraw = UpdateCardAnim(state.currentLine, state.nextLine,
+                                               state.currentLineIndex);
     }
 
     // P3: 歌词切换动画 + 进度弹簧（仅 karaoke 模式）
@@ -579,7 +625,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
             const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
-            const float paddingX = constants::TEXT_PADDING_X;
+            const float paddingX = constants::TEXT_PADDING_X * dpiScale;
             const bool showCover = settings_.enableCover;
             const bool showText = (settings_.spectrumMode == "text");
             // 与有歌词时保持一致：纯音乐也绘制卡片毛玻璃背景
@@ -612,9 +658,10 @@ void TaskbarRenderer::Render(const RenderState& state) {
     } else {
         // ═════ 卡拉OK渲染路径 ═════
         // 垂直任务栏时减小内边距以适应窄窗口
+        const float layoutDpiScale = static_cast<float>(dpi_) / 96.0f;
         float vertPaddingX = isVerticalTaskbar_
-            ? constants::TEXT_PADDING_X * 0.4f
-            : constants::TEXT_PADDING_X;
+            ? constants::TEXT_PADDING_X * 0.4f * layoutDpiScale
+            : constants::TEXT_PADDING_X * layoutDpiScale;
 
         // 单行背景：毛玻璃效果（与双行背景逻辑一致）
         // 仅当显式设置为 frosted 模式时绘制，transparent 时跳过；

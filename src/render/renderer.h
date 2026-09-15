@@ -86,6 +86,8 @@ private:
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
+    void ReleasePresentResources();
+    bool EnsurePresentResources();
 
     // ═════ 卡片模式渲染（无卡拉OK效果） ═════
     void RenderCardStyle(const RenderState& state);
@@ -114,7 +116,6 @@ private:
     /// 跑马灯滚动模式
     enum class MarqueeMode {
         Bounce,   // 左右往返滚动（推荐）
-        Loop,     // 传统跑马灯循环
         Off,      // 关闭跑马灯，直接截断
     };
 
@@ -149,6 +150,11 @@ private:
     Microsoft::WRL::ComPtr<ID2D1RenderTarget>        renderTarget_;
     Microsoft::WRL::ComPtr<IWICImagingFactory>        wicFactory_;
     Microsoft::WRL::ComPtr<IWICBitmap>                wicBitmap_;
+    HDC     presentMemDC_{nullptr};
+    HBITMAP presentBitmap_{nullptr};
+    void*   presentBits_{nullptr};
+    UINT    presentWidth_{0};
+    UINT    presentHeight_{0};
 
     Microsoft::WRL::ComPtr<IDWriteFactory>       dwriteFactory_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat>    textFormat_;
@@ -255,10 +261,12 @@ private:
 
     std::string     cardLastCurrentLine_;         // 上一次的当前行（用于检测切换）
     std::string     cardLastNextLine_;         // 上一次的下一行
+    int             cardLastLineIndex_{-1};   // 当前行索引
 
     /// 更新卡片模式歌词切换动画
     /// 返回是否处于动画中（需要持续重绘）
-    bool UpdateCardAnim(const std::string& currentLine, const std::string& nextLine);
+    bool UpdateCardAnim(const std::string& currentLine, const std::string& nextLine,
+                        int currentLineIndex);
 
     // ═════ P3: 歌词切换动画 + 进度弹簧（普通/卡拉OK模式）═════
     // 解决歌词行切换时"硬切"和逐字高亮进度跳变的问题。

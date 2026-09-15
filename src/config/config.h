@@ -44,7 +44,7 @@ struct AppearanceConfig {
 
     // 跑马灯（长歌词滚动）配置
     bool        enableMarquee{true};           // 是否启用跑马灯
-    std::string marqueeMode{"bounce"};        // bounce=往返 / loop=循环 / off=关闭
+    std::string marqueeMode{"bounce"};        // bounce=往返 / off=关闭（旧 loop 配置自动回退 bounce）
     int         marqueeDelayMs{2000};          // 歌词显示后延迟多久开始滚动（毫秒）
     int         marqueePauseMs{1000};          // 滚动到端点后暂停时间（毫秒）
     float       marqueeSpeedPxPerSec{40.0f};   // 滚动速度（像素/秒）

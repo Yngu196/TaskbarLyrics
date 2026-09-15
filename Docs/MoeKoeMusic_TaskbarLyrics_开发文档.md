@@ -309,7 +309,7 @@ struct RenderState {
 | 模式     | 行为         |
 | ------ | ---------- |
 | bounce | 左右往返（推荐）   |
-| loop   | 传统跑马灯，跳回右端 |
+| loop   | 旧版本配置值，读取后自动回退为 bounce |
 | off    | 关闭滚动，直接截断  |
 
 - **超长加速：** 宽度 > 2×可用宽度时最高 3 倍速
@@ -691,4 +691,3 @@ python scripts/pack_zip.py moeKoe-taskbar-lyrics/ moeKoe-taskbar-lyrics-windows-
 | High DPI       | <https://learn.microsoft.com/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows> |
 | ixwebsocket    | <https://github.com/machinezone/IXWebSocket>                                                          |
 | nlohmann/json  | <https://github.com/nlohmann/json>                                                                    |
-

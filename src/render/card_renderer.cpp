@@ -78,7 +78,7 @@ float TaskbarRenderer::MeasureCardLyricsWidth(const std::string& curLine,
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float coverSizePx = static_cast<float>(settings_.coverSize) * dpiScale;
     const float gapPx = static_cast<float>(settings_.cardGap) * dpiScale;
-    const float padding = constants::TEXT_PADDING_X;
+    const float padding = constants::TEXT_PADDING_X * dpiScale;
 
     auto measureLine = [this](const std::wstring& line, IDWriteTextFormat* format) -> float {
         if (line.empty() || !format) return 0.0f;
@@ -139,7 +139,7 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
-    const float paddingX = constants::TEXT_PADDING_X;
+    const float paddingX = constants::TEXT_PADDING_X * dpiScale;
     const bool showCover = settings_.enableCover;
     const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
 
@@ -236,7 +236,7 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
 
 void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float paddingX = constants::TEXT_PADDING_X * 0.5f;  // 窄窗口减小左右边距
+    const float paddingX = constants::TEXT_PADDING_X * 0.5f * dpiScale;  // 窄窗口减小左右边距
     const float w = static_cast<float>(width_);
     const float h = static_cast<float>(height_);
     const bool showCover = settings_.enableCover;
@@ -316,7 +316,6 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                                     float x, float y, float size) {
     if (!renderTarget_ || size <= 0.0f) return;
 
-    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     // 圆角半径：coverCornerRadius 百分比 → 实际像素
     // 0% = 正方形 (0px), 100% = 圆形 (size/2)
     const float radiusPercent = std::clamp(static_cast<float>(settings_.coverCornerRadius), 0.0f, 100.0f);
@@ -747,11 +746,14 @@ void TaskbarRenderer::DrawCardLyrics(const std::wstring& currentLine,
 }
 
 bool TaskbarRenderer::UpdateCardAnim(const std::string& currentLine,
-                                     const std::string& nextLine) {
+                                     const std::string& nextLine,
+                                     int currentLineIndex) {
     // 动画持续时间：350ms（快速过渡，减少新旧歌词重叠）
     constexpr double kDuration = 0.35;
 
-    bool lineChanged = (currentLine != cardLastCurrentLine_);
+    const bool lineChanged = (currentLineIndex >= 0 && cardLastLineIndex_ >= 0)
+        ? (currentLineIndex != cardLastLineIndex_)
+        : (currentLine != cardLastCurrentLine_);
     if (lineChanged && !currentLine.empty() && !cardLastCurrentLine_.empty()) {
         cardPrevCurrentLine_ = cardLastCurrentLine_;
         cardPrevNextLine_ = cardLastNextLine_;
@@ -766,6 +768,7 @@ bool TaskbarRenderer::UpdateCardAnim(const std::string& currentLine,
 
     cardLastCurrentLine_ = currentLine;
     cardLastNextLine_ = nextLine;
+    cardLastLineIndex_ = currentLineIndex;
 
     if (cardAnimState_ == CardAnimState::Idle) {
         return false;

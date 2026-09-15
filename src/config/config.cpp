@@ -26,6 +26,10 @@ void Config::NormalizeValues() {
     appearance_.marqueeDelayMs = std::clamp(appearance_.marqueeDelayMs, 0, 10000);
     appearance_.marqueePauseMs = std::clamp(appearance_.marqueePauseMs, 0, 10000);
     appearance_.marqueeSpeedPxPerSec = std::clamp(appearance_.marqueeSpeedPxPerSec, 10.0f, 500.0f);
+    if (appearance_.marqueeMode != "off") {
+        // 循环跑马灯已移除；旧配置统一迁移到往返滚动。
+        appearance_.marqueeMode = "bounce";
+    }
     appearance_.windowWidthOverride = std::clamp(
         appearance_.windowWidthOverride, 0, constants::WINDOW_WIDTH_OVERRIDE_MAX_DP);
     appearance_.spectrumDbFloor = std::clamp(appearance_.spectrumDbFloor, -120.0f, -1.0f);

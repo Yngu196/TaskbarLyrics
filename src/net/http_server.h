@@ -17,6 +17,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <functional>
 
 namespace httplib {
 class Server;
@@ -58,6 +59,7 @@ private:
     void ServerLoop(int port);
 
     std::thread serverThread_;
+    std::function<void()> stopCallback_;
     // 保护 serverThread_、port_ 和 Start/Stop 的生命周期转换。
     // running_ 只表示 ServerLoop 已进入监听阶段，不能单独作为线程存活判断。
     mutable std::mutex lifecycleMutex_;

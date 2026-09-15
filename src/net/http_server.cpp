@@ -78,12 +78,17 @@ bool HttpServer::Start(int port) {
 
     stopRequested_.store(false);
     port_ = port;
+    // Mark the lifecycle active before launching the worker.  This makes a
+    // second Start() during the tiny startup window idempotent instead of
+    // trying to join a thread that is still entering listen().
+    running_.store(true);
     serverThread_ = std::thread([this, port]() { ServerLoop(port); });
     return true;
 }
 
 void HttpServer::Stop() {
     int port = 0;
+    std::function<void()> stopCallback;
     {
         std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
         // running_ 只在 ServerLoop 开始监听后才置 true；如果 Stop 紧跟在
@@ -94,7 +99,10 @@ void HttpServer::Stop() {
         }
         stopRequested_.store(true);
         port = port_;
+        stopCallback = stopCallback_;
     }
+
+    if (stopCallback) stopCallback();
 
     // Poke the listening socket to wake up accept()
     SOCKET tmp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -120,6 +128,12 @@ void HttpServer::Stop() {
 
 void HttpServer::ServerLoop(int port) {
     httplib::Server svr;
+
+    {
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        stopCallback_ = [&svr]() { svr.stop(); };
+        if (stopRequested_.load()) svr.stop();
+    }
 
     // 限制请求体大小，防御异常大 payload（本机场景正常歌词数据远小于此）
     svr.set_payload_max_length(4 * 1024 * 1024); // 4 MB
@@ -227,19 +241,28 @@ void HttpServer::ServerLoop(int port) {
     Log("[HTTP] Server starting on port %d (httplib)\n", port);
 
     // Stopper thread: polls stopRequested_ and calls svr.stop()
-    std::thread stopper([this, &svr]() {
+    std::atomic<bool> listenDone{false};
+    std::thread stopper([this, &svr, &listenDone]() {
         while (!stopRequested_.load()) {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
-        svr.stop();
+        // stop() can race with listen() startup.  Keep poking until listen
+        // has actually returned, so an early stop request cannot be lost.
+        while (!listenDone.load(std::memory_order_acquire)) {
+            svr.stop();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     });
 
     // Stop() may race with thread startup, before listen() has entered its
     // accept loop.  In that case do not enter listen at all; otherwise the
     // wake-up connect can be missed and the lifecycle join would block.
     if (stopRequested_.load()) {
+        listenDone.store(true, std::memory_order_release);
         if (stopper.joinable()) stopper.join();
         running_.store(false);
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        stopCallback_ = {};
         return;
     }
 
@@ -247,13 +270,21 @@ void HttpServer::ServerLoop(int port) {
         int err = WSAGetLastError();
         Log("[HTTP] listen failed on port %d: WSA error %d\n", port, err);
         running_.store(false);
+        listenDone.store(true, std::memory_order_release);
         if (stopper.joinable()) stopper.join();
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        stopCallback_ = {};
         return;
     }
 
+    listenDone.store(true, std::memory_order_release);
     stopper.join();
     running_.store(false);
     Log("[HTTP] Server stopped\n");
+    {
+        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+        stopCallback_ = {};
+    }
 }
 
 } // namespace moekoe

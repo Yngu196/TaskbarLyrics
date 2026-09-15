@@ -339,13 +339,13 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c2->SetVisible(!isCard);
     AddChild(std::move(c2));
 
-    // Card: 长歌词滚动（跑马灯）
-    auto c3 = MakeCard("长歌词滚动（跑马灯）");
+    // Card: 长歌词滚动
+    auto c3 = MakeCard("长歌词滚动");
     c3->id = "marqueeCard";
     {
         auto t = std::make_unique<Toggle>();
         t->id = "marquee";
-        t->label = "启用跑马灯";
+        t->label = "启用长歌词滚动效果";
         t->value = a.enableMarquee;
         c3->AddChild(std::move(t));
     }
@@ -353,8 +353,8 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
         auto dm = std::make_unique<ComboBox>();
         dm->id = "marqueeMode";
         dm->label = "滚动模式";
-        dm->items = {"往返滚动（推荐）", "循环跑马灯", "关闭（截断显示）"};
-        dm->selectedIndex = (a.marqueeMode == "loop") ? 1 : (a.marqueeMode == "off" ? 2 : 0);
+        dm->items = {"往返滚动（推荐）", "关闭（截断显示）"};
+        dm->selectedIndex = (a.marqueeMode == "off") ? 1 : 0;
         c3->AddChild(std::move(dm));
     }
     {
@@ -597,8 +597,7 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                 else if (t->id == "enableCover")   ap.enableCover = t->value;
             } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
                 if (cb->id == "marqueeMode")
-                    ap.marqueeMode = (cb->selectedIndex == 1) ? "loop" :
-                                     (cb->selectedIndex == 2) ? "off" : "bounce";
+                    ap.marqueeMode = (cb->selectedIndex == 1) ? "off" : "bounce";
                 else if (cb->id == "cardBackgroundMode")
                     ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
                 else if (cb->id == "singleLineBackgroundMode")
