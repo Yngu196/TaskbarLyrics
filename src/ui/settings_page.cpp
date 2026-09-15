@@ -387,6 +387,9 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c3->SetVisible(!isCard);
     AddChild(std::move(c3));
 
+    // 开关关闭或选择“关闭（截断显示）”时，隐藏无效的滚动参数。
+    UpdateMarqueeVisibility(a.enableMarquee, a.marqueeMode);
+
     // Card: 歌词位置（仅单行）
     auto cLyricPos = MakeCard("歌词位置");
     cLyricPos->id = "karaokeOffset";
@@ -568,6 +571,22 @@ void AppearancePage::UpdateVisibility(const std::string& displayMode) {
             child->SetVisible(isCard);
         }
         // coverCard 和 themeColorCard 始终可见，无需切换
+    }
+}
+
+void AppearancePage::UpdateMarqueeVisibility(bool enabled, const std::string& marqueeMode) {
+    // 滚动模式下拉始终保留，便于用户在关闭后快速重新选择往返滚动；
+    // 只有实际启用往返滚动时，延迟/停顿/速度参数才有意义。
+    const bool showParameters = enabled && marqueeMode != "off";
+    for (auto& card : children_) {
+        if (card->id != "marqueeCard") continue;
+        for (auto& child : card->Children()) {
+            if (child->id == "marqueeDelay" || child->id == "marqueePause" ||
+                child->id == "marqueeSpeed") {
+                child->SetVisible(showParameters);
+            }
+        }
+        break;
     }
 }
 

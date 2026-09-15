@@ -1406,6 +1406,15 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                             ArrangeUI();
                         }
                         ApplyChanges();
+                        if (combo->id == "marqueeMode") {
+                            auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                            if (appearPage) {
+                                const auto& appearance = editedConfig_.Appearance();
+                                appearPage->UpdateMarqueeVisibility(
+                                    appearance.enableMarquee, appearance.marqueeMode);
+                                ArrangeUI();
+                            }
+                        }
                     } else {
                         // 点击下拉区域外 → 关闭下拉（不选择）
                         combo->dropped = false;
@@ -1425,6 +1434,15 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
             toggle->value = !toggle->value;
             ApplyChanges();
 
+            if (toggle->id == "marquee") {
+                auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                if (appearPage) {
+                    const auto& appearance = editedConfig_.Appearance();
+                    appearPage->UpdateMarqueeVisibility(
+                        appearance.enableMarquee, appearance.marqueeMode);
+                    ArrangeUI();
+                }
+            }
 
             InvalidateRect(hwnd_, nullptr, FALSE);
             return;

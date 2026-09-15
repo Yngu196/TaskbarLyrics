@@ -64,6 +64,9 @@ public:
 
     // 根据 displayMode 更新卡拉OK/卡片 Card 的可见性
     void UpdateVisibility(const std::string& displayMode);
+
+    // 根据长歌词开关和滚动模式，隐藏不适用的速度/停顿参数
+    void UpdateMarqueeVisibility(bool enabled, const std::string& marqueeMode);
 };
 
 class SpectrumPage : public SettingsPage {
