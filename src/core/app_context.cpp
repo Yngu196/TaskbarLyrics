@@ -141,8 +141,17 @@ void HandleFrameTick(AppContext& app) {
                 state.isDragging = app.taskbarWindow->IsDragging();
             }
 
-            // 4. 同步任务栏方向（运行时位置变化适配）+ 执行渲染
-            app.renderer->SetVerticalTaskbar(app.taskbarWindow->IsVerticalTaskbar());
+            // 4. 检测任务栏方向切换：上/下共用横向位置配置，左/右共用纵向位置配置。
+            const bool verticalTaskbar = app.taskbarWindow->IsVerticalTaskbar();
+            if (app.config->SwitchTaskbarOrientation(verticalTaskbar)) {
+                app.taskbarWindow->SetDragOffset(app.config->Position().offsetX,
+                                                  app.config->Position().offsetY);
+                app.taskbarWindow->InvalidatePositionCache();
+                app.taskbarWindow->Reposition();
+                app.config->Save();
+            }
+            // 同步方向到渲染器后执行渲染。
+            app.renderer->SetVerticalTaskbar(verticalTaskbar);
             app.renderer->Render(state);
 
             // 4.5. 卡片模式动态宽度：长歌词扩展，短歌词滞回缩回

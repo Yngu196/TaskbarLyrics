@@ -189,6 +189,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         return 1;
     }
 
+    // 根据初始任务栏方向选择独立的位置配置：上/下共用横向配置，左/右共用纵向配置。
+    config.SwitchTaskbarOrientation(taskbarWindow.IsVerticalTaskbar());
+
     // 应用配置中的显示模式（必须在 Reposition 之前，影响宽度计算）
     taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
     taskbarWindow.SetCardMaxExpandRatio(config.Appearance().cardMaxExpandRatio);

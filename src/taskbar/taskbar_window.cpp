@@ -124,10 +124,13 @@ void TaskbarWindow::InternalPosition() {
 
     // 检测方位变化 → 重置拖动偏移
     const TaskbarPosition curPos = companion_.GetTaskbarInfo().position;
-    if (lastPosition_ != TaskbarPosition::UNKNOWN && lastPosition_ != curPos) {
+    const bool changedOrientation =
+        (lastPosition_ == TaskbarPosition::LEFT || lastPosition_ == TaskbarPosition::RIGHT) !=
+        (curPos == TaskbarPosition::LEFT || curPos == TaskbarPosition::RIGHT);
+    if (lastPosition_ != TaskbarPosition::UNKNOWN && changedOrientation) {
         dragOffsetX_ = 0;
         dragOffsetY_ = 0;
-        LogDebug("[TASKBAR-WND] 任务栏方位变化，重置拖动偏移\n");
+        LogDebug("[TASKBAR-WND] 任务栏横纵方向变化，切换位置配置\n");
     }
     lastPosition_ = curPos;
 

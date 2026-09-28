@@ -18,6 +18,21 @@
 
 namespace moekoe {
 
+bool Config::SwitchTaskbarOrientation(bool vertical) {
+    if (vertical == activeVerticalProfile_) return false;
+
+    if (activeVerticalProfile_) {
+        verticalPosition_ = position_;
+    } else {
+        horizontalPosition_ = position_;
+    }
+    activeVerticalProfile_ = vertical;
+    position_ = vertical ? verticalPosition_ : horizontalPosition_;
+    Log("[CONFIG] Switched to %s taskbar position profile: offset=(%d,%d)\n",
+        vertical ? "vertical" : "horizontal", position_.offsetX, position_.offsetY);
+    return true;
+}
+
 void Config::NormalizeValues() {
     appearance_.normalOpacity = std::clamp(appearance_.normalOpacity, 0.0, 1.0);
     appearance_.fontSize = std::clamp(appearance_.fontSize, 10, 28);
@@ -253,6 +268,24 @@ bool Config::Load() {
             position_.lockFully    = p.value("lock_fully",     position_.lockFully);
         }
 
+        // 左右侧与上下侧任务栏保存独立的拖动位置。旧配置只有 position，
+        // 升级时两套都从该位置初始化，保持既有行为。
+        horizontalPosition_ = position_;
+        verticalPosition_ = position_;
+        if (j.contains("position_profiles")) {
+            const auto loadProfile = [](const json& p, PositionConfig& dst) {
+                dst.offsetX = p.value("offset_x", dst.offsetX);
+                dst.offsetY = p.value("offset_y", dst.offsetY);
+                dst.lockPosition = p.value("lock_position", dst.lockPosition);
+                dst.lockFully = p.value("lock_fully", dst.lockFully);
+            };
+            const auto& profiles = j["position_profiles"];
+            if (profiles.contains("horizontal")) loadProfile(profiles["horizontal"], horizontalPosition_);
+            if (profiles.contains("vertical")) loadProfile(profiles["vertical"], verticalPosition_);
+        }
+        activeVerticalProfile_ = false;
+        position_ = horizontalPosition_;
+
         // 范围验证：将异常值 clamp 到合理区间
         NormalizeValues();
 
@@ -348,6 +381,16 @@ bool Config::Save() const {
         {"lock_position", position_.lockPosition},
         {"lock_fully",    position_.lockFully},
     };
+    PositionConfig savedHorizontal = horizontalPosition_;
+    PositionConfig savedVertical = verticalPosition_;
+    if (activeVerticalProfile_) savedVertical = position_;
+    else savedHorizontal = position_;
+    j["position_profiles"] = {
+        {"horizontal", {{"offset_x", savedHorizontal.offsetX}, {"offset_y", savedHorizontal.offsetY},
+                          {"lock_position", savedHorizontal.lockPosition}, {"lock_fully", savedHorizontal.lockFully}}},
+        {"vertical",   {{"offset_x", savedVertical.offsetX}, {"offset_y", savedVertical.offsetY},
+                          {"lock_position", savedVertical.lockPosition}, {"lock_fully", savedVertical.lockFully}}},
+    };
 
     out << j.dump(2);
     return true;
@@ -424,6 +467,16 @@ bool Config::ExportToFile(const std::string& path) const {
         {"offset_y",      position_.offsetY},
         {"lock_position", position_.lockPosition},
         {"lock_fully",    position_.lockFully},
+    };
+    PositionConfig savedHorizontal = horizontalPosition_;
+    PositionConfig savedVertical = verticalPosition_;
+    if (activeVerticalProfile_) savedVertical = position_;
+    else savedHorizontal = position_;
+    j["position_profiles"] = {
+        {"horizontal", {{"offset_x", savedHorizontal.offsetX}, {"offset_y", savedHorizontal.offsetY},
+                          {"lock_position", savedHorizontal.lockPosition}, {"lock_fully", savedHorizontal.lockFully}}},
+        {"vertical",   {{"offset_x", savedVertical.offsetX}, {"offset_y", savedVertical.offsetY},
+                          {"lock_position", savedVertical.lockPosition}, {"lock_fully", savedVertical.lockFully}}},
     };
 
     out << j.dump(2);
