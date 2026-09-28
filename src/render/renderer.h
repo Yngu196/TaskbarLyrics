@@ -78,11 +78,13 @@ private:
                                           float scrollOffset = 0.0f,
                                           const float* overridePaddingLeft = nullptr,
                                           float opacity = 1.0f,
-                                          const float* overridePaddingRight = nullptr);
+                                          const float* overridePaddingRight = nullptr,
+                                          const D2D1_RECT_F* overrideLayout = nullptr);
     void DrawTranslatedText(const std::wstring& text,
                             const float* overridePaddingLeft = nullptr,
                             float opacity = 1.0f,
-                            const float* overridePaddingRight = nullptr);
+                            const float* overridePaddingRight = nullptr,
+                            const D2D1_RECT_F* overrideLayout = nullptr);
     void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
@@ -138,6 +140,10 @@ private:
     /// availableWidth: 歌词实际可用宽度（已考虑封面偏移），用于计算正确的最大滚动偏移
     float UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw, float availableWidth = 0.0f);
 
+    /// 垂直任务栏专用：按文字高度驱动上下往返滚动。
+    float UpdateVerticalMarquee(const std::wstring& lyricText, float glyphHeight,
+                                float availableHeight, bool& needRedraw);
+
     HWND hwnd_{nullptr};
     UINT width_{0};
     UINT height_{0};
@@ -183,6 +189,14 @@ private:
     float          marqueeTextWidth_{0.0f};       // 当前歌词文本的像素宽度（缓存）
     float          marqueeMaxOffset_{0.0f};       // 最大可滚动偏移量 = textWidth - availableWidth
     float          marqueeProgress_{0.0f};         // 当前歌词高亮进度 [0.0, 1.0]，用于控制回位时机
+
+    // 垂直任务栏的逐字歌词滚动状态（与水平跑马灯分开，避免切换方向时串状态）
+    MarqueeState   verticalMarqueeState_{MarqueeState::Idle};
+    float          verticalScrollOffset_{0.0f};
+    float          verticalMaxOffset_{0.0f};
+    std::wstring   verticalMarqueeText_;
+    double         verticalStateStartTime_{0.0};
+    double         verticalLastUpdateTime_{0.0};
 
     // ═══════════════════════════════
     // 卡片模式成员
@@ -240,6 +254,8 @@ private:
     std::wstring         cachedKaraokeText_;
     Microsoft::WRL::ComPtr<IDWriteTextLayout> cachedLayout_;
     float                cachedTextWidth_{0.0f};
+    float                cachedLayoutWidth_{0.0f};
+    float                cachedLayoutHeight_{0.0f};
 
     // ═══════════════════════════════
     // 卡片模式歌词切换动画（淡入淡出 + 位移）

@@ -268,6 +268,35 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
     std::wstring curW = Utf8ToWide(state.currentLine);
     std::wstring nextW = Utf8ToWide(state.nextLine);
 
+    // 垂直布局的剩余空间位于封面下方。不能复用 DrawCardLyrics：该函数按
+    // 整个窗口高度的 1/2 分行，lyricsTop 非零时第二行会被推到窗口外。
+    const float lyricsBottom = std::max(lyricsTop, h - paddingX);
+    const float lyricsMid = lyricsTop + (lyricsBottom - lyricsTop) * 0.5f;
+    auto drawVerticalLine = [this, paddingX, w](const std::wstring& line,
+                                                float top, float bottom,
+                                                bool isCurrent, float alpha) {
+        if (line.empty() || alpha <= 0.001f) return;
+        IDWriteTextFormat* format = isCurrent ? cardCurrentFormat_.Get() : cardNextFormat_.Get();
+        ID2D1SolidColorBrush* brush = isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get();
+        if (!format || !brush) return;
+
+        const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+        const float offsetY = (isCurrent ? static_cast<float>(settings_.cardLine1OffsetY)
+                                         : static_cast<float>(settings_.cardLine2OffsetY)) * dpiScale;
+        const D2D1_COLOR_F original = brush->GetColor();
+        D2D1_COLOR_F faded = original;
+        faded.a = std::clamp(original.a * alpha, 0.0f, 1.0f);
+        brush->SetColor(faded);
+        const D2D1_RECT_F rect = D2D1::RectF(paddingX, top + offsetY,
+                                               w - paddingX, bottom + offsetY);
+        renderTarget_->PushAxisAlignedClip(
+            D2D1::RectF(paddingX, top, w - paddingX, bottom),
+            D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        renderTarget_->DrawTextW(line.c_str(), static_cast<UINT32>(line.size()), format, rect, brush);
+        renderTarget_->PopAxisAlignedClip();
+        brush->SetColor(original);
+    };
+
     // 动画处理：垂直模式下仅使用淡入淡出（不做位移，避免在窄窗口中跳动）
     if (cardAnimState_ == CardAnimState::Animating && cardAnimProgress_ > 0.001f
         && cardAnimProgress_ < 1.0f) {
@@ -279,36 +308,19 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
         std::wstring oldCurW = Utf8ToWide(cardPrevCurrentLine_);
         std::wstring oldNextW = Utf8ToWide(cardPrevNextLine_);
 
-        D2D1_RECT_F clipRect = D2D1::RectF(paddingX, lyricsTop, w - paddingX, h);
-        renderTarget_->PushAxisAlignedClip(clipRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-        const float vNudgeCur = 4.0f * dpiScale;
-        const float vNudgeNext = 2.0f * dpiScale;
-        const float halfH = h * 0.50f;
-
-        // 旧内容淡出（仅保留旧下一行）
+        // 旧内容淡出；新内容在原位置淡入，避免窄窗口中的位移动画越界。
+        drawVerticalLine(oldCurW, lyricsTop, lyricsMid, true, fadeOutAlpha);
         if (!oldNextW.empty()) {
-            DrawCardLyricsSingle(oldNextW, paddingX, lyricsTop + halfH - vNudgeNext, lyricsWidth,
-                                 0.0f, fadeOutAlpha,
-                                 /*isCurrent=*/false);
+            drawVerticalLine(oldNextW, lyricsMid, lyricsBottom, false, fadeOutAlpha);
         }
 
         // 新内容淡入
-        if (!curW.empty()) {
-            DrawCardLyricsSingle(curW, paddingX, lyricsTop + vNudgeCur, lyricsWidth,
-                                 0.0f, fadeInAlpha,
-                                 /*isCurrent=*/true);
-        }
-        if (!nextW.empty()) {
-            DrawCardLyricsSingle(nextW, paddingX, lyricsTop + halfH - vNudgeNext, lyricsWidth,
-                                 0.0f, fadeInAlpha,
-                                 /*isCurrent=*/false);
-        }
-
-        renderTarget_->PopAxisAlignedClip();
+        drawVerticalLine(curW, lyricsTop, lyricsMid, true, fadeInAlpha);
+        drawVerticalLine(nextW, lyricsMid, lyricsBottom, false, fadeInAlpha);
     } else {
         // 非动画状态：正常绘制
-        DrawCardLyrics(curW, nextW, paddingX, lyricsTop, lyricsWidth, 0.0f, 1.0f);
+        drawVerticalLine(curW, lyricsTop, lyricsMid, true, 1.0f);
+        drawVerticalLine(nextW, lyricsMid, lyricsBottom, false, 1.0f);
     }
 }
 

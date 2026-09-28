@@ -494,20 +494,46 @@ void TaskbarRenderer::Render(const RenderState& state) {
     bool marqueeNeedsRedraw = false;
     float scrollOffset = 0.0f;
     if (settings_.displayMode != "card") {
-        // 计算实际可用宽度（考虑封面偏移），传递给跑马灯引擎用于正确的最大滚动偏移
         const float dpiScale = static_cast<float>(dpi_) / 96.0f;
         float padLeft = isVerticalTaskbar_
             ? constants::TEXT_PADDING_X * 0.4f * dpiScale
             : constants::TEXT_PADDING_X * dpiScale;
         const float padRight = padLeft; // baseRightPadding（封面调整前）
         const bool showLyrics = (state.hasLyrics && !state.currentLine.empty());
-        if (settings_.enableCover && showLyrics) {
+        if (isVerticalTaskbar_) {
+            // 上下排布时按可用高度计算往返滚动距离，主歌词有翻译时只使用上半区。
+            float contentTop = padLeft;
+            if (settings_.enableCover && showLyrics) {
+                const float coverSize = std::max(0.0f, std::min({
+                    static_cast<float>(settings_.coverSize) * dpiScale * 0.8f,
+                    static_cast<float>(width_) - padLeft * 2.0f,
+                    static_cast<float>(height_) * 0.38f}));
+                contentTop += coverSize + padLeft * 0.5f;
+            }
+            float availableHeight = std::max(1.0f,
+                static_cast<float>(height_) - contentTop - padRight);
+            if (settings_.enableTranslation && settings_.translationMode == "below" &&
+                !state.currentTranslated.empty()) {
+                availableHeight *= 0.52f;
+            }
+            const bool useTranslation = settings_.translationMode == "replace" &&
+                settings_.enableTranslation && !state.currentTranslated.empty();
+            const std::wstring marqueeText = Utf8ToWide(
+                useTranslation ? state.currentTranslated : state.currentLine);
+            const float glyphHeight = std::max(8.0f,
+                static_cast<float>(settings_.fontSize) * dpiScale * 1.15f);
+            scrollOffset = UpdateVerticalMarquee(marqueeText, glyphHeight,
+                                                 availableHeight, marqueeNeedsRedraw);
+        } else if (settings_.enableCover && showLyrics) {
+            // 横向任务栏中封面占据歌词的左侧空间。
             const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             padLeft += coverSize + gap;
         }
-        const float availWidth = static_cast<float>(width_) - padLeft - padRight;
-        scrollOffset = UpdateMarquee(state.currentLine, static_cast<float>(state.progress), marqueeNeedsRedraw, availWidth);
+        if (!isVerticalTaskbar_) {
+            const float availWidth = static_cast<float>(width_) - padLeft - padRight;
+            scrollOffset = UpdateMarquee(state.currentLine, static_cast<float>(state.progress), marqueeNeedsRedraw, availWidth);
+        }
     }
 
     // 卡片模式歌词切换动画更新
@@ -623,36 +649,59 @@ void TaskbarRenderer::Render(const RenderState& state) {
         } else if (state.isPlaying) {
             // 纯音乐：封面 + 频谱/文字
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-            const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float paddingX = constants::TEXT_PADDING_X * dpiScale;
             const bool showCover = settings_.enableCover;
             const bool showText = (settings_.spectrumMode == "text");
             // 与有歌词时保持一致：纯音乐也绘制卡片毛玻璃背景
             DrawCardBackground();
-            if (showCover) {
+            float contentX = paddingX;
+            float contentY = 0.0f;
+            float contentW = static_cast<float>(width_) - paddingX * 2.0f;
+            float contentH = static_cast<float>(height_);
+            if (showCover && isVerticalTaskbar_) {
+                // 左右侧任务栏很窄：封面置顶、频谱/提示文字置于下方，
+                // 禁止沿用横向“封面左、内容右”的布局而把内容排到任务栏外。
+                const float narrowPadding = paddingX * 0.5f;
+                const float coverSize = std::max(0.0f, std::min({
+                    static_cast<float>(settings_.coverSize) * dpiScale * 0.8f,
+                    static_cast<float>(width_) - narrowPadding * 2.0f,
+                    static_cast<float>(height_) * 0.38f}));
+                const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
+                const float coverX = std::clamp((static_cast<float>(width_) - coverSize) * 0.5f + coverOffsetPx,
+                                                narrowPadding,
+                                                std::max(narrowPadding, static_cast<float>(width_) - narrowPadding - coverSize));
+                wchar_t fallback = FirstUtf8CharAsWide(state.songName);
+                DrawCoverArt(state.coverArtUrl, fallback, coverX, narrowPadding, coverSize);
+                contentX = narrowPadding;
+                contentY = narrowPadding + coverSize + narrowPadding * 0.5f;
+                contentW = static_cast<float>(width_) - narrowPadding * 2.0f;
+                contentH = std::max(0.0f, static_cast<float>(height_) - contentY - narrowPadding);
+            } else if (showCover) {
+                const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
                 wchar_t fallback = FirstUtf8CharAsWide(state.songName);
                 const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
                 DrawCoverArt(state.coverArtUrl, fallback, paddingX + coverOffsetPx,
                              (static_cast<float>(height_) - coverSize) / 2.0f, coverSize);
+                contentX = paddingX + coverSize + gap;
+                contentW = static_cast<float>(width_) - contentX - paddingX;
             }
-            const float contentX = showCover ? (paddingX + coverSize + gap) : paddingX;
-            const float contentW = static_cast<float>(width_) - contentX - paddingX;
             if (showText) {
                 // 显示"纯音乐，请欣赏"文字
                 static const std::wstring kInstrumentalText = L"纯音乐，请欣赏";
                 if (cardCurrentFormat_ && cardCurrentBrush_ && contentW > 10.0f) {
-                    D2D1_RECT_F layout = D2D1::RectF(contentX, 0.0f,
-                        contentX + contentW, static_cast<float>(height_));
+                    D2D1_RECT_F layout = D2D1::RectF(contentX, contentY,
+                        contentX + contentW, contentY + contentH);
                     renderTarget_->DrawTextW(
                         kInstrumentalText.c_str(),
                         static_cast<UINT32>(kInstrumentalText.size()),
                         cardCurrentFormat_.Get(), layout, cardCurrentBrush_.Get());
                 }
-            } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f) {
+            } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f && contentH > 4.0f) {
                 const float specH = constants::SPECTRUM_CARD_HEIGHT_DP * dpiScale;
-                const float specY = (static_cast<float>(height_) - specH) * 0.5f;
-                DrawSpectrumBars(state.spectrumBands, contentX, contentW, specY, specH, settings_.spectrumOpacity);
+                const float specY = contentY + (contentH - specH) * 0.5f;
+                DrawSpectrumBars(state.spectrumBands, contentX, contentW, specY,
+                                 std::min(specH, contentH), settings_.spectrumOpacity);
             }
         }
     } else {
@@ -689,19 +738,57 @@ void TaskbarRenderer::Render(const RenderState& state) {
         float coverLeft = 0.0f, coverTop = 0.0f, coverSize = 0.0f;
         wchar_t coverFallback = L' ';
         bool hasCover = false;
+        D2D1_RECT_F verticalLyricLayout{};
+        D2D1_RECT_F verticalTranslationLayout{};
+        const D2D1_RECT_F* lyricLayoutOverride = nullptr;
+        const D2D1_RECT_F* translationLayoutOverride = nullptr;
 
         if (settings_.enableCover && showLyrics) {
             const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-            coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
             const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
             const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
             coverFallback = FirstUtf8CharAsWide(state.songName);
-            // 封面垂直居中（coverSize 大于窗口高度时居顶）
-            coverTop = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
-            coverLeft = vertPaddingX + coverOffsetPx;
+            if (isVerticalTaskbar_) {
+                // 左右侧任务栏采用上下布局：封面在顶部，歌词使用下方完整宽度。
+                // 同时限制封面尺寸和偏移，绝不让它越过窄任务栏的边界。
+                coverSize = std::max(0.0f, std::min({
+                    static_cast<float>(settings_.coverSize) * dpiScale * 0.8f,
+                    static_cast<float>(width_) - baseRightPadding * 2.0f,
+                    static_cast<float>(height_) * 0.38f}));
+                coverTop = baseRightPadding;
+                coverLeft = std::clamp((static_cast<float>(width_) - coverSize) * 0.5f + coverOffsetPx,
+                                       baseRightPadding,
+                                       std::max(baseRightPadding,
+                                                static_cast<float>(width_) - baseRightPadding - coverSize));
+            } else {
+                coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+                // 封面垂直居中（coverSize 大于窗口高度时居顶）
+                coverTop = std::max(0.0f, (static_cast<float>(height_) - coverSize) / 2.0f);
+                coverLeft = vertPaddingX + coverOffsetPx;
+                // 横向任务栏中歌词向右偏移，让出封面空间。
+                vertPaddingX += coverSize + gap;
+            }
             hasCover = true;
-            // 歌词向右偏移，让出封面空间
-            vertPaddingX += coverSize + gap;
+        }
+
+        if (isVerticalTaskbar_) {
+            const float top = hasCover
+                ? coverTop + coverSize + baseRightPadding * 0.5f : baseRightPadding;
+            const float bottom = std::max(top, static_cast<float>(height_) - baseRightPadding);
+            const bool showTranslation = settings_.enableTranslation &&
+                settings_.translationMode == "below" && !state.currentTranslated.empty();
+            if (showTranslation) {
+                const float mid = top + (bottom - top) * 0.52f;
+                verticalLyricLayout = D2D1::RectF(baseRightPadding, top,
+                                                   static_cast<float>(width_) - baseRightPadding, mid);
+                verticalTranslationLayout = D2D1::RectF(baseRightPadding, mid,
+                                                         static_cast<float>(width_) - baseRightPadding, bottom);
+                translationLayoutOverride = &verticalTranslationLayout;
+            } else {
+                verticalLyricLayout = D2D1::RectF(baseRightPadding, top,
+                                                   static_cast<float>(width_) - baseRightPadding, bottom);
+            }
+            lyricLayoutOverride = &verticalLyricLayout;
         }
 
         if (state.hasLyrics && !state.currentLine.empty()) {
@@ -726,27 +813,28 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
                 // 旧行：progress=1.0（已完成），无卡拉OK、无跑马灯，渐隐
                 DrawHighlightedTextPerCharacter(lyricFadeOldText_, 1.0, false, 0.0f,
-                                               padPtr, 1.0f - fadeT, padRightPtr);
+                                               padPtr, 1.0f - fadeT, padRightPtr, lyricLayoutOverride);
                 // 旧行翻译（同步渐隐）
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !lyricFadeOldTrans_.empty()) {
-                    DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT, padRightPtr);
+                    DrawTranslatedText(lyricFadeOldTrans_, padPtr, 1.0f - fadeT,
+                                       padRightPtr, translationLayoutOverride);
                 }
 
                 // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr, fadeT, padRightPtr);
+                                               scrollOffset, padPtr, fadeT, padRightPtr, lyricLayoutOverride);
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                    DrawTranslatedText(trW, padPtr, fadeT, padRightPtr);
+                    DrawTranslatedText(trW, padPtr, fadeT, padRightPtr, translationLayoutOverride);
                 }
             } else {
                 // 非 fade：正常渲染（使用弹簧平滑进度）
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr, 1.0f, padRightPtr);
+                                               scrollOffset, padPtr, 1.0f, padRightPtr, lyricLayoutOverride);
 
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
-                    DrawTranslatedText(trW, padPtr, 1.0f, padRightPtr);
+                    DrawTranslatedText(trW, padPtr, 1.0f, padRightPtr, translationLayoutOverride);
                 }
             }
             // 歌词绘制完成后，在歌词上方绘制封面（覆盖延伸到封面区域的歌词文字）
@@ -759,31 +847,49 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 const float dpiScale = static_cast<float>(dpi_) / 96.0f;
                 const bool showText = (settings_.spectrumMode == "text");
                 float contentX = vertPaddingX;
+                float contentY = 0.0f;
                 if (settings_.enableCover) {
-                    const float pmCoverSize = static_cast<float>(settings_.coverSize) * dpiScale;
                     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
                     const float coverOffsetPx = static_cast<float>(settings_.coverOffsetX) * dpiScale;
                     wchar_t fallback = FirstUtf8CharAsWide(state.songName);
-                    const float coverY = std::max(0.0f, (static_cast<float>(height_) - pmCoverSize) / 2.0f);
-                    DrawCoverArt(state.coverArtUrl, fallback,
-                                 vertPaddingX + coverOffsetPx,
-                                 coverY, pmCoverSize);
-                    contentX += pmCoverSize + gap;
+                    if (isVerticalTaskbar_) {
+                        const float narrowPadding = baseRightPadding;
+                        const float pmCoverSize = std::max(0.0f, std::min({
+                            static_cast<float>(settings_.coverSize) * dpiScale * 0.8f,
+                            static_cast<float>(width_) - narrowPadding * 2.0f,
+                            static_cast<float>(height_) * 0.38f}));
+                        const float coverX = std::clamp(
+                            (static_cast<float>(width_) - pmCoverSize) * 0.5f + coverOffsetPx,
+                            narrowPadding,
+                            std::max(narrowPadding,
+                                     static_cast<float>(width_) - narrowPadding - pmCoverSize));
+                        DrawCoverArt(state.coverArtUrl, fallback, coverX, narrowPadding, pmCoverSize);
+                        contentX = narrowPadding;
+                        contentY = narrowPadding + pmCoverSize + narrowPadding * 0.5f;
+                    } else {
+                        const float pmCoverSize = static_cast<float>(settings_.coverSize) * dpiScale;
+                        const float coverY = std::max(0.0f, (static_cast<float>(height_) - pmCoverSize) / 2.0f);
+                        DrawCoverArt(state.coverArtUrl, fallback,
+                                     vertPaddingX + coverOffsetPx,
+                                     coverY, pmCoverSize);
+                        contentX += pmCoverSize + gap;
+                    }
                 }
                 const float contentW = static_cast<float>(width_) - contentX - vertPaddingX;
+                const float contentH = std::max(0.0f, static_cast<float>(height_) - contentY - baseRightPadding);
                 if (showText) {
                     static const std::wstring kInstrumentalText = L"纯音乐，请欣赏";
-                    if (textFormat_ && normalBrush_ && contentW > 10.0f) {
-                        D2D1_RECT_F layout = D2D1::RectF(contentX, 0.0f,
-                            contentX + contentW, static_cast<float>(height_));
+                    if (textFormat_ && normalBrush_ && contentW > 10.0f && contentH > 4.0f) {
+                        D2D1_RECT_F layout = D2D1::RectF(contentX, contentY,
+                            contentX + contentW, contentY + contentH);
                         renderTarget_->DrawTextW(
                             kInstrumentalText.c_str(),
                             static_cast<UINT32>(kInstrumentalText.size()),
                             textFormat_.Get(), layout, normalBrush_.Get());
                     }
-                } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f) {
+                } else if (SpectrumHasSignal(state.spectrumBands) && contentW > 10.0f && contentH > 4.0f) {
                     DrawSpectrumBars(state.spectrumBands, contentX, contentW,
-                                     0.0f, static_cast<float>(height_), settings_.spectrumOpacity);
+                                     contentY, contentH, settings_.spectrumOpacity);
                 }
             }
         }

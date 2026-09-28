@@ -177,6 +177,91 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
     return 0.0f;
 }
 
+float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
+                                             float glyphHeight,
+                                             float availableHeight,
+                                             bool& needRedraw) {
+    needRedraw = false;
+    const MarqueeMode mode = ParseMarqueeMode(settings_.marqueeMode);
+    if (!settings_.enableMarquee || mode == MarqueeMode::Off || lyricText.empty() ||
+        glyphHeight <= 0.0f || availableHeight <= 0.0f) {
+        if (verticalMarqueeState_ != MarqueeState::Idle || verticalScrollOffset_ != 0.0f) {
+            verticalMarqueeState_ = MarqueeState::Idle;
+            verticalScrollOffset_ = 0.0f;
+            verticalMaxOffset_ = 0.0f;
+            needRedraw = true;
+        }
+        return 0.0f;
+    }
+
+    const float maxOffset = std::max(0.0f,
+        glyphHeight * static_cast<float>(lyricText.size()) - availableHeight);
+    const double now = GetCurrentTimeSeconds();
+    if (lyricText != verticalMarqueeText_ ||
+        std::abs(maxOffset - verticalMaxOffset_) > 0.5f) {
+        verticalMarqueeText_ = lyricText;
+        verticalScrollOffset_ = 0.0f;
+        verticalMaxOffset_ = maxOffset;
+        verticalStateStartTime_ = now;
+        verticalLastUpdateTime_ = now;
+        verticalMarqueeState_ = maxOffset > 1.0f ? MarqueeState::Delay : MarqueeState::Idle;
+        needRedraw = true;
+        return 0.0f;
+    }
+
+    if (verticalMarqueeState_ == MarqueeState::Idle) return 0.0f;
+
+    const double elapsed = now - verticalStateStartTime_;
+    const double frameDelta = verticalLastUpdateTime_ > 0.0
+        ? now - verticalLastUpdateTime_ : 0.016;
+    verticalLastUpdateTime_ = now;
+    const float step = std::max(0.0f, static_cast<float>(frameDelta)) *
+        std::max(1.0f, settings_.marqueeSpeedPxPerSec);
+
+    switch (verticalMarqueeState_) {
+    case MarqueeState::Delay:
+        needRedraw = true;
+        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueeDelayMs)) {
+            verticalMarqueeState_ = MarqueeState::ScrollLeft;
+            verticalStateStartTime_ = now;
+        }
+        break;
+    case MarqueeState::ScrollLeft:
+        verticalScrollOffset_ = std::min(verticalScrollOffset_ + step, verticalMaxOffset_);
+        needRedraw = true;
+        if (verticalScrollOffset_ >= verticalMaxOffset_) {
+            verticalMarqueeState_ = MarqueeState::PauseRight;
+            verticalStateStartTime_ = now;
+        }
+        break;
+    case MarqueeState::PauseRight:
+        needRedraw = true;
+        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
+            verticalMarqueeState_ = MarqueeState::ScrollRight;
+            verticalStateStartTime_ = now;
+        }
+        break;
+    case MarqueeState::ScrollRight:
+        verticalScrollOffset_ = std::max(0.0f, verticalScrollOffset_ - step);
+        needRedraw = true;
+        if (verticalScrollOffset_ <= 0.0f) {
+            verticalMarqueeState_ = MarqueeState::PauseLeft;
+            verticalStateStartTime_ = now;
+        }
+        break;
+    case MarqueeState::PauseLeft:
+        needRedraw = true;
+        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
+            verticalMarqueeState_ = MarqueeState::Delay;
+            verticalStateStartTime_ = now;
+        }
+        break;
+    case MarqueeState::Idle:
+        break;
+    }
+    return verticalScrollOffset_;
+}
+
 // ═════════════════════════════════════════
 // 卡片模式歌词切换动画（淡入淡出 + 位移）
 // ═════════════════════════════════════════

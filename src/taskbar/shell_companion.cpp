@@ -596,8 +596,9 @@ void ShellCompanion::PositionLyricsInTaskbar(
         if (widthOverrideDip > 0) {
             w = std::max(w, ::MulDiv(widthOverrideDip, info_.dpi, 96));
         }
-        w = std::min(w, tbWidth - 2);
-        w = std::max(w, constants::MIN_WINDOW_WIDTH);
+        // 垂直任务栏必须以实际任务栏宽度为硬上限。此前再套用
+        // MIN_WINDOW_WIDTH 会在窄任务栏（或自动隐藏的瞬态宽度）中把窗口撑到栏外。
+        w = std::clamp(w, 1, std::max(1, tbWidth - 2));
         x = tbRect.right - w;
 
         int availableBottom = tbRect.bottom;
@@ -609,7 +610,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
             isCardMode ? constants::CARD_HEIGHT_BASE_DP * 4 : constants::LYRIC_HEIGHT_BASE_DP * 6,
             info_.dpi, 96);
         int availableH = availableBottom - tbRect.top;
-        h = std::min(maxLyricHeight, std::max(availableH, lyricH));
+        h = std::min(maxLyricHeight, std::max(1, availableH));
 
         y = tbRect.top + (availableH - h) / 2 + dragOffsetY;
         break;
@@ -619,8 +620,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
         if (widthOverrideDip > 0) {
             w = std::max(w, ::MulDiv(widthOverrideDip, info_.dpi, 96));
         }
-        w = std::min(w, tbWidth - 2);
-        w = std::max(w, constants::MIN_WINDOW_WIDTH);
+        w = std::clamp(w, 1, std::max(1, tbWidth - 2));
         x = tbRect.left;
 
         int availableBottom = tbRect.bottom;
@@ -632,7 +632,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
             isCardMode ? constants::CARD_HEIGHT_BASE_DP * 4 : constants::LYRIC_HEIGHT_BASE_DP * 6,
             info_.dpi, 96);
         int availableH = availableBottom - tbRect.top;
-        h = std::min(maxLyricHeight, std::max(availableH, lyricH));
+        h = std::min(maxLyricHeight, std::max(1, availableH));
 
         y = tbRect.top + (availableH - h) / 2 + dragOffsetY;
         break;
@@ -642,8 +642,14 @@ void ShellCompanion::PositionLyricsInTaskbar(
         break;
     }
 
-    w = std::max(w, constants::MIN_WINDOW_WIDTH);
-    h = std::max(h, lyricH);
+    if (info_.position == TaskbarPosition::LEFT ||
+        info_.position == TaskbarPosition::RIGHT) {
+        w = std::clamp(w, 1, std::max(1, tbWidth));
+        h = std::clamp(h, 1, std::max(1, tbHeight));
+    } else {
+        w = std::max(w, constants::MIN_WINDOW_WIDTH);
+        h = std::max(h, lyricH);
+    }
 
     // 防御性检查：确保窗口坐标在任务栏范围内
     if (info_.position == TaskbarPosition::LEFT ||
