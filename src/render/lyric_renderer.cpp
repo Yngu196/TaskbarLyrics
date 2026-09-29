@@ -120,16 +120,33 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
             glyphY = layoutRect.top + (layoutHeight - totalHeight) * 0.5f;
         }
 
-        const UINT32 highlightedCount = enableKaraoke
-            ? static_cast<UINT32>(std::ceil(std::clamp(progress, 0.0, 1.0) * length))
-            : 0;
         renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+        // 先完整绘制普通文字，再叠加一个连续的高亮裁剪区。不能按 ceil(progress * length)
+        // 直接换整字颜色，否则侧栏纵排文字会在每个字的起点突然跳亮。
         for (UINT32 i = 0; i < length; ++i) {
             const D2D1_RECT_F glyphRect = D2D1::RectF(
                 layoutRect.left, glyphY + glyphHeight * static_cast<float>(i),
                 layoutRect.right, glyphY + glyphHeight * static_cast<float>(i + 1));
-            renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect,
-                (enableKaraoke && i < highlightedCount) ? highlightBrush_.Get() : normalBrush_.Get());
+            renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect, normalBrush_.Get());
+        }
+
+        if (enableKaraoke && progress > 0.0) {
+            const float highlightBottom = glyphY + totalHeight * static_cast<float>(std::clamp(progress, 0.0, 1.0));
+            const UINT32 highlightGlyphCount = static_cast<UINT32>(std::ceil(
+                std::clamp(progress, 0.0, 1.0) * length));
+            if (highlightGlyphCount > 0) {
+                renderTarget_->PushAxisAlignedClip(
+                    D2D1::RectF(layoutRect.left, glyphY, layoutRect.right, highlightBottom),
+                    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                for (UINT32 i = 0; i < highlightGlyphCount; ++i) {
+                    const D2D1_RECT_F glyphRect = D2D1::RectF(
+                        layoutRect.left, glyphY + glyphHeight * static_cast<float>(i),
+                        layoutRect.right, glyphY + glyphHeight * static_cast<float>(i + 1));
+                    renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect, highlightBrush_.Get());
+                }
+                renderTarget_->PopAxisAlignedClip();
+            }
         }
         renderTarget_->PopAxisAlignedClip();
     } else if (needsMarquee) {

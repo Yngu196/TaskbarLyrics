@@ -178,6 +178,7 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
 }
 
 float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
+                                             float progress,
                                              float glyphHeight,
                                              float availableHeight,
                                              bool& needRedraw) {
@@ -204,7 +205,9 @@ float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
         verticalMaxOffset_ = maxOffset;
         verticalStateStartTime_ = now;
         verticalLastUpdateTime_ = now;
-        verticalMarqueeState_ = maxOffset > 1.0f ? MarqueeState::Delay : MarqueeState::Idle;
+        // 与横向任务栏一致：新歌词直接进入跟随进度的滚动阶段，避免固定延迟
+        // 使短句在尚未超出实际可视区域时就开始上移。
+        verticalMarqueeState_ = maxOffset > 1.0f ? MarqueeState::ScrollLeft : MarqueeState::Idle;
         needRedraw = true;
         return 0.0f;
     }
@@ -215,25 +218,42 @@ float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
     const double frameDelta = verticalLastUpdateTime_ > 0.0
         ? now - verticalLastUpdateTime_ : 0.016;
     verticalLastUpdateTime_ = now;
-    const float step = std::max(0.0f, static_cast<float>(frameDelta)) *
-        std::max(1.0f, settings_.marqueeSpeedPxPerSec);
+    // 使用纵向实际可视高度计算超长文本的加速比；不能套用横向窗口宽度。
+    float speed = std::max(1.0f, settings_.marqueeSpeedPxPerSec);
+    const float textHeight = glyphHeight * static_cast<float>(lyricText.size());
+    if (textHeight > availableHeight * constants::MARQUEE_SPEEDUP_THRESHOLD) {
+        const float ratio = textHeight / availableHeight;
+        speed *= std::min(ratio / constants::MARQUEE_SPEEDUP_THRESHOLD, 3.0f);
+    }
+    const float step = std::max(0.0f, static_cast<float>(frameDelta)) * speed;
 
     switch (verticalMarqueeState_) {
     case MarqueeState::Delay:
+        // 仅在回到起点后的下一轮使用延迟；首轮滚动与横向任务栏同步。
         needRedraw = true;
         if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueeDelayMs)) {
             verticalMarqueeState_ = MarqueeState::ScrollLeft;
             verticalStateStartTime_ = now;
+            verticalLastUpdateTime_ = now;
+            verticalScrollOffset_ = 0.0f;
         }
         break;
-    case MarqueeState::ScrollLeft:
-        verticalScrollOffset_ = std::min(verticalScrollOffset_ + step, verticalMaxOffset_);
+    case MarqueeState::ScrollLeft: {
+        // 让滚动目标跟随歌词进度，保证整句在播放结束前刚好移动到末端；
+        // step 只负责限制每帧变化，避免进度跳变造成视觉突跳。
+        const float targetOffset = std::clamp(progress, 0.0f, 1.0f) * verticalMaxOffset_;
+        if (verticalScrollOffset_ < targetOffset) {
+            verticalScrollOffset_ = std::min(verticalScrollOffset_ + step, targetOffset);
+        } else if (verticalScrollOffset_ > targetOffset) {
+            verticalScrollOffset_ = std::max(verticalScrollOffset_ - step, targetOffset);
+        }
         needRedraw = true;
-        if (verticalScrollOffset_ >= verticalMaxOffset_) {
+        if (verticalScrollOffset_ >= verticalMaxOffset_ && progress >= 1.0f) {
             verticalMarqueeState_ = MarqueeState::PauseRight;
             verticalStateStartTime_ = now;
         }
         break;
+    }
     case MarqueeState::PauseRight:
         needRedraw = true;
         if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
@@ -242,6 +262,7 @@ float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
         }
         break;
     case MarqueeState::ScrollRight:
+        // 从右端（底端）平滑回位，而非每帧重新从最大值扣除同一距离。
         verticalScrollOffset_ = std::max(0.0f, verticalScrollOffset_ - step);
         needRedraw = true;
         if (verticalScrollOffset_ <= 0.0f) {

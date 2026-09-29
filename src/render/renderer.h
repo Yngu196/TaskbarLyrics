@@ -140,8 +140,8 @@ private:
     /// availableWidth: 歌词实际可用宽度（已考虑封面偏移），用于计算正确的最大滚动偏移
     float UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw, float availableWidth = 0.0f);
 
-    /// 垂直任务栏专用：按文字高度驱动上下往返滚动。
-    float UpdateVerticalMarquee(const std::wstring& lyricText, float glyphHeight,
+    /// 垂直任务栏专用：按实际可视高度与歌词进度驱动上下往返滚动。
+    float UpdateVerticalMarquee(const std::wstring& lyricText, float progress, float glyphHeight,
                                 float availableHeight, bool& needRedraw);
 
     HWND hwnd_{nullptr};

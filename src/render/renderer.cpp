@@ -526,7 +526,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
                 useTranslation ? state.currentTranslated : state.currentLine);
             const float glyphHeight = std::max(8.0f,
                 static_cast<float>(settings_.fontSize) * dpiScale * 1.15f);
-            scrollOffset = UpdateVerticalMarquee(marqueeText, glyphHeight,
+            scrollOffset = UpdateVerticalMarquee(marqueeText, static_cast<float>(state.progress), glyphHeight,
                                                  availableHeight, marqueeNeedsRedraw);
         } else if (settings_.enableCover && showLyrics) {
             // 横向任务栏中封面占据歌词的左侧空间。
