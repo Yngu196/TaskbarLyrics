@@ -1233,8 +1233,9 @@ void D2DSettingsWindow::ArrangeUI() {
     const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
     int contentW = clientW - navW;
 
-    // 限制内容区最大宽度，最大化时避免卡片过度拉伸
-    const int kMaxContentWidth = 700;
+    // 普通窗口沿用紧凑布局；宽屏/全屏时允许内容区扩展，避免两侧留下大面积空白。
+    // 960 DIP 仍能让双列表单控件保持易读，且只影响布局尺寸，不增加绘制资源。
+    const int kMaxContentWidth = 960;
     if (contentW > kMaxContentWidth) {
         contentW = kMaxContentWidth;
     }
