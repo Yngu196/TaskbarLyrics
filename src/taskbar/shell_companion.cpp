@@ -661,6 +661,11 @@ void ShellCompanion::PositionLyricsInTaskbar(
         if (x < tbRect.left) x = tbRect.left;
         if (x + w > tbRect.right) x = tbRect.right - w;
         if (x < tbRect.left) x = tbRect.left;
+        // 上/下任务栏的窗口高度等于任务栏高度。若复用了纵向配置中的
+        // offsetY，必须把 y 收回任务栏，避免窗口整体漂到任务栏外。
+        if (y < tbRect.top) y = tbRect.top;
+        if (y + h > tbRect.bottom) y = tbRect.bottom - h;
+        if (y < tbRect.top) y = tbRect.top;
     }
 
     // 调试日志

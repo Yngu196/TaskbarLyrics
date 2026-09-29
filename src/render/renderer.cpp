@@ -480,6 +480,10 @@ void TaskbarRenderer::PresentToLayeredWindow() {
 void TaskbarRenderer::Render(const RenderState& state) {
     if (!initialized_ || !renderTarget_) return;
 
+    // 左右侧任务栏的可用宽度不足以可靠呈现双行卡片；运行时强制走单行路径。
+    // 不改写 settings_，这样返回顶部/底部任务栏时会自动恢复用户保存的卡片模式。
+    const bool cardMode = settings_.displayMode == "card" && !isVerticalTaskbar_;
+
     static int renderEntryLogCount = 0;
     if (++renderEntryLogCount <= 5) {
         Log("[RENDER] entry #%d: displayMode='%s' hasLyrics=%d isPlaying=%d curLine='%s' coverUrl='%s'\n",
@@ -493,7 +497,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 跑马灯状态机更新（仅 karaoke 模式）
     bool marqueeNeedsRedraw = false;
     float scrollOffset = 0.0f;
-    if (settings_.displayMode != "card") {
+    if (!cardMode) {
         const float dpiScale = static_cast<float>(dpi_) / 96.0f;
         float padLeft = isVerticalTaskbar_
             ? constants::TEXT_PADDING_X * 0.4f * dpiScale
@@ -538,7 +542,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
     // 卡片模式歌词切换动画更新
     bool cardScrollNeedsRedraw = false;
-    if (settings_.displayMode == "card") {
+    if (cardMode) {
         cardScrollNeedsRedraw = UpdateCardAnim(state.currentLine, state.nextLine,
                                                state.currentLineIndex);
     }
@@ -548,7 +552,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 先获取当前时间供后续弹簧步进重用（避免多次 QPC 调用）
     const double now = GetCurrentTimeSeconds();
     double smoothProgress = state.progress; // 默认值：弹簧未启动时直接用原始进度
-    if (settings_.displayMode != "card" && state.hasLyrics && !state.currentLine.empty()) {
+    if (!cardMode && state.hasLyrics && !state.currentLine.empty()) {
         // 翻译替换模式下，歌词切换动画应使用替换后的文本
         const bool isReplaceEarly = (settings_.translationMode == "replace" &&
                                      settings_.enableTranslation &&
@@ -619,7 +623,7 @@ void TaskbarRenderer::Render(const RenderState& state) {
         renderTarget_->Clear(D2D1::ColorF(0, 0, 0, 0.0f));
     }
 
-    if (settings_.displayMode == "card") {
+    if (cardMode) {
         // ═════ 卡片样式渲染路径 ═════
         if (state.hasLyrics && !state.currentLine.empty()) {
             // 卡片模式翻译处理
@@ -876,7 +880,11 @@ void TaskbarRenderer::Render(const RenderState& state) {
                     }
                 }
                 const float contentW = static_cast<float>(width_) - contentX - vertPaddingX;
-                const float contentH = std::max(0.0f, static_cast<float>(height_) - contentY - baseRightPadding);
+                // 横向任务栏维持原有的整条任务栏可用高度，确保频谱/提示文字
+                // 精确居中；只有纵向任务栏才需要为顶部封面保留底部边距。
+                const float contentH = isVerticalTaskbar_
+                    ? std::max(0.0f, static_cast<float>(height_) - contentY - baseRightPadding)
+                    : static_cast<float>(height_);
                 if (showText) {
                     static const std::wstring kInstrumentalText = L"纯音乐，请欣赏";
                     if (textFormat_ && normalBrush_ && contentW > 10.0f && contentH > 4.0f) {

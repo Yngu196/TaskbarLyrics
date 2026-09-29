@@ -138,6 +138,13 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
         c1->AddChild(std::move(dm));
     }
     {
+        auto hint = std::make_unique<TextBlock>();
+        hint->id = "verticalTaskbarModeHint";
+        hint->text = "左侧或右侧任务栏将自动使用单行歌词；双行歌词仅适用于顶部和底部任务栏";
+        hint->style = TextBlock::Style::Caption;
+        c1->AddChild(std::move(hint));
+    }
+    {
         auto t = std::make_unique<Toggle>();
         t->id = "karaoke";
         t->label = "逐字高亮";

@@ -150,6 +150,14 @@ void HandleFrameTick(AppContext& app) {
                 app.taskbarWindow->Reposition();
                 app.config->Save();
             }
+            // 左右侧任务栏仅使用单行歌词窗口；上/下侧恢复保存的显示模式。
+            const std::string effectiveDisplayMode = verticalTaskbar
+                ? "karaoke" : app.config->Appearance().displayMode;
+            if (app.taskbarWindow->GetDisplayMode() != effectiveDisplayMode) {
+                app.taskbarWindow->SetDisplayMode(effectiveDisplayMode);
+                app.taskbarWindow->InvalidatePositionCache();
+                app.taskbarWindow->Reposition();
+            }
             // 同步方向到渲染器后执行渲染。
             app.renderer->SetVerticalTaskbar(verticalTaskbar);
             app.renderer->Render(state);

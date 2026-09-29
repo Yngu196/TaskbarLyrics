@@ -193,7 +193,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     config.SwitchTaskbarOrientation(taskbarWindow.IsVerticalTaskbar());
 
     // 应用配置中的显示模式（必须在 Reposition 之前，影响宽度计算）
-    taskbarWindow.SetDisplayMode(config.Appearance().displayMode);
+    taskbarWindow.SetDisplayMode(taskbarWindow.IsVerticalTaskbar()
+        ? "karaoke" : config.Appearance().displayMode);
     taskbarWindow.SetCardMaxExpandRatio(config.Appearance().cardMaxExpandRatio);
     taskbarWindow.SetWidthOverride(config.Appearance().windowWidthOverride);
     // 应用任务栏显示位置模式（自动跟随 / 手动指定），启动时恢复上次选择

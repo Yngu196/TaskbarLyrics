@@ -132,7 +132,8 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
 
                 ApplyRendererSettings(app);
                 if (app.taskbarWindow) {
-                    app.taskbarWindow->SetDisplayMode(cfg.Appearance().displayMode);
+                    app.taskbarWindow->SetDisplayMode(app.taskbarWindow->IsVerticalTaskbar()
+                        ? "karaoke" : cfg.Appearance().displayMode);
                     app.taskbarWindow->SetCardMaxExpandRatio(cfg.Appearance().cardMaxExpandRatio);
                     app.taskbarWindow->SetWidthOverride(cfg.Appearance().windowWidthOverride);
                     app.taskbarWindow->SetDisplaySelectionMode(cfg.Appearance().displaySelectionMode,
