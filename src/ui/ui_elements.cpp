@@ -123,7 +123,7 @@ void Button::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
 
     float hoverT = hoverT_;
 
-    // 按钮背景色（使用紫色主题）
+    // 默认按钮保持接近卡片底色，以边框与强调色反馈状态；避免亮色主题下的大面积灰块。
     D2D1_COLOR_F bgDefault, bgHover, bgPress, textColor;
     if (isPrimary) {
         bgDefault = ctx.accent;                // #6C5CE7
@@ -136,12 +136,12 @@ void Button::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         bgPress   = D2D1::ColorF(0.867f, 0.294f, 0.294f, 1.0f);
         textColor = D2D1::ColorF(1, 1, 1, 1);
     } else {
-        // 默认按钮：基于主题 surface 色派生（使用访问器以兼容亮色模式）
+        // 默认按钮：仅作轻微强调色混合，亮暗主题都能维持干净层级。
         auto s = ctx.Surface();
-        bgDefault = D2D1::ColorF(s.r * 0.9f, s.g * 0.9f, s.b * 0.9f, 1.0f);
-        bgHover   = D2D1::ColorF(s.r * 1.1f, s.g * 1.1f, s.b * 1.1f, 1.0f);
-        bgPress   = D2D1::ColorF(s.r * 0.75f, s.g * 0.75f, s.b * 0.75f, 1.0f);
-        textColor = ctx.Text();
+        bgDefault = s;
+        bgHover   = LerpColor(s, ctx.accent, 0.08f);
+        bgPress   = LerpColor(s, ctx.accent, 0.16f);
+        textColor = ctx.accent;
     }
 
     D2D1_COLOR_F bgColor = bgDefault;
@@ -151,31 +151,24 @@ void Button::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         bgColor = LerpColor(bgDefault, bgHover, hoverT);
     }
 
-    // 按钮阴影（悬停/主按钮时更明显）
-    float shadowAlpha = isPrimary ? 0.3f : (0.15f + 0.15f * hoverT);
+    // 仅保留很轻的层次投影，避免表单控件看起来过重。
+    float shadowAlpha = isPrimary ? 0.16f : (0.03f + 0.05f * hoverT);
     if (shadowAlpha > 0.01f) {
         auto shadowBrush = MakeBrush(rt, D2D1::ColorF(0, 0, 0, shadowAlpha));
         rt->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(x_ + 1, y_ + 2, x_ + w_ + 1, y_ + h_ + 3), 6, 6),
+            D2D1::RoundedRect(D2D1::RectF(x_ + 1, y_ + 1, x_ + w_ + 1, y_ + h_ + 2), 7, 7),
             shadowBrush.Get());
     }
 
-    // 圆角6px按钮背景
+    // 7px 圆角与卡片保持一致，但不增加额外绘制层。
     auto bgBrush = MakeBrush(rt, bgColor);
-    D2D1_ROUNDED_RECT rr = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_), 6, 6};
+    D2D1_ROUNDED_RECT rr = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_), 7, 7};
     rt->FillRoundedRectangle(rr, bgBrush.Get());
 
-    // 悬停时加一个微妙的顶部高光
-    if (hoverT > 0.01f && !pressed) {
-        auto highlightBrush = MakeBrush(rt, D2D1::ColorF(1, 1, 1, 0.06f * hoverT));
-        D2D1_ROUNDED_RECT hlRR = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_ / 2), 6, 6};
-        rt->FillRoundedRectangle(hlRR, highlightBrush.Get());
-    }
-
-    // 边框（主按钮用亮色边框，默认用半透明边框；亮色模式自适应）
+    // 边框提供清晰但克制的可点击感。
     D2D1_COLOR_F borderColor = isPrimary
         ? LerpColor(ctx.accent, ctx.Border(), hoverT)
-        : ctx.Border();
+        : (hoverT > 0.01f ? D2D1::ColorF(ctx.accent.r, ctx.accent.g, ctx.accent.b, 0.50f) : ctx.Border());
     auto borderBrush = MakeBrush(rt, borderColor);
     rt->DrawRoundedRectangle(rr, borderBrush.Get(), 1);
 
@@ -514,11 +507,11 @@ void ComboBox::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     const float boxH = 30;
     const float boxY = y_ + 5;
 
-    // 背景（基于主题 surface 色派生 → hover 更亮；使用访问器兼容亮色模式）
+    // 采用细描边输入框风格，避免下拉框成为厚重的灰色块。
     auto surf = ctx.Surface();
     D2D1_COLOR_F bgColor = hovered
-        ? D2D1::ColorF(surf.r * 1.1f, surf.g * 1.1f, surf.b * 1.1f, 1.0f)
-        : D2D1::ColorF(surf.r * 0.9f, surf.g * 0.9f, surf.b * 0.9f, 1.0f);
+        ? LerpColor(surf, ctx.accent, 0.07f)
+        : LerpColor(surf, ctx.Border(), 0.24f);
     auto boxBg = MakeBrush(rt, bgColor);
     rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + boxH), 6, 6),
                               boxBg.Get());
@@ -621,10 +614,11 @@ void Card::Draw(ID2D1RenderTarget* rt) {
 void Card::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 卡片阴影（微妙的深色投影）
-    auto shadowBrush = MakeBrush(rt, D2D1::ColorF(0, 0, 0, 0.25f));
+    // 单层、低透明度投影：保留分层但不在亮色主题形成厚重底边。
+    const float shadowAlpha = ctx.isDarkMode ? 0.16f : 0.07f;
+    auto shadowBrush = MakeBrush(rt, D2D1::ColorF(0, 0, 0, shadowAlpha));
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(x_ + 2, y_ + 3, x_ + w_ + 2, y_ + h_ + 4), cornerRadius, cornerRadius),
+        D2D1::RoundedRect(D2D1::RectF(x_ + 1, y_ + 2, x_ + w_ + 1, y_ + h_ + 2), cornerRadius, cornerRadius),
         shadowBrush.Get());
 
     // 卡片背景（微蓝紫表面色）
@@ -633,23 +627,23 @@ void Card::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     D2D1_ROUNDED_RECT rr = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_), cornerRadius, cornerRadius};
     rt->FillRoundedRectangle(rr, cardBg.Get());
 
-    // 卡片顶部高光（模拟微妙的光泽）
-    auto highlightBrush = MakeBrush(rt, D2D1::ColorF(1, 1, 1, 0.03f));
-    D2D1_ROUNDED_RECT hlRR = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_ * 0.3f), cornerRadius, cornerRadius};
-    rt->FillRoundedRectangle(hlRR, highlightBrush.Get());
-
     // 卡片边框（使用主题边框色，亮暗模式自适应）
     auto cardBorder = MakeBrush(rt, ctx.Border());
     rt->DrawRoundedRectangle(rr, cardBorder.Get(), 1);
 
-    // 标题（Segoe UI Variable 13px SemiBold）
+    // 标题使用短强调色标记，帮助长表单快速分组。
     if (!title.empty()) {
+        auto accentBrush = MakeBrush(rt, ctx.accent);
+        rt->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x_ + padding.left, y_ + padding.top + 5,
+                                          x_ + padding.left + 3, y_ + padding.top + 19), 1.5f, 1.5f),
+            accentBrush.Get());
         auto fmt = MakeTextFormat(L"Segoe UI Variable", 13, DWRITE_FONT_WEIGHT_SEMI_BOLD);
         if (fmt) {
             auto txtBrush = MakeBrush(rt, ctx.Text());
             std::wstring wtitle = Utf8ToWide(title);
             rt->DrawTextW(wtitle.c_str(), static_cast<UINT32>(wtitle.size()),
-                          fmt.Get(), D2D1::RectF(x_ + padding.left, y_ + padding.top,
+                          fmt.Get(), D2D1::RectF(x_ + padding.left + 10, y_ + padding.top,
                                                   x_ + w_ - padding.right, y_ + padding.top + 24),
                           txtBrush.Get());
         }
@@ -706,8 +700,8 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     float insetW = w_ - 16;
 
     if (selected) {
-        // 选中背景：使用访问器兼容亮色模式
-        auto selBg = MakeBrush(rt, ctx.Surface());
+        // 选中背景带轻微强调色，亮色主题下也能一眼识别当前位置。
+        auto selBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.accent, 0.10f));
         rt->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 2, insetX + insetW, y_ + h_ - 2), 6, 6),
             selBg.Get());
@@ -718,9 +712,8 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
             D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 8, insetX + 3, y_ + h_ - 8), 1.5f, 1.5f),
             accent.Get());
     } else if (hovered) {
-        // 悬停背景：使用主题 surface 色派生，亮暗模式自适应
-        auto surf = ctx.Surface();
-        auto hoverBg = MakeBrush(rt, D2D1::ColorF(surf.r * 1.05f, surf.g * 1.05f, surf.b * 1.05f, 1.0f));
+        // 悬停反馈比选中态更弱，避免侧栏抢占内容区注意力。
+        auto hoverBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.accent, 0.05f));
         rt->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 2, insetX + insetW, y_ + h_ - 2), 6, 6),
             hoverBg.Get());
