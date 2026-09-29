@@ -76,10 +76,6 @@ void WebSocketClient::Disconnect() {
     stopRequested_.store(true);
     reconnectNow_.store(false);
 
-    if (cleanupThread_.joinable()) {
-        cleanupThread_.join();
-    }
-
     // 先等待 reconnectThread 退出，避免 ix::WebSocket::stop() 与 reconnectThread 死锁
     if (reconnectThread_.joinable()) {
         // ReconnectLoop 的等待粒度为 100ms，stopRequested_ 可快速打断；
@@ -90,22 +86,21 @@ void WebSocketClient::Disconnect() {
     // reconnectThread 已退出后再关闭 client
     // ix::WebSocket::stop() 在等待关闭握手时可能无限阻塞，
     // 且与回调线程可能产生死锁。
-    // 解决方案：在独立线程中异步清理，不阻塞主线程。
-    // 进程退出后 OS 会自动回收所有资源。
+    // 解决方案：在独立线程中异步清理，且不在 UI 退出路径等待关闭握手。
+    // 闭包独占 wsPtr，不访问 WebSocketClient；即使库内部 stop() 卡住，
+    // 也不会阻塞主线程或在对象析构后访问悬空状态。
     if (client_) {
         auto wsPtr = std::move(client_);  // 取走所有权
         client_.reset();
-        // 在独立线程中执行 stop + 析构，但由本对象持有线程并在 Disconnect 返回前 join。
-        cleanupThread_ = std::thread([wsPtr = std::move(wsPtr)]() mutable {
+        std::thread([wsPtr = std::move(wsPtr)]() mutable {
             try { wsPtr->stop(); } catch (const std::exception& e) {
                 LogError("[WS] Exception during async stop: %s\n", e.what());
             } catch (...) {
                 LogError("[WS] Unknown exception during async stop\n");
             }
             // wsPtr 离开作用域自动析构
-        });
-        cleanupThread_.join();
-        Log("[WS] WebSocket cleanup joined\n");
+        }).detach();
+        Log("[WS] WebSocket cleanup dispatched\n");
     }
 
     if (connected_.exchange(false)) {

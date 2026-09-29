@@ -35,6 +35,30 @@ bool SpectrumHasSignal(const std::vector<float>& bands) {
 
 } // namespace
 
+CoverDownloadCtx::~CoverDownloadCtx() {
+    CancelAndJoin();
+}
+
+void CoverDownloadCtx::CancelAndJoin() {
+    cancelRequested.store(true, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(workerMutex);
+    if (worker.joinable()) {
+        // URLDownloadToFileW 通常会由 IBindStatusCallback 的 E_ABORT 退出；
+        // 网络栈无响应时不能让渲染/退出线程无限等待。worker 的闭包持有
+        // shared_ptr<CoverDownloadCtx>，因此超时 detach 后上下文仍安全存活。
+        const DWORD waitResult = ::WaitForSingleObject(
+            worker.native_handle(), constants::THREAD_JOIN_TIMEOUT_MS);
+        if (waitResult == WAIT_OBJECT_0) {
+            worker.join();
+        } else {
+            LogError("[COVER] Download worker did not stop within %d ms; detaching cleanup\n",
+                     constants::THREAD_JOIN_TIMEOUT_MS);
+            worker.detach();
+        }
+    }
+    coverLoadInProgress.store(false, std::memory_order_release);
+}
+
 TaskbarRenderer::TaskbarRenderer() : coverCtx_(std::make_shared<CoverDownloadCtx>()) {}
 
 TaskbarRenderer::~TaskbarRenderer() {
@@ -339,8 +363,9 @@ void TaskbarRenderer::Shutdown() {
     blurredBgBitmapW_ = 0.0f;
     cachedCoverUrl_.clear();       // 清除 URL 缓存，避免重建后误判无需下载
     coverCtx_->coverLoadInProgress.store(false, std::memory_order_release);
-    coverCtx_->cancelRequested.store(false, std::memory_order_release);
-    coverCtx_->coverDownloadGen.store(0, std::memory_order_release);  // 重置代际计数器
+    // 不复位取消标志或代际编号：若 URLMon 在超时后仍滞留，旧 worker 必须
+    // 永远保持可取消且其结果不能与重建后的新下载使用相同代际。
+    coverCtx_->coverDownloadGen.fetch_add(1, std::memory_order_acq_rel);
     {
         // 排空无锁队列中可能残留的封面数据
         std::vector<uint8_t> stale;

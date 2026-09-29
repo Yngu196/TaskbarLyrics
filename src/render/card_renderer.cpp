@@ -360,12 +360,19 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
         std::shared_ptr<CoverDownloadCtx> ctx = coverCtx_;
         bool debugLog = debugLog_;
         std::thread downloadWorker([ctx, targetUrl, gen, debugLog]() {
+            // 超时回收后旧下载线程可能晚于新下载结束；只能由当前代际
+            // 修改 in-progress 状态，避免旧线程误把新下载标记为完成。
+            const auto finishIfCurrent = [&ctx, gen]() {
+                if (ctx->coverDownloadGen.load(std::memory_order_acquire) == gen) {
+                    ctx->coverLoadInProgress.store(false, std::memory_order_release);
+                }
+            };
             // 下载到临时文件，然后读入内存立即删除（避免磁盘持久化）
             wchar_t tempPath[MAX_PATH] = {0};
             ::GetTempPathW(MAX_PATH, tempPath);
             wchar_t tempFile[MAX_PATH] = {0};
             if (!::GetTempFileNameW(tempPath, L"mkl_", 0, tempFile)) {
-                ctx->coverLoadInProgress.store(false, std::memory_order_release);
+                finishIfCurrent();
                 return;
             }
 
@@ -380,7 +387,7 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
             int curGen = ctx->coverDownloadGen.load(std::memory_order_relaxed);
             if (gen != curGen || ctx->cancelRequested.load(std::memory_order_acquire)) {
                 ::DeleteFileW(tempFile);
-                ctx->coverLoadInProgress.store(false, std::memory_order_release);
+                finishIfCurrent();
                 if (debugLog) Log("[COVER] Cancel/discard download (gen=%d, cur=%d)\n", gen, curGen);
                 return;
             }
@@ -406,7 +413,7 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                 ::DeleteFileW(tempFile);
             }
 
-            ctx->coverLoadInProgress.store(false, std::memory_order_release);
+            finishIfCurrent();
             if (debugLog) Log("[COVER] Download %s, url='%.60s'\n",
                 SUCCEEDED(hr) ? "OK" : "FAIL", targetUrl.c_str());
         });

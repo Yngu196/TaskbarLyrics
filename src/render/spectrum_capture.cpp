@@ -435,7 +435,7 @@ struct CaptureSession {
 };
 
 // 进程级 loopback：仅捕获 pid 进程树的音频输出
-HRESULT StartProcessLoopback(DWORD pid, CaptureSession* out) {
+HRESULT StartProcessLoopback(DWORD pid, CaptureSession* out, const SpectrumCapture* parent) {
     HANDLE doneEvent = ::CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!doneEvent) return E_FAIL;
 
@@ -478,10 +478,22 @@ HRESULT StartProcessLoopback(DWORD pid, CaptureSession* out) {
         &activateParams, handler, &asyncOp);
 
     if (SUCCEEDED(hr)) {
-        if (::WaitForSingleObject(doneEvent, kActivateTimeoutMs) != WAIT_OBJECT_0) {
-            hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
-        } else {
+        // 异步激活最长可等待 5 秒；退出时按短间隔检查 running_，避免
+        // 右键“退出”正好落在设备激活期间时卡住整个清理流程。
+        DWORD waited = 0;
+        DWORD waitResult = WAIT_TIMEOUT;
+        while (waited < kActivateTimeoutMs && parent && parent->IsRunning()) {
+            const DWORD slice = (std::min<DWORD>)(50, kActivateTimeoutMs - waited);
+            waitResult = ::WaitForSingleObject(doneEvent, slice);
+            if (waitResult != WAIT_TIMEOUT) break;
+            waited += slice;
+        }
+        if (waitResult == WAIT_OBJECT_0) {
             hr = handler->Result();
+        } else if (!parent || !parent->IsRunning()) {
+            hr = E_ABORT;
+        } else {
+            hr = HRESULT_FROM_WIN32(ERROR_TIMEOUT);
         }
     }
 
@@ -814,7 +826,7 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
                 findRetryCount = 0;
             }
             if (targetPid != 0) {
-                hr = StartProcessLoopback(targetPid, &session);
+                hr = StartProcessLoopback(targetPid, &session, parent);
                 if (SUCCEEDED(hr)) {
                     isProcessLoopback = true;
                     Log("[Spectrum] Process loopback started (pid=%lu name='%ls')\n",

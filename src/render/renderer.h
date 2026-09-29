@@ -33,15 +33,11 @@ struct CoverDownloadCtx {
     std::mutex workerMutex;
     std::thread worker;
 
-    ~CoverDownloadCtx() { CancelAndJoin(); }
+    ~CoverDownloadCtx();
 
-    // 取消当前下载并回收 worker。调用方必须在 renderer/ctx 析构前调用。
-    void CancelAndJoin() {
-        cancelRequested.store(true, std::memory_order_release);
-        std::lock_guard<std::mutex> lock(workerMutex);
-        if (worker.joinable()) worker.join();
-        coverLoadInProgress.store(false, std::memory_order_release);
-    }
+    // 取消当前下载并回收 worker。URLMon 未响应取消时使用有界等待，
+    // 下载线程持有 shared_ptr 上下文，超时脱离也不会访问已销毁的 renderer。
+    void CancelAndJoin();
 };
 
 class TaskbarRenderer {

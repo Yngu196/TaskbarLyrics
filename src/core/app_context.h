@@ -30,7 +30,9 @@ namespace moekoe {
 struct AppContext {
     HINSTANCE                hInstance{nullptr};
     HWND                     hwnd{nullptr};
-    bool                     running{true};
+    // HTTP / Native Host 工作线程也会请求退出；使用原子标志避免主消息循环
+    // 与后台回调并发读写时丢失退出请求。
+    std::atomic<bool>        running{true};
 
     // 动态卡片宽度缩回滞回计时器
     ULONGLONG                shrinkStartTick_{0};
