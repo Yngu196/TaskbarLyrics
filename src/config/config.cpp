@@ -11,6 +11,7 @@
 #include <cstring>
 #include <fstream>
 #include <algorithm>
+#include <mutex>
 #include <rpc.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -854,11 +855,16 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 // ── GetAuthToken ──
 // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取鉴权 token。
 // 首次运行时生成 UUID 写入注册表；回退使用 MachineGuid 哈希。
+// 线程安全:HTTP 工作线程会并发调用，全部静态状态经 s_authMutex 串行化。
+static std::mutex s_authMutex;
 static bool s_fallbackToken = false;
 
 std::string Config::GetAuthToken() {
     constexpr const wchar_t* kRegPath = L"Software\\MoeKoeMusic\\TaskbarLyrics";
     constexpr const wchar_t* kValueName = L"authToken";
+
+    // 整个函数串行化：s_cachedToken/s_fallbackToken 及注册表读写在多线程下互斥
+    std::lock_guard<std::mutex> lock(s_authMutex);
 
     // 缓存：首次计算后存入 s_cachedToken，后续调用直接返回，避免每次 HTTP 请求都读注册表。
     static std::string s_cachedToken;
@@ -874,8 +880,11 @@ std::string Config::GetAuthToken() {
         lr = ::RegGetValueW(hKey, nullptr, kValueName, RRF_RT_REG_SZ, &type, buffer, &size);
         ::RegCloseKey(hKey);
         if (lr == ERROR_SUCCESS && size > 2) {
+            // 命中注册表同样回填缓存：原先直接 return 导致缓存永不生效，
+            // 每个 HTTP 请求都会重读一次注册表
             std::string token = WideToUtf8(buffer);
             Log("[AUTH] Token loaded from registry\n");
+            s_cachedToken = token;
             return token;
         }
     }
@@ -939,8 +948,10 @@ std::string Config::GetAuthToken() {
 }
 
 bool Config::IsUsingFallbackToken() {
-    // 触发 GetAuthToken() 以初始化 s_fallbackToken
+    // 触发 GetAuthToken() 以初始化 s_fallbackToken（其内部已持锁，
+    // 此处不可先加锁再调用，否则同一线程对非递归锁重复加锁会死锁）
     GetAuthToken();
+    std::lock_guard<std::mutex> lock(s_authMutex);
     return s_fallbackToken;
 }
 

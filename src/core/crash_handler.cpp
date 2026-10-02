@@ -9,8 +9,10 @@
 
 namespace moekoe {
 
-// 日志快捷方式（使用统一日志系统）
-using moekoe::Log;
+// 日志快捷方式（崩溃路径必须走 LogCrash：
+// 常规 Log() 抢 g_logMutex，崩溃线程可能正持有该锁导致过滤器死锁；
+// 且 debugLog=false 时常规 Log 被 g_enabled 门控丢弃，崩溃信息会丢失）
+using moekoe::LogCrash;
 
 // 全局异常过滤器
 LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {

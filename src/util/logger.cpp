@@ -165,4 +165,35 @@ void LogFatal(const char* fmt, ...) {
     va_end(args);
 }
 
+// 崩溃路径专用写入：绕过 g_enabled 与 g_logMutex，不经过 CRT FILE*，
+// 以 Win32 API 追加（FILE_APPEND_DATA 在 NTFS 上为原子追加），
+// 供异常过滤器等崩溃上下文安全调用。
+// 注意：仅在崩溃过滤器内使用；格式化在栈缓冲完成，避免堆分配。
+void LogCrash(const char* fmt, ...) {
+    if (g_logPath.empty()) return;
+
+    char buf[2048];
+    va_list args;
+    va_start(args, fmt);
+    int n = vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    if (n <= 0) return;
+    if (n > static_cast<int>(sizeof(buf)) - 1) n = static_cast<int>(sizeof(buf)) - 1;
+
+    HANDLE h = ::CreateFileA(g_logPath.c_str(), FILE_APPEND_DATA,
+                             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                             nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+
+    SYSTEMTIME st;
+    ::GetLocalTime(&st);
+    char ts[32];
+    int tn = snprintf(ts, sizeof(ts), "[%02d:%02d:%02d.%03d] ",
+                      st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+    DWORD written = 0;
+    if (tn > 0) ::WriteFile(h, ts, static_cast<DWORD>(tn), &written, nullptr);
+    ::WriteFile(h, buf, static_cast<DWORD>(n), &written, nullptr);
+    ::CloseHandle(h);
+}
+
 } // namespace moekoe

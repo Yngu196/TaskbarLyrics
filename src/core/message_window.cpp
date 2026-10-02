@@ -71,6 +71,34 @@ LRESULT CALLBACK MsgWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    case WM_SHOW_LYRICS_WINDOW: {
+        // 网络线程请求显示歌词窗口：窗口操作必须由本线程（UI 线程）执行，
+        // 跨线程 SetWindowPos/ShowWindow 存在死锁与重入风险
+        if (app->taskbarWindow) {
+            HWND h = app->taskbarWindow->GetHandle();
+            ::ShowWindow(h, SW_SHOWNA);
+            ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
+                           SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+        return 0;
+    }
+
+    case WM_TRAY_STATUS_UPDATE: {
+        // 网络线程请求更新托盘状态（wParam=连接状态, lParam=首次连接）
+        if (app->tray) {
+            const bool connected = (wParam != 0);
+            app->tray->SetTooltip(connected
+                ? L"MoeKoe Taskbar Lyrics (已连接)"
+                : L"MoeKoe Taskbar Lyrics (等待连接...)");
+            if (connected && lParam != 0) {
+                app->tray->ShowBalloon(
+                    L"MoeKoe Taskbar Lyrics",
+                    L"已连接到 MoeKoeMusic API，歌词将在播放时自动显示");
+            }
+        }
+        return 0;
+    }
+
     default:
         break;
     }

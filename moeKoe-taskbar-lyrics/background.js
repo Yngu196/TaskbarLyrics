@@ -37,6 +37,7 @@ let ws = null;
 let connected = false;
 let reconnectAttempts = 0;
 let reconnectAborted = false;      // 是否已因达到上限而停止重连
+let reconnectTimer = null;         // 挂起中的重连定时器句柄（防止重复调度）
 let lastConnectTime = null;        // 最后成功连接时间（用于 UI 指示）
 let wsPort = DEFAULT_WS_PORT;
 let wsProtocol = DEFAULT_WS_PROTOCOL;
@@ -252,6 +253,10 @@ async function sendToHost(payload) {
 //   手动重连通过 resetReconnectState() 清零计数器 + 清除中止标记。
 //   连接成功时在 ws.onopen 中同样清零计数器（L~218）。
 function scheduleReconnect() {
+    // 防止重复调度：已有挂起的重连定时器时直接返回
+    // （否则多条路径并发调用会导致定时器数量成倍增殖）
+    if (reconnectTimer !== null) return;
+
     // 达到最大重连次数上限后停止自动重连，通知用户手动干预
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
         reconnectAborted = true;
@@ -277,7 +282,10 @@ function scheduleReconnect() {
         reconnecting: true,
         reconnectAttempts: reconnectAttempts
     });
-    setTimeout(connectWebSocket, delay);
+    reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectWebSocket();
+    }, delay);
 }
 
 // 手动重置重连计数器（供 popup 的"重新连接"按钮调用）
@@ -285,14 +293,21 @@ function scheduleReconnect() {
 function resetReconnectState() {
     reconnectAttempts = 0;
     reconnectAborted = false;
+    // 手动重连 = 用户要求立即尝试，清除挂起的自动重连定时器
+    if (reconnectTimer !== null) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
     scheduleStateSave();
 }
 
 function connectWebSocket() {
-    if (ws && ws.readyState === WebSocket.OPEN) return;
+    // OPEN/CONNECTING 期间禁止再次发起：
+    // 既防止并发连接，也防止旧连接 CLOSING 期间新建连接覆盖全局 ws
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
     try {
-        ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}`);
+        const socket = ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}`);
         let connectionTimeout = null;
         let hasConnected = false;
         let cleared = false;
@@ -306,9 +321,14 @@ function connectWebSocket() {
 
         // 设置连接超时
         connectionTimeout = setTimeout(() => {
-            if (!hasConnected && ws && ws.readyState !== WebSocket.OPEN) {
+            // 使用局部 socket 引用而非全局 ws：防止超时回调误关后续新建的连接
+            if (!hasConnected && socket.readyState !== WebSocket.OPEN) {
                 console.log('[TaskbarLyrics] WebSocket 连接超时');
-                try { ws.close(); } catch (_) {}
+                // close() 会触发 onclose → onclose 里也会 scheduleReconnect()，
+                // 若不先摘除 handler，将与下面的 scheduleReconnect() 构成双重调度
+                socket.onclose = null;
+                socket.onerror = null;
+                try { socket.close(); } catch (_) {}
                 scheduleReconnect();
             }
         }, CONNECT_TIMEOUT);
@@ -332,8 +352,8 @@ function connectWebSocket() {
             // 发送身份验证令牌（服务端可选支持校验）
             getAuthToken().then(token => {
                 try {
-                    if (ws && ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'auth', token }));
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({ type: 'auth', token }));
                     }
                 } catch (_) {}
             });
@@ -438,7 +458,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'reconnect':
             resetReconnectState();
-            if (ws) { try { ws.close(); } catch (_) {} }
+            if (ws) {
+                // 先摘除 onclose/onerror：close() 会触发 onclose →
+                // scheduleReconnect()，与下面的立即 connectWebSocket()
+                // 构成双重调度
+                ws.onclose = null;
+                ws.onerror = null;
+                try { ws.close(); } catch (_) {}
+            }
             connectWebSocket();
             sendResponse({ success: true });
             return true;

@@ -29,6 +29,16 @@
 /// 接收方应自动关闭应用
 #define WM_PROCESS_EXITED   0x0800
 
+/// 显示歌词窗口请求（网络线程 → UI 线程）— WM_USER(0x0400) + 0x500 = 0x0900
+/// 由 WebSocket/HTTP 工作线程发送：工作线程不得直接调用 ShowWindow/SetWindowPos
+/// （跨线程窗口操作会向目标窗口所属线程发送消息，存在死锁风险），
+/// 收到后由主线程显示并置顶歌词窗口
+#define WM_SHOW_LYRICS_WINDOW  0x0900
+
+/// 托盘连接状态更新（网络线程 → UI 线程）— WM_USER(0x0400) + 0x600 = 0x0A00
+/// wParam: 非零=已连接; lParam: 非零=首次连接（需弹气泡通知）
+#define WM_TRAY_STATUS_UPDATE  0x0A00
+
 namespace moekoe::constants {
 
 // ═══════════════════════════════════════

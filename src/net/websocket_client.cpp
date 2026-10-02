@@ -43,7 +43,9 @@ int BackoffSeconds(int attempt) {
 
 } // namespace
 
-WebSocketClient::WebSocketClient() = default;
+WebSocketClient::WebSocketClient() {
+    aliveToken_ = std::make_shared<std::atomic<bool>>(true);
+}
 
 WebSocketClient::~WebSocketClient() {
     Disconnect();
@@ -59,12 +61,15 @@ bool WebSocketClient::Connect(const std::string& url) {
     // 初始状态：未连接
     if (onStatus_) onStatus_(false);
 
-    if (!client_) {
-        client_ = std::make_unique<ix::WebSocket>();
-    }
+    // client_ 统一由 ReconnectLoop 创建与重建；
+    // 此处预创建会与重连线程的重建构成无锁 unique_ptr 数据竞争，故移除。
 
     // 启动后台重连循环（幂等）
     if (!reconnectThread_.joinable()) {
+        // 无重连线程：存活令牌可能已被上一次 Disconnect 置 false，重建之
+        if (!aliveToken_ || !aliveToken_->load()) {
+            aliveToken_ = std::make_shared<std::atomic<bool>>(true);
+        }
         reconnectThread_ = std::thread([this] { ReconnectLoop(); });
     } else {
         reconnectNow_.store(true);
@@ -76,6 +81,10 @@ void WebSocketClient::Disconnect() {
     stopRequested_.store(true);
     reconnectNow_.store(false);
 
+    // 存活令牌置 false：分离清理线程的 stop() 可能继续触发晚到回调，
+    // 回调见令牌失效立即返回，不再访问可能已析构的 WebSocketClient 成员
+    if (aliveToken_) aliveToken_->store(false);
+
     // 先等待 reconnectThread 退出，避免 ix::WebSocket::stop() 与 reconnectThread 死锁
     if (reconnectThread_.joinable()) {
         // ReconnectLoop 的等待粒度为 100ms，stopRequested_ 可快速打断；
@@ -83,15 +92,18 @@ void WebSocketClient::Disconnect() {
         reconnectThread_.join();
     }
 
-    // reconnectThread 已退出后再关闭 client
+    // reconnectThread 已退出后再关闭 client。
     // ix::WebSocket::stop() 在等待关闭握手时可能无限阻塞，
     // 且与回调线程可能产生死锁。
-    // 解决方案：在独立线程中异步清理，且不在 UI 退出路径等待关闭握手。
+    // 解决方案：锁内移出所有权，在独立线程中异步清理，且不在 UI 退出路径等待关闭握手。
     // 闭包独占 wsPtr，不访问 WebSocketClient；即使库内部 stop() 卡住，
     // 也不会阻塞主线程或在对象析构后访问悬空状态。
-    if (client_) {
-        auto wsPtr = std::move(client_);  // 取走所有权
-        client_.reset();
+    std::unique_ptr<ix::WebSocket> wsPtr;
+    {
+        std::lock_guard<std::mutex> lock(clientMutex_);
+        wsPtr = std::move(client_);  // 取走所有权
+    }
+    if (wsPtr) {
         std::thread([wsPtr = std::move(wsPtr)]() mutable {
             try { wsPtr->stop(); } catch (const std::exception& e) {
                 LogError("[WS] Exception during async stop: %s\n", e.what());
@@ -106,14 +118,16 @@ void WebSocketClient::Disconnect() {
     if (connected_.exchange(false)) {
         if (onStatus_) onStatus_(false);
     }
-    client_.reset();
 }
 
 bool WebSocketClient::SendControl(const std::string& command) {
-    if (!client_ || !connected_.load()) return false;
+    if (!connected_.load()) return false;
     json j;
     j["type"] = "control";
     j["data"] = {{"command", command}};
+    // client_ 可能正被 ReconnectLoop 并发重建/销毁，读取与发送必须持锁
+    std::lock_guard<std::mutex> lock(clientMutex_);
+    if (!client_) return false;
     auto result = client_->send(j.dump());
     return result.success;
 }
@@ -150,49 +164,54 @@ void WebSocketClient::ReconnectLoop() {
         }
         Log("Reconnect: connecting to " + urlCopy);
 
-        // 配置客户端
+        // 配置客户端（重建 + 绑定回调 + start 全程持锁，
+        // 避免与 SendControl 的无锁读取/发送构成数据竞争）
         try {
+            std::lock_guard<std::mutex> lock(clientMutex_);
             client_ = std::make_unique<ix::WebSocket>();
             client_->setUrl(urlCopy);
+
+            // 绑定消息回调
+            // 按值捕获存活令牌：分离清理线程的 stop() 可能继续触发晚到回调，
+            // 回调先检查令牌，失效立即返回、不再访问 this。
+            // （原注释声称使用 weak_ptr 与实际实现不符，已更正）
+            auto token = aliveToken_;
+            client_->setOnMessageCallback(
+                [this, token](const ix::WebSocketMessagePtr& msg) {
+                    if (!token || !token->load()) return;
+                    // 如果已请求停止，忽略所有回调
+                    if (stopRequested_.load()) return;
+                    if (msg->type == ix::WebSocketMessageType::Open) {
+                        Log("WS: opened");
+                        connected_.store(true);
+                        if (onStatus_) onStatus_(true);
+                    } else if (msg->type == ix::WebSocketMessageType::Close) {
+                        Log("WS: closed");
+                        connected_.store(false);
+                        if (onStatus_) onStatus_(false);
+                    } else if (msg->type == ix::WebSocketMessageType::Message) {
+                        if (!msg->str.empty()) {
+                            try {
+                                DispatchWsMessage(msg->str);
+                            } catch (const std::exception& e) {
+                                Log("WS: Dispatch exception: " + std::string(e.what()));
+                            } catch (...) {
+                                Log("WS: Dispatch unknown exception");
+                            }
+                        }
+                    } else if (msg->type == ix::WebSocketMessageType::Error) {
+                        Log("WS: ERROR - " + msg->errorInfo.reason);
+                        connected_.store(false);
+                        if (onStatus_) onStatus_(false);
+                    }
+                });
+
+            // 启动（同步）—— ix::WebSocket::start 内部会启动线程
+            client_->start();
         } catch (...) {
             Log("Reconnect: exception creating WebSocket");
             continue;
         }
-
-        // 绑定消息回调
-        // 使用 weak_ptr 防止 detach 后回调访问已销毁的对象
-        auto self = this;
-        client_->setOnMessageCallback(
-            [self](const ix::WebSocketMessagePtr& msg) {
-                // 如果已请求停止，忽略所有回调
-                if (self->stopRequested_.load()) return;
-                if (msg->type == ix::WebSocketMessageType::Open) {
-                    Log("WS: opened");
-                    self->connected_.store(true);
-                    if (self->onStatus_) self->onStatus_(true);
-                } else if (msg->type == ix::WebSocketMessageType::Close) {
-                    Log("WS: closed");
-                    self->connected_.store(false);
-                    if (self->onStatus_) self->onStatus_(false);
-                } else if (msg->type == ix::WebSocketMessageType::Message) {
-                    if (!msg->str.empty()) {
-                        try {
-                            self->DispatchWsMessage(msg->str);
-                        } catch (const std::exception& e) {
-                            Log("WS: Dispatch exception: " + std::string(e.what()));
-                        } catch (...) {
-                            Log("WS: Dispatch unknown exception");
-                        }
-                    }
-                } else if (msg->type == ix::WebSocketMessageType::Error) {
-                    Log("WS: ERROR - " + msg->errorInfo.reason);
-                    self->connected_.store(false);
-                    if (self->onStatus_) self->onStatus_(false);
-                }
-            });
-
-        // 启动（同步）—— ix::WebSocket::start 内部会启动线程
-        client_->start();
 
         // 等到连接成功 / 失败 / 停止
         for (int i = 0; i < constants::WS_CONNECT_TIMEOUT_ITERATIONS && !stopRequested_.load(); ++i) { // 5s 连接窗口
@@ -203,13 +222,22 @@ void WebSocketClient::ReconnectLoop() {
 
         if (!connected_.load()) {
             Log("Reconnect: connection failed after 5s");
-            // 启动失败,等待下个循环重连
-            try { client_->stop(); } catch (const std::exception& e) {
-                LogError("[WS] Exception during reconnect stop: %s\n", e.what());
-            } catch (...) {
-                LogError("[WS] Unknown exception during reconnect stop\n");
+            // 启动失败:锁内移出旧 client，stop() 在锁外执行——
+            // 它可能长时间阻塞，不能拖住等待 clientMutex_ 的 SendControl/Disconnect
+            std::unique_ptr<ix::WebSocket> deadClient;
+            {
+                std::lock_guard<std::mutex> lock(clientMutex_);
+                deadClient = std::move(client_);
+                client_.reset();
             }
-            client_.reset();
+            if (deadClient) {
+                try { deadClient->stop(); } catch (const std::exception& e) {
+                    LogError("[WS] Exception during reconnect stop: %s\n", e.what());
+                } catch (...) {
+                    LogError("[WS] Unknown exception during reconnect stop\n");
+                }
+                deadClient.reset();
+            }
 
         } else {
             Log("Reconnect: connected successfully");

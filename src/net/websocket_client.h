@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -63,7 +64,15 @@ private:
     void DispatchWsMessage(const std::string& raw);
 
     // ixwebsocket 实例（pimpl）
+    // 由 ReconnectLoop（后台线程）重建/销毁，SendControl（UI 线程）读取并发送，
+    // 所有存取必须持有 clientMutex_；stop() 等可能长时间阻塞的调用，
+    // 须先在锁内移出所有权、锁外执行。
     std::unique_ptr<ix::WebSocket> client_;
+    std::mutex clientMutex_;
+
+    // 存活令牌:按值拷贝进消息回调，Disconnect() 置 false，
+    // 保证分离清理线程 stop() 期间触发的晚到回调不再访问 this
+    std::shared_ptr<std::atomic<bool>> aliveToken_;
 
     // 状态
     std::atomic<bool> connected_{false};

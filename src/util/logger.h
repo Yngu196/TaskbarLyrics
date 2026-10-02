@@ -68,4 +68,10 @@ void LogWarn(const char* fmt, ...);
 void LogError(const char* fmt, ...);
 void LogFatal(const char* fmt, ...);
 
+// 崩溃路径专用日志：无锁、不受 SetLogEnabled 门控，
+// 直接以 Win32 API 追加写入 debug.log。仅供异常过滤器等崩溃上下文使用
+// （常规 Log() 会抢 g_logMutex，若崩溃时该锁已被持有会导致过滤器死锁；
+//   且 debugLog=false 时常规 Log 被门控丢弃，崩溃信息将丢失）。
+void LogCrash(const char* fmt, ...);
+
 } // namespace moekoe

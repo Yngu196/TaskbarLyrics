@@ -255,39 +255,34 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     wsClient.SetDebugLog(config.Advanced().debugLog);
 
     wsClient.OnLyrics([&](const LyricsData& data) {
-        if (app.config->Advanced().debugLog)
-            Log("[WS] OnLyrics: valid=%d lines=%zu firstText='%.30s'\n",
-                data.valid, data.lines.size(),
-                data.lines.empty() ? "" : data.lines.front().text.c_str());
+        // 此回调在 WebSocket 网络线程执行：
+        // 不得直接调用 ShowWindow/SetWindowPos（跨线程窗口操作可死锁），
+        // 不得读取 config（与 UI 线程写入构成数据竞争）——统一转交 UI 线程。
+        LogDebug("[WS] OnLyrics: valid=%d lines=%zu firstText='%.30s'\n",
+            data.valid, data.lines.size(),
+            data.lines.empty() ? "" : data.lines.front().text.c_str());
         // 性能监控：累加 WS 消息计数（仅 debug 模式有意义，但累加开销极低，无条件执行）
         app.perfWsMsgCount_.fetch_add(1, std::memory_order_relaxed);
         parser.UpdateLyrics(data);
-        if (app.taskbarWindow && data.valid) {
-            HWND h = taskbarWindow.GetHandle();
-            ::ShowWindow(h, SW_SHOWNA);
-            ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
-                           SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        if (data.valid) {
+            ::PostMessageW(hMsgWnd, WM_SHOW_LYRICS_WINDOW, 0, 0);
         }
     });
     wsClient.OnPlayerState([&](const PlayerState& st) {
-        if (app.config->Advanced().debugLog) Log("[WS] OnPlayerState: playing=%d time=%.2f song='%s' cover='%s'\n",
+        // LogDebug 内部原子判级，无 config 访问，可安全用于网络线程
+        LogDebug("[WS] OnPlayerState: playing=%d time=%.2f song='%s' cover='%s'\n",
             st.isPlaying, st.currentTime, st.songTitle.c_str(),
             st.coverArtUrl.empty() ? "(empty)" : st.coverArtUrl.substr(0, 60).c_str());
         parser.UpdatePlayerState(st);
     });
     bool firstConnected = true;
     wsClient.OnConnectionStatus([&](bool connected) {
-        if (app.tray) {
-            app.tray->SetTooltip(connected
-                ? L"MoeKoe Taskbar Lyrics (已连接)"
-                : L"MoeKoe Taskbar Lyrics (等待连接...)");
-            if (connected && firstConnected) {
-                firstConnected = false;
-                app.tray->ShowBalloon(
-                    L"MoeKoe Taskbar Lyrics",
-                    L"已连接到 MoeKoeMusic API，歌词将在播放时自动显示");
-            }
-        }
+        // 网络线程：托盘 UI 操作转交 UI 线程
+        // wParam=连接状态；lParam=是否为首次连接（需弹气泡）
+        ::PostMessageW(hMsgWnd, WM_TRAY_STATUS_UPDATE,
+                       connected ? 1 : 0,
+                       (connected && firstConnected) ? 1 : 0);
+        if (connected && firstConnected) firstConnected = false;
     });
 
     // 注册按钮点击回调
@@ -358,12 +353,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // 10.5) 启动 HTTP 服务器（用于 popup.js 通信：ping / shutdown / lyrics）
     app.httpServer = std::make_unique<HttpServer>();
     auto& httpServer = *app.httpServer;
-    httpServer.OnCommand([&](const std::string& command) {
+    httpServer.OnCommand([&app](const std::string& command) {
         Log("[HTTP] Command received: %s\n", command.c_str());
         if (command == "shutdown") {
             Log("[HTTP] Shutdown via HTTP, exiting...\n");
+            // PostQuitMessage 只向"调用线程"的消息队列投递 WM_QUIT，
+            // 在 HTTP 工作线程中调用无效；running 为原子标志，
+            // 主循环（PeekMessage 轮询）会在 ≤1ms 内自然退出
             app.running = false;
-            ::PostQuitMessage(0);
         }
     });
     // HTTP /lyrics 端点：接收外部歌词+封面数据
@@ -442,12 +439,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                 data.valid = !data.lines.empty();
                 if (data.valid) {
                     parser.UpdateLyrics(data);
-                    if (app.taskbarWindow) {
-                        HWND h = taskbarWindow.GetHandle();
-                        ::ShowWindow(h, SW_SHOWNA);
-                        ::SetWindowPos(h, HWND_TOPMOST, 0, 0, 0, 0,
-                                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-                    }
+                    // 窗口显示/置顶转交 UI 线程（HTTP 工作线程不得直接操作窗口）
+                    ::PostMessageW(hMsgWnd, WM_SHOW_LYRICS_WINDOW, 0, 0);
                 }
             }
 
@@ -504,8 +497,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         if (!result) {
             // 收到 shutdown 指令或读取错误 → 通知主线程退出
             Log("[NATIVE-HOST] Run() returned false, requesting shutdown\n");
+            // PostQuitMessage 只作用于调用线程自己的队列，此处无效；
+            // running 为原子标志，主循环轮询即可退出
             app.running = false;
-            ::PostQuitMessage(0);
         } else {
             // stdin EOF（独立运行模式，无托管者）→ 继续运行
             Log("[NATIVE-HOST] Run() returned true (standalone mode, continuing)\n");
@@ -555,12 +549,26 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     Log("[SHUTDOWN] Stopping Native Host stdin thread...\n");
     nativeHost.RequestShutdown();
     if (stdinThread.joinable()) {
-        // getline 可能阻塞在管道 ReadFile；CancelSynchronousIo 可安全解除该线程的阻塞。
-        if (!::CancelSynchronousIo(stdinThread.native_handle())) {
-            Log("[SHUTDOWN] CancelSynchronousIo failed: %lu\n", ::GetLastError());
+        // CancelSynchronousIo 只能取消"当前正在进行的"同步 I/O：
+        // 若调用时线程恰好不在 ReadFile 中，之后会重新阻塞在 getline 上，
+        // 因此采用"取消 + 限时等待"循环，总超时约 3 秒。
+        bool exited = false;
+        for (int i = 0; i < 6 && !exited; ++i) {
+            if (!::CancelSynchronousIo(stdinThread.native_handle()) && i == 0) {
+                Log("[SHUTDOWN] CancelSynchronousIo failed: %lu\n", ::GetLastError());
+            }
+            exited = (::WaitForSingleObject(stdinThread.native_handle(), 500) == WAIT_OBJECT_0);
         }
-        stdinThread.join();
-        Log("[SHUTDOWN] stdin thread joined\n");
+        if (exited) {
+            stdinThread.join();
+            Log("[SHUTDOWN] stdin thread joined\n");
+        } else {
+            // 超时放弃：detach 并故意泄漏 nativeHost，
+            // 防止线程随后访问已析构对象；进程即将退出，泄漏无害。
+            stdinThread.detach();
+            app.nativeHost.release();
+            Log("[SHUTDOWN] stdin thread join timeout, detached (nativeHost leaked by design)\n");
+        }
     }
 
     ::KillTimer(hMsgWnd, 1);

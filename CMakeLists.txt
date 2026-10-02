@@ -265,7 +265,7 @@ endif()
 # 6. nlohmann_json（header-only，用 find_path 直接找头文件）
 find_path(NLOHMANN_JSON_INCLUDE_DIR nlohmann/json.hpp
     PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
-if(!NLOHMANN_JSON_INCLUDE_DIR)
+if(NOT NLOHMANN_JSON_INCLUDE_DIR)
     message(FATAL_ERROR "nlohmann_json not found in vcpkg installed directory")
 endif()
 add_library(nlohmann_json::nlohmann_json INTERFACE IMPORTED)
