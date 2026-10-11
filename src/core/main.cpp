@@ -43,7 +43,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // ═══════ 第 1 阶段：系统初始化 ═══════
     // 目的：为应用提供运行时基础（COM、异常处理、日志、单实例保护）
     InitLogger();
-    ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);  // WIC/Direct2D 需要 COM
+    // WIC/Direct2D 需要 COM；初始化失败则渲染管线无法工作，直接退出
+    HRESULT comHr = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(comHr)) {
+        LogError("[STARTUP] CoInitializeEx failed: 0x%08lX\n", comHr);
+        return 1;
+    }
     ::SetUnhandledExceptionFilter(GlobalExceptionHandler);
 
     // 环境检查：Windows 版本检测 + 运行环境依赖校验
@@ -81,7 +86,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     // Winsock 初始化（ixwebsocket 依赖）
     WSADATA wsaData;
     int wsRet = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    Log("[STARTUP] WSAStartup ret=%d\n", wsRet);
+    if (wsRet != 0) {
+        // 非致命：歌词连接/本地服务不可用，但渲染仍可工作
+        LogError("[STARTUP] WSAStartup failed: %d (WebSocket/HTTP 功能不可用)\n", wsRet);
+    } else {
+        Log("[STARTUP] WSAStartup ok\n");
+    }
 
     // DPI 感知：Per-Monitor V2，支持多显示器不同缩放
     ::SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

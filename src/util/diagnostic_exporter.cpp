@@ -372,11 +372,18 @@ bool ExportDiagnosticFile(const AppContext& app, HWND ownerWnd) {
         if (slash) *slash = L'\0';
         std::wstring path = std::wstring(exeDir) + L"\\" + defaultName;
 
-        FILE* f = fopen(
-            std::string(path.begin(), path.end()).c_str(), "w");
+        // 用宽字符 API 打开：逐字节截断转换在含中文等非 ASCII 的路径上会得到错误路径
+        FILE* f = _wfopen(path.c_str(), L"w");
         if (f) {
-            fwrite(text.c_str(), 1, text.size(), f);
+            size_t n = fwrite(text.c_str(), 1, text.size(), f);
+            bool writeOk = (n == text.size());
             fclose(f);
+            if (!writeOk) {
+                ::MessageBoxW(ownerWnd, L"诊断信息写入失败（回退路径）。",
+                    L"导出诊断信息", MB_OK | MB_ICONERROR);
+                Log("[DIAG] Fallback fwrite incomplete: %zu/%zu\n", n, text.size());
+                return false;
+            }
             std::wstring msg = L"诊断信息已导出到：\n" + path;
             ::MessageBoxW(ownerWnd, msg.c_str(),
                 L"导出诊断信息", MB_OK | MB_ICONINFORMATION);
@@ -410,25 +417,36 @@ bool ExportDiagnosticFile(const AppContext& app, HWND ownerWnd) {
                 // 写入文本文件
                 int pathLen = ::WideCharToMultiByte(CP_UTF8, 0,
                     pszPath, -1, nullptr, 0, nullptr, nullptr);
-                std::string pathUtf8(pathLen, '\0');
-                ::WideCharToMultiByte(CP_UTF8, 0,
-                    pszPath, -1, &pathUtf8[0], pathLen, nullptr, nullptr);
-                // 去掉末尾的 null
-                while (!pathUtf8.empty() && pathUtf8.back() == '\0') pathUtf8.pop_back();
+                std::string pathUtf8;
+                if (pathLen > 0) {
+                    pathUtf8.resize(static_cast<size_t>(pathLen));
+                    ::WideCharToMultiByte(CP_UTF8, 0,
+                        pszPath, -1, &pathUtf8[0], pathLen, nullptr, nullptr);
+                    // 去掉末尾的 null
+                    while (!pathUtf8.empty() && pathUtf8.back() == '\0') pathUtf8.pop_back();
+                }
 
-                FILE* f = fopen(pathUtf8.c_str(), "wb");
+                FILE* f = pathUtf8.empty() ? nullptr : fopen(pathUtf8.c_str(), "wb");
                 if (f) {
                     // 写入 UTF-8 BOM
                     unsigned char bom[] = {0xEF, 0xBB, 0xBF};
-                    fwrite(bom, 1, 3, f);
-                    fwrite(text.c_str(), 1, text.size(), f);
+                    size_t bomN = fwrite(bom, 1, sizeof(bom), f);
+                    size_t n = fwrite(text.c_str(), 1, text.size(), f);
+                    bool writeOk = (bomN == sizeof(bom) && n == text.size());
                     fclose(f);
 
-                    std::wstring msg = L"诊断信息已导出到：\n";
-                    msg += pszPath;
-                    ::MessageBoxW(ownerWnd, msg.c_str(),
-                        L"导出诊断信息", MB_OK | MB_ICONINFORMATION);
-                    Log("[DIAG] Exported to: %ls\n", pszPath);
+                    if (writeOk) {
+                        std::wstring msg = L"诊断信息已导出到：\n";
+                        msg += pszPath;
+                        ::MessageBoxW(ownerWnd, msg.c_str(),
+                            L"导出诊断信息", MB_OK | MB_ICONINFORMATION);
+                        Log("[DIAG] Exported to: %ls\n", pszPath);
+                    } else {
+                        ::MessageBoxW(ownerWnd, L"诊断信息写入不完整，导出可能失败。",
+                            L"导出诊断信息", MB_OK | MB_ICONERROR);
+                        Log("[DIAG] fwrite incomplete: bom=%zu text=%zu/%zu\n",
+                            bomN, n, text.size());
+                    }
                 } else {
                     wchar_t errBuf[320];
                     _snwprintf_s(errBuf, _TRUNCATE,

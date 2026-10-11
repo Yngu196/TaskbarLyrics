@@ -17,6 +17,26 @@
 (function () {
     var CONSENT_KEY = '__taskbarLyrics_apiModeConsent_v2';
 
+    // 防重复注入：同一页面被二次注入时直接跳过，避免重复弹窗
+    if (window.__taskbarLyricsInjected) return;
+    window.__taskbarLyricsInjected = true;
+
+    // localStorage 在隐私模式/存储禁用时会抛异常，必须兜底，
+    // 否则脚本崩溃后连确认对话框都无法弹出
+    function safeGetItem(key) {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function safeSetItem(key, value) {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {}
+    }
+
     function enableApiMode() {
         try {
             var settings = JSON.parse(localStorage.getItem('settings') || '{}');
@@ -37,16 +57,11 @@
     }
 
     // 主流程
-    var consent = localStorage.getItem(CONSENT_KEY);
+    var consent = safeGetItem(CONSENT_KEY);
 
     if (consent === '1') {
-        // 已同意：确保 apiMode 开启
-        var wasOff = !isApiModeOn();
-        enableApiMode();
-        if (wasOff) {
-            // apiMode 刚被开启 → 给出提示
-            alert('API 模式已开启，重启 MoeKoeMusic 后生效。');
-        }
+        // 已同意过即返回，不再每次启动强制重开 apiMode：
+        // 用户若已在 MoeKoeMusic UI 中手动关闭，重复 enableApiMode() 会悄悄覆盖其选择
         return;
     }
 
@@ -63,16 +78,20 @@
         );
 
         if (ok) {
-            localStorage.setItem(CONSENT_KEY, '1');
+            safeSetItem(CONSENT_KEY, '1');
             enableApiMode();
 
             // 通知 EXE（通过 background.js → Native Bridge）写入 config.json
             // MoeKoeMusic 主进程读取 config.json（非 localStorage）来启动 WebSocket
-            chrome.runtime.sendMessage({ type: 'enableApiMode' }).catch(function () {});
+            // 扩展重载后 chrome.runtime 失效，sendMessage 会同步抛出，必须 try/catch
+            try {
+                var p = chrome.runtime.sendMessage({ type: 'enableApiMode' });
+                if (p && p.catch) p.catch(function () {});
+            } catch (e) {}
 
             alert('API 模式已开启，重启 MoeKoeMusic 后生效。');
         } else {
-            localStorage.setItem(CONSENT_KEY, '0');
+            safeSetItem(CONSENT_KEY, '0');
         }
     }, 500);
 })();

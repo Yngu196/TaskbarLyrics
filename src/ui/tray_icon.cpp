@@ -35,7 +35,9 @@ TrayIcon::~TrayIcon() {
     Shutdown();
 }
 
-HICON TrayIcon::LoadAppIcon() {
+HICON TrayIcon::LoadAppIcon(bool* fromFile) {
+    if (fromFile) *fromFile = false;
+
     // 1) 尝试 EXE 所在目录的 resources/icon.ico
     wchar_t exeDir[MAX_PATH] = {0};
     ::GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
@@ -46,9 +48,12 @@ HICON TrayIcon::LoadAppIcon() {
     HICON hIcon = static_cast<HICON>(::LoadImageW(
         nullptr, iconPath.c_str(), IMAGE_ICON,
         16, 16, LR_LOADFROMFILE | LR_DEFAULTSIZE));
-    if (hIcon) return hIcon;
+    if (hIcon) {
+        if (fromFile) *fromFile = true;
+        return hIcon;
+    }
 
-    // 2) 回退到系统默认应用图标
+    // 2) 回退到系统默认应用图标（共享图标，调用方不得 DestroyIcon）
     hIcon = ::LoadIconW(nullptr, IDI_APPLICATION);
     return hIcon;
 }
@@ -58,9 +63,16 @@ bool TrayIcon::Initialize(HINSTANCE hInstance, HWND messageWnd, UINT callbackMsg
     messageWnd_  = messageWnd;
     callbackMsg_ = callbackMsg ? callbackMsg : (WM_USER + 0x200);
 
+    // 防御：若被重复 Initialize，先释放上一轮持有的私有图标
+    if (ownsIcon_ && nid_.hIcon) {
+        ::DestroyIcon(nid_.hIcon);
+        nid_.hIcon = nullptr;
+        ownsIcon_ = false;
+    }
+
     RebuildMenu();
 
-    HICON hIcon = LoadAppIcon();
+    HICON hIcon = LoadAppIcon(&ownsIcon_);
 
     std::memset(&nid_, 0, sizeof(nid_));
     nid_.cbSize           = sizeof(nid_);
@@ -88,6 +100,14 @@ void TrayIcon::Shutdown() {
         ::Shell_NotifyIconW(NIM_DELETE, &nid_);
         added_ = false;
     }
+    // 释放私有图标：LR_LOADFROMFILE 加载的 HICON 归进程所有，必须 DestroyIcon，
+    // 否则每次托盘初始化/销毁周期（如应用设置）都会泄漏一个图标句柄；
+    // LoadIconW 返回的共享图标不可销毁（ownsIcon_ 已区分）
+    if (ownsIcon_ && nid_.hIcon) {
+        ::DestroyIcon(nid_.hIcon);
+    }
+    ownsIcon_ = false;
+    nid_.hIcon = nullptr;
     DestroyMenu();
 }
 

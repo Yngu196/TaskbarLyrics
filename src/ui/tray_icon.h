@@ -82,7 +82,9 @@ public:
     void OnTrayMessage(HWND hwnd, WPARAM wParam, LPARAM lParam);
 
     // 加载图标(优先从 resources/icon.ico)
-    HICON LoadAppIcon();
+    // fromFile 非空时输出图标来源：true=私有图标(LR_LOADFROMFILE，需 DestroyIcon)，
+    // false=共享图标(LoadIconW，不可销毁)
+    HICON LoadAppIcon(bool* fromFile = nullptr);
 
 private:
     void RebuildMenu();
@@ -95,6 +97,7 @@ private:
     HMENU        hMenu_{nullptr};
     NOTIFYICONDATAW nid_{};
     bool         added_{false};
+    bool         ownsIcon_{false};   // nid_.hIcon 是否为需 DestroyIcon 的私有图标
 
     bool checkedAutoStart_{true};
     bool checkedLockPos_{false};

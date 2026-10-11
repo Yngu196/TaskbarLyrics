@@ -315,7 +315,10 @@ bool Config::Load() {
 
 bool Config::Save() const {
     const std::string path = GetConfigPath();
-    std::ofstream out(path, std::ios::trunc);
+    // 原子写入：先写 .tmp 再 MoveFileEx 替换（与 api_enabler.cpp 写盘模式一致），
+    // 避免进程崩溃/断电时留下被截断损坏的 config.json
+    const std::string tmpPath = path + ".tmp";
+    std::ofstream out(tmpPath, std::ios::trunc);
     if (!out.is_open()) return false;
 
     json j;
@@ -394,6 +397,23 @@ bool Config::Save() const {
     };
 
     out << j.dump(2);
+    out.close();
+    if (out.fail()) {
+        moekoe::Log("[CONFIG] Write to tmp file failed: %s\n", tmpPath.c_str());
+        return false;
+    }
+
+    if (!::MoveFileExA(tmpPath.c_str(), path.c_str(),
+                       MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        // 替换失败（极少见）：回退为直接写入，保证设置仍可保存
+        moekoe::Log("[CONFIG] MoveFileEx failed (err=%lu), falling back to direct write\n",
+                    ::GetLastError());
+        std::ofstream outDirect(path, std::ios::trunc);
+        if (!outDirect.is_open()) return false;
+        outDirect << j.dump(2);
+        outDirect.close();
+        return !outDirect.fail();
+    }
     return true;
 }
 
@@ -936,11 +956,16 @@ std::string Config::GetAuthToken() {
         // Token 内容始终为 ASCII（UUID/十六进制），逐字节拓宽安全；
         // 若未来 Token 包含非 ASCII 字符，需改用 MultiByteToWideChar(CP_UTF8)。
         std::wstring wtoken(token.begin(), token.end());
-        ::RegSetValueExW(hKey, kValueName, 0, REG_SZ,
+        LSTATUS sr = ::RegSetValueExW(hKey, kValueName, 0, REG_SZ,
                          reinterpret_cast<const BYTE*>(wtoken.c_str()),
                          static_cast<DWORD>((wtoken.size() + 1) * sizeof(wchar_t)));
         ::RegCloseKey(hKey);
-        Log("[AUTH] Token persisted to registry\n");
+        if (sr == ERROR_SUCCESS) {
+            Log("[AUTH] Token persisted to registry\n");
+        } else {
+            // 写入失败仅影响跨重启持久化，本次会话 token 已缓存，无需判定失败
+            Log("[AUTH] RegSetValueExW failed: %lu\n", sr);
+        }
     }
 
     s_cachedToken = token;

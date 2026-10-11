@@ -93,8 +93,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 从 background 获取动态鉴权令牌
     async function getAuthToken() {
         try {
-            const response = await new Promise((resolve) => {
-                chrome.runtime.sendMessage({ type: 'getAuthToken' }, resolve);
+            const response = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ type: 'getAuthToken' }, (resp) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(resp);
+                    }
+                });
             });
             return response ? response.token : null;
         } catch (_) {
@@ -113,8 +119,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // 通过 Native Host Bridge 查询 EXE 状态（首选）
     async function checkHostStatus() {
         try {
-            const response = await new Promise((resolve) => {
-                chrome.runtime.sendMessage({ type: 'getHostStatus' }, resolve);
+            const response = await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage({ type: 'getHostStatus' }, (resp) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message));
+                    } else {
+                        resolve(resp);
+                    }
+                });
             });
             return response;
         } catch (_) {
@@ -173,6 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadPortConfig().then(() => {
         chrome.runtime.sendMessage({ type: 'getStatus' }, (response) => {
+            // background 未就绪时 lastError 会被置位，必须读取，否则 Chrome 控制台持续告警
+            if (chrome.runtime.lastError) return;
             if (response) updateConnectionUI(response.connected, response);
         });
     });
@@ -207,8 +221,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnReconnect.addEventListener('click', () => {
         chrome.runtime.sendMessage({ type: 'reconnect' }, () => {
+            if (chrome.runtime.lastError) {
+                console.warn('[Popup] reconnect 发送失败:', chrome.runtime.lastError.message);
+            }
             setTimeout(() => {
                 chrome.runtime.sendMessage({ type: 'getStatus' }, (r) => {
+                    if (chrome.runtime.lastError) return;
                     if (r) updateConnectionUI(r.connected);
                 });
             }, 1000);

@@ -105,34 +105,8 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
 
     CreateRenderTarget();
 
-    // 创建画刷（与 Resize 中逻辑一致）
-    if (renderTarget_) {
-        highlightBrush_.Reset();
-        normalBrush_.Reset();
-        translationBrush_.Reset();
-        spectrumBrush_.Reset();
-        cardCurrentBrush_.Reset();
-        cardNextBrush_.Reset();
-        cardBackgroundBrush_.Reset();
-        const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
-        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
-        renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
-            translationBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.spectrumColor, 1.0f),
-            spectrumBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.cardCurrentColor, 1.0f),
-            cardCurrentBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.cardNextColor, 1.0f),
-            cardNextBrush_.GetAddressOf());
-        coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
-        renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
-    }
+    // 创建画刷（与 Resize / 设备丢失恢复共用同一套重建逻辑）
+    RecreateBrushes();
 
     const std::wstring family = Utf8ToWide(settings_.fontFamily);
     // DPI 缩放因子：将 DIP 字号转换为物理像素，因为渲染目标使用默认 96 DPI
@@ -288,6 +262,41 @@ void TaskbarRenderer::CreateRenderTarget() {
     }
 }
 
+void TaskbarRenderer::RecreateBrushes() {
+    // 重建所有与 renderTarget_ 绑定的实心画刷。
+    // 三处调用：Initialize / Resize / D2DERR_RECREATE_TARGET 设备丢失恢复。
+    // 画刷属于创建它的渲染目标，RT 重建后旧画刷全部失效；此前 Initialize
+    // 与 Resize 各自维护一份重复代码，且重复路径用 GetAddressOf() 直接覆盖
+    // 未先 Reset，每次调用泄漏 6~7 个 ID2D1SolidColorBrush
+    if (!renderTarget_) return;
+    highlightBrush_.Reset();
+    normalBrush_.Reset();
+    translationBrush_.Reset();
+    spectrumBrush_.Reset();
+    cardCurrentBrush_.Reset();
+    cardNextBrush_.Reset();
+    cardBackgroundBrush_.Reset();
+    const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
+    const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
+    renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(
+        D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
+        translationBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(
+        ParseColor(settings_.spectrumColor, 1.0f),
+        spectrumBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(
+        ParseColor(settings_.cardCurrentColor, 1.0f),
+        cardCurrentBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(
+        ParseColor(settings_.cardNextColor, 1.0f),
+        cardNextBrush_.GetAddressOf());
+    // 封面位图已随旧 RT 失效（CreateRenderTarget 中重置），主题色回落默认灰蓝
+    coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
+    renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
+}
+
 void TaskbarRenderer::ReleasePresentResources() {
     if (presentMemDC_) {
         ::DeleteDC(presentMemDC_);
@@ -383,6 +392,7 @@ void TaskbarRenderer::Shutdown() {
     spectrumBrush_.Reset();
     translationFormat_.Reset();
     textFormat_.Reset();
+    btnFormat_.Reset();   // 控制按钮文字格式同样要释放，否则每次设置应用周期泄漏一个 IDWriteTextFormat
     renderTarget_.Reset();
     wicBitmap_.Reset();
     dwriteFactory_.Reset();
@@ -398,32 +408,7 @@ void TaskbarRenderer::Resize(UINT width, UINT height, UINT dpi) {
     dpi_    = dpi;
     ReleasePresentResources();
     CreateRenderTarget();
-    if (renderTarget_) {
-        highlightBrush_.Reset();
-        normalBrush_.Reset();
-        translationBrush_.Reset();
-        spectrumBrush_.Reset();
-        cardCurrentBrush_.Reset();
-        cardNextBrush_.Reset();
-        const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
-        const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
-        renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
-            translationBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.spectrumColor, 1.0f),
-            spectrumBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.cardCurrentColor, 1.0f),
-            cardCurrentBrush_.GetAddressOf());
-        renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.cardNextColor, 1.0f),
-            cardNextBrush_.GetAddressOf());
-        coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
-        renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
-    }
+    RecreateBrushes();
     // 重建按钮文字格式（高度可能变化）
     btnFormat_.Reset();
     if (dwriteFactory_) {
@@ -950,7 +935,10 @@ void TaskbarRenderer::Render(const RenderState& state) {
     if (SUCCEEDED(hr)) {
         PresentToLayeredWindow();
     } else if (hr == D2DERR_RECREATE_TARGET) {
+        // 设备丢失：CreateRenderTarget 只重建 WIC 位图/渲染目标/封面缓存，
+        // 画刷等 RT 依赖资源也必须用新目标重建，否则后续每帧继续绘制失败
         CreateRenderTarget();
+        RecreateBrushes();
     }
 }
 

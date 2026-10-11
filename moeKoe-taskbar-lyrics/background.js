@@ -160,8 +160,8 @@ chrome.runtime.onConnect.addListener((port) => {
         if (message.type === 'native-host:response') {
             // 序列号校验：丢弃过期或重复的响应（防重放）
             if (message.seq != null && message.requestId) {
-                const resolve = pending.get(message.requestId);
-                if (resolve) {
+                const entry = pending.get(message.requestId);
+                if (entry) {
                     const stored = pending.get('__seq__' + message.requestId);
                     if (stored != null && message.seq < stored) {
                         console.warn('[TaskbarLyrics] 丢弃过期的 bridge 响应 (seq:', message.seq, '< 已记录:', stored, ')');
@@ -169,14 +169,14 @@ chrome.runtime.onConnect.addListener((port) => {
                     }
                     pending.delete(message.requestId);
                     pending.delete('__seq__' + message.requestId);
-                    resolve(message.result);
+                    entry.resolve(message.result);
                 }
             } else {
                 // 无序列号的旧格式兼容处理
-                const resolve = pending.get(message.requestId);
-                if (resolve) {
+                const entry = pending.get(message.requestId);
+                if (entry) {
                     pending.delete(message.requestId);
-                    resolve(message.result);
+                    entry.resolve(message.result);
                 }
             }
             return;
@@ -193,8 +193,18 @@ chrome.runtime.onConnect.addListener((port) => {
     });
 
     port.onDisconnect.addListener(() => {
+        // 归属校验：旧桥接端口的迟到断开事件不得清空新连接持有的 bridgePort
+        if (bridgePort !== port) return;
         bridgePort = null;
         console.log('[TaskbarLyrics] Native Host Bridge 已断开');
+        // 立即拒绝所有未决请求：否则只能等 10 秒超时，期间 popup 表现为假死
+        const reqIds = [...pending.keys()].filter(k => !k.startsWith('__seq__'));
+        for (const id of reqIds) {
+            const entry = pending.get(id);
+            pending.delete(id);
+            pending.delete('__seq__' + id);
+            if (entry) entry.reject(new Error('Native Host Bridge 已断开'));
+        }
     });
 });
 
@@ -210,7 +220,7 @@ function sendBridgeRequest(type, payload) {
         messageSeq++;
         scheduleStateSave();
         bridgePort.postMessage({ type, payload, requestId: id, seq: messageSeq });
-        pending.set(id, resolve);
+        pending.set(id, { resolve, reject });
         pending.set('__seq__' + id, messageSeq);  // 记录发送时的序列号
 
         // 10 秒超时
@@ -306,6 +316,15 @@ function connectWebSocket() {
     // 既防止并发连接，也防止旧连接 CLOSING 期间新建连接覆盖全局 ws
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
+    // 旧连接若处于 CLOSING，摘除其全部回调：其迟到的 onclose 会触发
+    // 多余的 scheduleReconnect() 与状态广播，与新建连接的事件竞争
+    if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+    }
+
     try {
         const socket = ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}`);
         let connectionTimeout = null;
@@ -356,6 +375,9 @@ function connectWebSocket() {
                         socket.send(JSON.stringify({ type: 'auth', token }));
                     }
                 } catch (_) {}
+            }).catch(e => {
+                // 加密/存储失败不应成为未处理的 Promise 拒绝
+                console.error('[TaskbarLyrics] 获取鉴权令牌失败:', e);
             });
         };
 
@@ -429,7 +451,12 @@ function sendControl(command) {
 // ---- 与 Popup 通信 ----
 
 function broadcastToPopup(data) {
-    chrome.runtime.sendMessage(data).catch(() => {});
+    try {
+        // 扩展上下文失效（重载/更新）时 sendMessage 会同步抛出，
+        // 必须就地吞掉，否则会打断调用链（如 onclose → scheduleReconnect）
+        const p = chrome.runtime.sendMessage(data);
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch (_) {}
 }
 
 // ---- 监听来自 Popup 的消息 ----
@@ -448,7 +475,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
 
         case 'getAuthToken':
-            getAuthToken().then(token => sendResponse({ token }));
+            getAuthToken()
+                .then(token => sendResponse({ token }))
+                .catch(e => sendResponse({ error: e && e.message ? e.message : String(e) }));
             return true;
 
         case 'control':

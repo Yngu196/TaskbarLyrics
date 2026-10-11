@@ -68,6 +68,8 @@ public:
 
 private:
     void CreateRenderTarget();
+    /// 重建所有绑定当前 renderTarget_ 的实心画刷（Initialize / Resize / 设备丢失恢复共用）
+    void RecreateBrushes();
     void DrawHighlightedTextPerCharacter(const std::wstring& text,
                                           double progress,
                                           bool enableKaraoke,

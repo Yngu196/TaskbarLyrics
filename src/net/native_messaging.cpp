@@ -30,10 +30,19 @@ void NativeMessagingHost::SetMessageHandler(MessageHandler handler) {
 
 bool NativeMessagingHost::Run() {
     // JSON Lines 循环：逐行读取 stdin
+    // 行长度上限：防止写入端输出超长行导致内存无界增长
+    // （写入端为受信的 MoeKoeMusic 宿主，此上限仅为防御性保护）
+    constexpr size_t kMaxLineSize = 4 * 1024 * 1024; // 4MB
     std::string line;
     while (running_ && std::getline(std::cin, line)) {
         // 跳过空行
         if (line.empty()) continue;
+
+        // 超长行直接丢弃，不解析
+        if (line.size() > kMaxLineSize) {
+            Log("[NATIVE-HOST] Discarding oversized line (%zu bytes)\n", line.size());
+            continue;
+        }
 
         try {
             auto j = nlohmann::json::parse(line);
@@ -56,10 +65,19 @@ bool NativeMessagingHost::Run() {
             }
 
             if (handler_) {
-                handler_(msg);
+                // handler 处理的是外部输入派生的消息，任何异常都不允许
+                // 逃逸到 stdin 线程（线程函数异常未捕获会 std::terminate）
+                try {
+                    handler_(msg);
+                } catch (const std::exception& e) {
+                    Log("[NATIVE-HOST] Message handler exception: %s\n", e.what());
+                }
             }
-        } catch (const nlohmann::json::parse_error& e) {
-            Log("[NATIVE-HOST] JSON parse error: %s\n", e.what());
+        } catch (const nlohmann::json::exception& e) {
+            // 覆盖 parse_error（行非法 JSON）与 type_error（如 payload["action"]
+            // 存在但类型不是 string 时 .get<std::string>() 抛出）——
+            // 二者是兄弟类，只捕 parse_error 会让 type_error 逃逸
+            Log("[NATIVE-HOST] JSON error: %s\n", e.what());
             // 单行解析失败不终止循环，跳过继续
             continue;
         }

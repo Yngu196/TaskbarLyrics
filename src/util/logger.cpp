@@ -43,7 +43,11 @@ void RotateLogIfNeeded() {
         backupPath += ".1";
     }
     // 关闭当前文件（如果有的话）以便重命名 — 我们通过锁保证串行，直接重命名即可
-    ::MoveFileExA(g_logPath.c_str(), backupPath.c_str(), MOVEFILE_REPLACE_EXISTING);
+    if (!::MoveFileExA(g_logPath.c_str(), backupPath.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        // 此处已持有 g_logMutex，不能递归调用 Log()（会死锁），仅输出调试通道；
+        // 轮转失败时文件继续追加，下次写入会再次尝试轮转
+        ::OutputDebugStringA("[MOEKOE] Log rotation failed\n");
+    }
 }
 
 // 级别检查：低于 g_minLevel 的日志被丢弃

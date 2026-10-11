@@ -16,7 +16,9 @@ using moekoe::LogCrash;
 
 // 全局异常过滤器
 LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
-    Log("[CRASH] Unhandled exception code=0x%08lX at address=%p\n",
+    // 注意：此处必须用 LogCrash（无锁、纯 Win32、不受 g_enabled 门控），
+    // 若用常规 Log() 抢 g_logMutex，崩溃线程可能正持有该锁导致过滤器死锁
+    LogCrash("[CRASH] Unhandled exception code=0x%08lX at address=%p\n",
             ep->ExceptionRecord->ExceptionCode,
             ep->ExceptionRecord->ExceptionAddress);
 
@@ -29,7 +31,7 @@ LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
                 &hMod)) {
             wchar_t modName[MAX_PATH] = {};
             ::GetModuleFileNameW(hMod, modName, MAX_PATH);
-            Log("[CRASH] Faulting module: %ls\n", modName);
+            LogCrash("[CRASH] Faulting module: %ls\n", modName);
         }
     }
 
@@ -37,7 +39,7 @@ LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
     static const int kMaxFrames = 32;
     void* frames[kMaxFrames];
     USHORT nFrames = CaptureStackBackTrace(0, kMaxFrames, frames, nullptr);
-    Log("[CRASH] Stack trace (%hu frames):\n", nFrames);
+    LogCrash("[CRASH] Stack trace (%hu frames):\n", nFrames);
     for (USHORT i = 0; i < nFrames; ++i) {
         HMODULE hMod = nullptr;
         ::GetModuleHandleExW(
@@ -48,7 +50,7 @@ LONG WINAPI GlobalExceptionHandler(EXCEPTION_POINTERS* ep) {
         DWORD offset = hMod
             ? static_cast<DWORD>(reinterpret_cast<uintptr_t>(frames[i]) - reinterpret_cast<uintptr_t>(hMod))
             : 0;
-        Log("[CRASH]   #%02u %ls + 0x%08lX (%p)\n", i, hMod ? modName : L"<unknown>", offset, frames[i]);
+        LogCrash("[CRASH]   #%02u %ls + 0x%08lX (%p)\n", i, hMod ? modName : L"<unknown>", offset, frames[i]);
     }
 
     return EXCEPTION_CONTINUE_SEARCH;
