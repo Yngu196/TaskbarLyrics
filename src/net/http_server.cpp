@@ -193,7 +193,8 @@ void HttpServer::ServerLoop(int port) {
             res.set_content("{\"error\":\"no handler\"}", "application/json");
             return;
         }
-        Log("[HTTP] Received lyrics data (%zu bytes)\n", req.body.size());
+        // 播放期间每行歌词都会 POST 一次，降级为 LogDebug 避免刷屏
+        LogDebug("[HTTP] Received lyrics data (%zu bytes)\n", req.body.size());
         onLyrics_(req.body);
         res.set_content("{\"status\":\"accepted\"}", "application/json");
     });

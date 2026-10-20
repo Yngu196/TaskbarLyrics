@@ -494,16 +494,6 @@ void TaskbarRenderer::Render(const RenderState& state) {
     // 不改写 settings_，这样返回顶部/底部任务栏时会自动恢复用户保存的卡片模式。
     const bool cardMode = settings_.displayMode == "card" && !isVerticalTaskbar_;
 
-    static int renderEntryLogCount = 0;
-    if (++renderEntryLogCount <= 5) {
-        Log("[RENDER] entry #%d: displayMode='%s' hasLyrics=%d isPlaying=%d curLine='%s' coverUrl='%s'\n",
-            renderEntryLogCount,
-            settings_.displayMode.c_str(),
-            state.hasLyrics, state.isPlaying,
-            state.currentLine.empty() ? "(empty)" : state.currentLine.substr(0, 20).c_str(),
-            state.coverArtUrl.empty() ? "(empty)" : state.coverArtUrl.substr(0, 40).c_str());
-    }
-
     // 跑马灯状态机更新（仅 karaoke 模式）
     bool marqueeNeedsRedraw = false;
     float scrollOffset = 0.0f;

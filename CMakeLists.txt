@@ -653,6 +653,11 @@ if(BUILD_TESTING)
 endif()
 
 if(BUILD_TESTING AND _catch2_ready)
+    # 禁用 Catch2 的 Windows SEH 崩溃转译：新系统上每个用例结束都会触发
+    # "Unexpected SEH unhandled exception filter on disengage" 噪音刷屏。
+    # 关闭后测试若真崩溃，进程以非零码退出，CTest 仍判定失败，不损失保护。
+    target_compile_definitions(Catch2 PRIVATE CATCH_CONFIG_NO_WINDOWS_SEH)
+
     # 测试目标：lyrics_parser 核心逻辑
     add_executable(test_lyrics_parser
         tests/test_lyrics_parser.cpp

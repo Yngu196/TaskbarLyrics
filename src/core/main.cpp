@@ -454,7 +454,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                 }
             }
 
-            Log("[HTTP] Lyrics processed: cover='%s' song='%s'\n",
+            // 播放期间每行歌词推送一次，降级为 LogDebug 避免刷屏
+            LogDebug("[HTTP] Lyrics processed: cover='%s' song='%s'\n",
                 st.coverArtUrl.c_str(), st.songName.c_str());
         } catch (const std::exception& e) {
             Log("[HTTP] Failed to parse lyrics JSON: %s\n", e.what());
@@ -477,11 +478,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     app.nativeHost = std::make_unique<NativeMessagingHost>();
     auto& nativeHost = *app.nativeHost;
     nativeHost.SetMessageHandler([&app](const NativeHostMessage& msg) {
-        Log("[NATIVE-HOST] Received message: type=%s\n", msg.type.c_str());
+        LogDebug("[NATIVE-HOST] Received message: type=%s\n", msg.type.c_str());
         // 业务消息处理：可根据 payload 中的 action 执行对应操作
         if (msg.payload.contains("action")) {
             std::string action = msg.payload["action"].get<std::string>();
-            Log("[NATIVE-HOST] Action: %s\n", action.c_str());
+            LogDebug("[NATIVE-HOST] Action: %s\n", action.c_str());
 
             if (action == "enableApiMode") {
                 // content.js 用户授权后触发：写入 config.json 使主进程启动 WebSocket

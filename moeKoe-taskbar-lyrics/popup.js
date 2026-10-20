@@ -198,13 +198,6 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'connectionStatus':
                 updateConnectionUI(message.connected, message);
                 break;
-            case 'lyrics': {
-                const currentLyric = document.getElementById('currentLyric');
-                if (currentLyric && message.data && message.data.currentLine) {
-                    currentLyric.textContent = message.data.currentLine;
-                }
-                break;
-            }
             case 'nativeEvent':
                 // Native Host 上报事件（可扩展处理）
                 console.log('[Popup] Native Event:', message.data);

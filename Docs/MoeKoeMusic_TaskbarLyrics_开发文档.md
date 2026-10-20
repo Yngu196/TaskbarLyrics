@@ -88,12 +88,14 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── verify_package.py      #   PE 架构 + 双架构目录结构校验
 ├── tests/                     # Catch2 单元测试
 │   ├── test_lyrics_parser.cpp
-│   └── test_krc_parser.cpp
+│   ├── test_krc_parser.cpp
+│   ├── test_spectrum_math.cpp
+│   └── test_http_lifecycle.cpp
 ├── third_party/               # 内置第三方库（httplib / concurrentqueue / ixwebsocket 源码）
 ├── CMakeLists.txt             # v1.0.6 Beta（手动配置 vcpkg，绕过 toolchain；架构 triplet 强绑定）
 ├── CMakePresets.json          # VS2022 x64/ARM64 × Debug/Release 四个 preset（MSVC 14.44）
 ├── vcpkg.json                 # 依赖声明（ixwebsocket/nlohmann-json/zlib/mbedtls/kissfft）
-└── public/icons/icon256.png   # 插件中心图标
+└── icons/icon256.png          # 插件中心图标（README 头图；manifest 使用插件目录内副本）
 ```
 
 ***
