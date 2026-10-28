@@ -77,7 +77,8 @@ private:
                                           const float* overridePaddingLeft = nullptr,
                                           float opacity = 1.0f,
                                           const float* overridePaddingRight = nullptr,
-                                          const D2D1_RECT_F* overrideLayout = nullptr);
+                                          const D2D1_RECT_F* overrideLayout = nullptr,
+                                          bool useHighlightColor = false);
     void DrawTranslatedText(const std::wstring& text,
                             const float* overridePaddingLeft = nullptr,
                             float opacity = 1.0f,
@@ -98,14 +99,17 @@ private:
     void DrawCoverArt(const std::string& url, wchar_t fallbackChar,
                       float x, float y, float size);
     /// 绘制单行卡片模式歌词（isCurrent=true → 当前行大号亮色，false → 下一行小号灰色）
+    /// brushOverride 非空时使用指定画刷（悬停歌曲信息使用高亮色）。
     void DrawCardLyricsSingle(const std::wstring& line,
                               float x, float y, float availWidth,
-                              float yOffset, float alpha, bool isCurrent);
+                              float yOffset, float alpha, bool isCurrent,
+                              ID2D1SolidColorBrush* brushOverride = nullptr);
     void DrawCardLyrics(const std::wstring& currentLine,
                         const std::wstring& nextLine,
                         float x, float y, float availWidth,
                         float yOffset = 0.0f, float alpha = 1.0f,
-                        float curFontSizeScale = 1.0f, float nextFontSizeScale = 1.0f);
+                        float curFontSizeScale = 1.0f, float nextFontSizeScale = 1.0f,
+                        ID2D1SolidColorBrush* brushOverride = nullptr);
 
     static D2D1_COLOR_F ParseColor(const std::string& hex, float alpha = 1.0f);
 

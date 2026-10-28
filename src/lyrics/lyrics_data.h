@@ -44,6 +44,7 @@ struct PlayerState {
     std::string songTitle;           // 可选,用于调试
     std::string coverArtUrl;         // 专辑封面 URL（可能为空）
     std::string songName;            // 歌曲名称（用于封面降级显示）
+    std::string artist;              // 歌手名称（悬停时展示）
 };
 
 // 悬停时点击的控制按钮
@@ -65,12 +66,15 @@ struct RenderState {
     double      currentTime{0.0};     // 秒
     bool        isHovering{false};    // 鼠标是否悬停在歌词窗口上
     bool        isDragging{false};    // 是否正在拖动歌词窗口
+    bool        showSongInfo{false};  // 悬停时以歌曲信息替换歌词（渲染层用高亮色绘制）
 
     // 卡片模式专用
     std::string nextLine;             // 下一行歌词文本（预览）
     std::string nextTranslated;       // 下一行翻译（卡片"仅翻译"模式用）
     std::string coverArtUrl;          // 专辑封面 URL（可能为空）
     std::string songName;             // 歌曲名称（用于封面降级显示）
+    std::string songTitle;            // 完整曲目标题（可能已包含歌手）
+    std::string artist;               // 歌手名称（悬停时展示）
 
     // 频谱数据（纯音乐时使用，由 SpectrumCapture::GetSpectrum() 填充）
     std::vector<float> spectrumBands;

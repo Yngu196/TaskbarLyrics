@@ -1,0 +1,76 @@
+{
+  "advanced": {
+    "debug_log": true,
+    "enable_fullscreen_hide": true,
+    "http_server_port": 6523,
+    "refresh_rate_hz": 120,
+    "websocket_port": 6520
+  },
+  "appearance": {
+    "card_background_mode": "transparent",
+    "card_current_color": "#E72D2D",
+    "card_dynamic_width": true,
+    "card_font_family": "楷体",
+    "card_font_size_current": 18,
+    "card_font_size_next": 14,
+    "card_line1_offset_y": 0,
+    "card_line2_offset_y": 0,
+    "card_max_expand_ratio": 1,
+    "card_next_color": "#F06969",
+    "card_translation_mode": "off",
+    "cover_corner_radius": 21,
+    "cover_offset_x": -6,
+    "cover_size": 34,
+    "display_mode": "karaoke",
+    "display_selection_mode": "auto",
+    "enable_cover": true,
+    "enable_karaoke": true,
+    "enable_marquee": true,
+    "enable_translation": false,
+    "font_family": "楷体",
+    "font_size": 21,
+    "highlight_color": "#E32727",
+    "lyric_offset_y": 0,
+    "manual_display_index": 0,
+    "marquee_delay_ms": 2000,
+    "marquee_mode": "bounce",
+    "marquee_pause_ms": 1000,
+    "marquee_speed_px_per_sec": 40.0,
+    "normal_color": "#F89797",
+    "normal_opacity": 0.8500000238418579,
+    "settings_theme": "light",
+    "single_line_background_mode": "frosted",
+    "spectrum_bar_width": 0.0,
+    "spectrum_color": "#B287FF",
+    "spectrum_db_ceil": -10.34782600402832,
+    "spectrum_db_floor": -62.0,
+    "spectrum_mode": "spectrum",
+    "spectrum_num_bands": 32,
+    "spectrum_opacity": 1.0,
+    "translation_mode": "off",
+    "window_width_override": 0
+  },
+  "auto_start": false,
+  "enabled": true,
+  "position": {
+    "lock_fully": false,
+    "lock_position": false,
+    "offset_x": -1269,
+    "offset_y": 0
+  },
+  "position_profiles": {
+    "horizontal": {
+      "lock_fully": false,
+      "lock_position": false,
+      "offset_x": -1269,
+      "offset_y": 0
+    },
+    "vertical": {
+      "lock_fully": false,
+      "lock_position": false,
+      "offset_x": 0,
+      "offset_y": 0
+    }
+  },
+  "schema_version": 2
+}

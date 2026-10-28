@@ -58,6 +58,7 @@ private:
     // 只含 playing/time 不含歌曲信息，用于保留封面/歌名不被清空
     std::string lastSongTitle_;
     std::string lastSongName_;
+    std::string lastArtist_;
     std::string lastCoverArtUrl_;
 };
 

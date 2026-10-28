@@ -412,6 +412,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                        j["currentSong"].contains("name")) {
                 st.songName = j["currentSong"]["name"].get<std::string>();
             }
+            // 提取歌手名称（悬停时展示；MoeKoeMusic 的歌曲对象使用 author）
+            for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
+                if (j.contains(key) && j[key].is_string()) {
+                    st.artist = j[key].get<std::string>();
+                    break;
+                }
+            }
+            if (st.artist.empty() && j.contains("currentSong") && j["currentSong"].is_object()) {
+                for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
+                    if (j["currentSong"].contains(key) && j["currentSong"][key].is_string()) {
+                        st.artist = j["currentSong"][key].get<std::string>();
+                        break;
+                    }
+                }
+            }
 
             parser.UpdatePlayerState(st);
 

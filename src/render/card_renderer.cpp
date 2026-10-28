@@ -206,18 +206,22 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
         if (!curW.empty()) {
             DrawCardLyricsSingle(curW, lyricsX, vNudgeCur, lyricsWidth,
                                  inOffset, fadeInAlpha,
-                                 /*isCurrent=*/true);
+                                 /*isCurrent=*/true,
+                                 state.showSongInfo ? highlightBrush_.Get() : nullptr);
         }
         if (!nextW.empty()) {
             DrawCardLyricsSingle(nextW, lyricsX, halfH - vNudgeNext, lyricsWidth,
                                  inOffset, fadeInAlpha,
-                                 /*isCurrent=*/false);
+                                 /*isCurrent=*/false,
+                                 state.showSongInfo ? highlightBrush_.Get() : nullptr);
         }
 
         renderTarget_->PopAxisAlignedClip();
     } else {
         // ═════ 非动画状态：正常双行绘制 ═════
-        DrawCardLyrics(curW, nextW, lyricsX, 0.0f, lyricsWidth, 0.0f, 1.0f);
+        DrawCardLyrics(curW, nextW, lyricsX, 0.0f, lyricsWidth, 0.0f, 1.0f,
+                       1.0f, 1.0f,
+                       state.showSongInfo ? highlightBrush_.Get() : nullptr);
     }
 }
 
@@ -714,7 +718,8 @@ void TaskbarRenderer::DrawCoverArt(const std::string& url, wchar_t fallbackChar,
 void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
                                            float x, float y, float availWidth,
                                            float yOffset, float alpha,
-                                           bool isCurrent) {
+                                           bool isCurrent,
+                                           ID2D1SolidColorBrush* brushOverride) {
     if (!renderTarget_ || line.empty() || alpha <= 0.001f) return;
 
     const float h = static_cast<float>(height_);
@@ -725,7 +730,9 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
                                         : static_cast<float>(settings_.cardLine2OffsetY)) * dpiScale;
 
     IDWriteTextFormat* format = isCurrent ? cardCurrentFormat_.Get() : cardNextFormat_.Get();
-    ID2D1SolidColorBrush* brush = isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get();
+    ID2D1SolidColorBrush* brush = brushOverride
+        ? brushOverride
+        : (isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get());
     if (!format || !brush) return;
 
     D2D1_COLOR_F origColor = brush->GetColor();
@@ -745,7 +752,8 @@ void TaskbarRenderer::DrawCardLyrics(const std::wstring& currentLine,
                                      const std::wstring& nextLine,
                                      float x, float y, float availWidth,
                                      float yOffset, float alpha,
-                                     float /*curFontSizeScale*/, float /*nextFontSizeScale*/) {
+                                     float /*curFontSizeScale*/, float /*nextFontSizeScale*/,
+                                     ID2D1SolidColorBrush* brushOverride) {
     if (!renderTarget_ || alpha <= 0.001f) return;
 
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -755,12 +763,12 @@ void TaskbarRenderer::DrawCardLyrics(const std::wstring& currentLine,
 
     if (!currentLine.empty()) {
         DrawCardLyricsSingle(currentLine, x, y + vNudgeCur, availWidth, yOffset, alpha,
-                             /*isCurrent=*/true);
+                             /*isCurrent=*/true, brushOverride);
     }
 
     if (!nextLine.empty()) {
         DrawCardLyricsSingle(nextLine, x, y + halfH - vNudgeNext, availWidth, yOffset, alpha,
-                             /*isCurrent=*/false);
+                             /*isCurrent=*/false, brushOverride);
     }
 }
 

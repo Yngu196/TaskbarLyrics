@@ -315,13 +315,19 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                     if (cs.is_string()) {
                         st.songTitle = cs.get<std::string>();
                     } else if (cs.is_object()) {
-                        // object 格式: {name, artist, pic, ...}
+                        // object 格式: {name, author, pic, ...}（MoeKoeMusic 使用 author）
                         if (cs.contains("name") && cs["name"].is_string()) {
                             st.songTitle = cs["name"].get<std::string>();
                             st.songName = cs["name"].get<std::string>();
                         }
-                        if (cs.contains("artist") && cs["artist"].is_string()) {
-                            st.songTitle += " - " + cs["artist"].get<std::string>();
+                        for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
+                            if (cs.contains(key) && cs[key].is_string()) {
+                                st.artist = cs[key].get<std::string>();
+                                if (!st.songTitle.empty()) {
+                                    st.songTitle += " - " + st.artist;
+                                }
+                                break;
+                            }
                         }
                         // 提取专辑封面 URL（尝试已知字段名）
                         for (const auto& key : {"pic", "cover", "albumArt", "image", "poster", "img", "album_pic"}) {
@@ -390,6 +396,13 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             if (d.contains("songName") && d["songName"].is_string()) {
                 st.songName = d["songName"].get<std::string>();
             }
+            // 提取歌手名称（悬停时展示）
+            for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
+                if (d.contains(key) && d[key].is_string()) {
+                    st.artist = d[key].get<std::string>();
+                    break;
+                }
+            }
 
             // 兼容 currentSong 嵌套对象格式
             if (d.contains("currentSong") && d["currentSong"].is_object()) {
@@ -404,6 +417,12 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 }
                 if (cs.contains("name") && cs["name"].is_string() && st.songName.empty()) {
                     st.songName = cs["name"].get<std::string>();
+                }
+                for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
+                    if (st.artist.empty() && cs.contains(key) && cs[key].is_string()) {
+                        st.artist = cs[key].get<std::string>();
+                        break;
+                    }
                 }
             }
         }

@@ -487,12 +487,31 @@ void TaskbarRenderer::PresentToLayeredWindow() {
     ::ReleaseDC(nullptr, hdcScreen);
 }
 
-void TaskbarRenderer::Render(const RenderState& state) {
+void TaskbarRenderer::Render(const RenderState& stateIn) {
     if (!initialized_ || !renderTarget_) return;
 
     // 左右侧任务栏的可用宽度不足以可靠呈现双行卡片；运行时强制走单行路径。
     // 不改写 settings_，这样返回顶部/底部任务栏时会自动恢复用户保存的卡片模式。
     const bool cardMode = settings_.displayMode == "card" && !isVerticalTaskbar_;
+
+    // 悬停时用歌曲信息替换歌词显示，移开后自动恢复：
+    //   双行（卡片）模式：第一行歌曲名，第二行歌手
+    //   单行（卡拉OK）模式：仅歌曲名
+    RenderState hoveredState = stateIn;
+    if (hoveredState.isHovering) {
+        const std::string songName = !hoveredState.songName.empty()
+            ? hoveredState.songName : hoveredState.songTitle;
+        if (!songName.empty()) {
+            hoveredState.currentLine = songName;
+            hoveredState.currentTranslated.clear();
+            hoveredState.nextLine = cardMode ? hoveredState.artist : std::string();
+            hoveredState.nextTranslated.clear();
+            hoveredState.hasLyrics = true;
+            hoveredState.progress  = 0.0;  // 歌曲信息不做逐字高亮
+            hoveredState.showSongInfo = true;
+        }
+    }
+    const RenderState& state = hoveredState;
 
     // 跑马灯状态机更新（仅 karaoke 模式）
     bool marqueeNeedsRedraw = false;
@@ -577,6 +596,9 @@ void TaskbarRenderer::Render(const RenderState& state) {
                          state.isDragging != lastState_.isDragging ||
                          state.nextLine != lastState_.nextLine ||
                          state.coverArtUrl != lastState_.coverArtUrl ||
+                         state.songName != lastState_.songName ||
+                         state.songTitle != lastState_.songTitle ||
+                         state.artist != lastState_.artist ||
                          state.spectrumBands != lastState_.spectrumBands ||
                          std::abs(state.progress - lastState_.progress) > 0.001);
     // 跑马灯滚动动画期间也需要重绘
@@ -826,7 +848,8 @@ void TaskbarRenderer::Render(const RenderState& state) {
 
                 // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr, fadeT, padRightPtr, lyricLayoutOverride);
+                                               scrollOffset, padPtr, fadeT, padRightPtr, lyricLayoutOverride,
+                                               state.showSongInfo);
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
                     DrawTranslatedText(trW, padPtr, fadeT, padRightPtr, translationLayoutOverride);
@@ -834,7 +857,8 @@ void TaskbarRenderer::Render(const RenderState& state) {
             } else {
                 // 非 fade：正常渲染（使用弹簧平滑进度）
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
-                                               scrollOffset, padPtr, 1.0f, padRightPtr, lyricLayoutOverride);
+                                               scrollOffset, padPtr, 1.0f, padRightPtr, lyricLayoutOverride,
+                                               state.showSongInfo);
 
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);

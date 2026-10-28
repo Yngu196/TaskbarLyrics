@@ -38,19 +38,57 @@ void LyricsParser::UpdatePlayerState(const PlayerState& state) {
 
     // MoeKoeMusic 的进度更新消息只含 playing/time，不含歌曲元数据
     //（song/cover 均为空）：保留上一次的非空值，避免封面/歌名被清空
-    if (state.songTitle.empty() && state.coverArtUrl.empty() &&
-        !lastSongTitle_.empty()) {
+    const bool hasMeta = !state.songTitle.empty() || !state.songName.empty() ||
+                         !state.artist.empty() || !state.coverArtUrl.empty();
+    if (!hasMeta && !lastSongTitle_.empty()) {
         PlayerState merged = state;
         merged.songTitle   = lastSongTitle_;
         merged.songName    = lastSongName_;
+        merged.artist      = lastArtist_;
         merged.coverArtUrl = lastCoverArtUrl_;
         state_ = merged;
     } else {
+        // 判断是否仍是同一首歌：playerState 的 songTitle 可能只含歌名、
+        // 而歌词消息的 songTitle 含“歌名 - 歌手”，因此需做前缀兼容比较，
+        // 避免因缺少 artist 而清掉上一帧已解析出的歌手。
+        bool sameTrack = false;
+        if (!state.songName.empty() && !lastSongName_.empty()) {
+            sameTrack = (state.songName == lastSongName_);
+        } else if (!state.songTitle.empty() && !lastSongTitle_.empty()) {
+            sameTrack = state.songTitle == lastSongTitle_ ||
+                        state.songTitle.rfind(lastSongName_ + " - ", 0) == 0 ||
+                        lastSongTitle_.rfind(state.songTitle + " - ", 0) == 0;
+        } else if (!state.coverArtUrl.empty() && !lastCoverArtUrl_.empty()) {
+            sameTrack = (state.coverArtUrl == lastCoverArtUrl_);
+        } else if (lastSongTitle_.empty()) {
+            sameTrack = true;  // 首次收到元数据
+        }
+
+        if (!sameTrack) {
+            // 新曲目：丢弃上一首的元数据，避免短暂显示错误的歌手
+            lastSongTitle_.clear();
+            lastSongName_.clear();
+            lastArtist_.clear();
+            lastCoverArtUrl_.clear();
+        }
         state_ = state;
-        if (!state.songTitle.empty()) {
-            lastSongTitle_   = state.songTitle;
-            lastSongName_    = state.songName;
-            lastCoverArtUrl_ = state.coverArtUrl;
+        if (sameTrack) {
+            if (state_.songTitle.empty())   state_.songTitle   = lastSongTitle_;
+            if (state_.songName.empty())    state_.songName    = lastSongName_;
+            if (state_.artist.empty())      state_.artist      = lastArtist_;
+            if (state_.coverArtUrl.empty()) state_.coverArtUrl = lastCoverArtUrl_;
+        }
+        if (!state_.songTitle.empty()) {
+            lastSongTitle_   = state.songTitle.empty() ? state_.songTitle : state.songTitle;
+        }
+        if (!state_.songName.empty()) {
+            lastSongName_    = state_.songName;
+        }
+        if (!state_.artist.empty()) {
+            lastArtist_      = state_.artist;
+        }
+        if (!state_.coverArtUrl.empty()) {
+            lastCoverArtUrl_ = state_.coverArtUrl;
         }
     }
 
@@ -106,6 +144,8 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     // 否则永远拿不到 coverArtUrl/songName，只能显示 '?' 占位封面。
     out.coverArtUrl = state_.coverArtUrl;
     out.songName    = state_.songName;
+    out.songTitle   = state_.songTitle;
+    out.artist      = state_.artist;
 
     // ── 本地时钟推算：播放状态下用本地时间插值 currentTime ──
     // 目的：即使 playerState 消息频率低（如每秒一次），progress 也能每帧平滑推进

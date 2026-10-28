@@ -30,13 +30,17 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       const float* overridePaddingLeft,
                                                       float opacity,
                                                       const float* overridePaddingRight,
-                                                      const D2D1_RECT_F* overrideLayout) {
+                                                      const D2D1_RECT_F* overrideLayout,
+                                                      bool useHighlightColor) {
     if (!renderTarget_ || !textFormat_ || text.empty() ||
         !highlightBrush_ || !normalBrush_) {
         return;
     }
     const UINT32 length = static_cast<UINT32>(text.size());
     if (length == 0) return;
+
+    // 悬停歌曲信息：整段文字直接使用高亮色绘制
+    ID2D1Brush* baseBrush = useHighlightColor ? highlightBrush_.Get() : normalBrush_.Get();
 
     const float paddingX = overridePaddingLeft ? *overridePaddingLeft
         : constants::TEXT_PADDING_X * static_cast<float>(dpi_) / 96.0f;
@@ -128,10 +132,10 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
             const D2D1_RECT_F glyphRect = D2D1::RectF(
                 layoutRect.left, glyphY + glyphHeight * static_cast<float>(i),
                 layoutRect.right, glyphY + glyphHeight * static_cast<float>(i + 1));
-            renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect, normalBrush_.Get());
+            renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect, baseBrush);
         }
 
-        if (enableKaraoke && progress > 0.0) {
+        if (!useHighlightColor && enableKaraoke && progress > 0.0) {
             const float highlightBottom = glyphY + totalHeight * static_cast<float>(std::clamp(progress, 0.0, 1.0));
             const UINT32 highlightGlyphCount = static_cast<UINT32>(std::ceil(
                 std::clamp(progress, 0.0, 1.0) * length));
@@ -157,9 +161,9 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         // 滚动后的文字会穿透到封面左侧/下方（封面并不能可靠遮住透明区域）。
         renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         renderTarget_->DrawTextLayout(
-            D2D1::Point2F(textLeft, layoutRect.top), cachedLayout_.Get(), normalBrush_.Get());
+            D2D1::Point2F(textLeft, layoutRect.top), cachedLayout_.Get(), baseBrush);
 
-        if (enableKaraoke && progress > 0.0) {
+        if (!useHighlightColor && enableKaraoke && progress > 0.0) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth > 0.0f) {
                 D2D1_RECT_F clipRect = D2D1::RectF(
@@ -178,9 +182,9 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
         // 裁剪到 layoutRect，避免长歌词文本溢出覆盖封面
         renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
         renderTarget_->DrawTextW(
-            text.c_str(), length, textFormat_.Get(), layoutRect, normalBrush_.Get());
+            text.c_str(), length, textFormat_.Get(), layoutRect, baseBrush);
 
-        if (enableKaraoke && progress > 0.0 && layoutValid) {
+        if (!useHighlightColor && enableKaraoke && progress > 0.0 && layoutValid) {
             const float highlightWidth = std::min(textWidth * static_cast<float>(progress), textWidth);
             if (highlightWidth > 0.0f) {
                 const float centeredLeft = layoutRect.left + (availableWidth - textWidth) / 2.0f;
