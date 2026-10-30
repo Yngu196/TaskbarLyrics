@@ -164,6 +164,13 @@ private:
     void SnapToEmptySpace();
     void ShowLyricsContextMenu();
 
+    // 遮挡守护：检测歌词窗口是否被第三方窗口（如桌面整理工具）盖住，必要时重新置顶
+    HWND FindCoverWindow() const;
+    bool IsCoveredByOtherWindow() const;
+    void EnsureUncovered();
+    // 临时诊断：歌词窗口可见性 / 命中窗口变化时输出一次详细现场
+    void DiagnosticOcclusion();
+
     // 多任务栏选择：每帧评估目标（活动窗口/鼠标所在显示器），
     // 经防抖确认后切换绑定任务栏（GWLP_HWNDPARENT + ShellCompanion::Rebind）
     void UpdateTaskbarSelection();
@@ -188,6 +195,10 @@ private:
     int           dynamicCardWidthDip_{0};  // 卡片模式动态宽度（DIPs），0=使用默认
     int           cardMaxExpandRatio_{0};   // 卡片最大扩展比例: 0=默认(1/3), 1=50%, 2=100%
     int           widthOverrideDip_{0};     // 手动窗口宽度覆盖（DIPs），0=自动
+    ULONGLONG     lastCoverRaiseTick_{0};   // 上次因被遮挡而重新置顶的时刻（节流用）
+    ULONGLONG     lastCoverLogTick_{0};     // 上次输出遮挡诊断日志的时刻（节流用）
+    HWND          lastHitHwnd_{nullptr};    // 诊断：上次歌词中心点命中的窗口
+    bool          lastLoggedVisible_{false};// 诊断：上次记录的可见状态
     TaskbarPosition lastPosition_{TaskbarPosition::UNKNOWN};  // 用于检测方位变化（重置拖动偏移）
 
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"

@@ -97,6 +97,9 @@ bool TaskbarWindow::Create(HINSTANCE hInstance, HWND hParent) {
     // 启动 Explorer 重启监测定时器（每 2 秒检查 Shell_TrayWnd 有效性）
     ::SetTimer(hwnd_, 5, 2000, nullptr);
 
+    // 启动遮挡守护定时器（每 500ms 检查是否被第三方窗口覆盖）
+    ::SetTimer(hwnd_, 6, 500, nullptr);
+
     return true;
 }
 
@@ -105,6 +108,8 @@ void TaskbarWindow::Destroy() {
     if (hwnd_) {
         // 停止 Explorer 重启监测定时器
         ::KillTimer(hwnd_, 5);
+        // 停止遮挡守护定时器
+        ::KillTimer(hwnd_, 6);
         // 先解除与任务栏的父子关系，避免 DestroyWindow 影响任务栏
         ::SetWindowLongPtrW(hwnd_, GWLP_HWNDPARENT, 0);
         // 先隐藏窗口，避免销毁过程中闪烁
@@ -137,6 +142,152 @@ void TaskbarWindow::InternalPosition() {
     companion_.PositionLyricsInTaskbar(
         hwnd_, displayMode_, dragOffsetX_, dragOffsetY_, lastPosRect_, dynamicCardWidthDip_,
         cardMaxExpandRatio_, widthOverrideDip_);
+}
+
+// ═════════════════════════════════════════
+// 遮挡守护：被第三方窗口（如腾讯桌面整理）覆盖后重新置顶
+// ═════════════════════════════════════════
+
+// 判断 Z 序上方的某个窗口是否应当忽略（自身 / 任务栏的 owned 窗口 / 桌面与外壳窗口）
+static bool ShouldIgnoreCoverWindow(HWND h, HWND hSelf, HWND hTaskbar) {
+    if (!h || h == hSelf) return true;
+    // 任务栏的其它 owned 窗口（如媒体卡片弹窗）不算遮挡
+    if (hTaskbar && ::GetWindow(h, GW_OWNER) == hTaskbar) return true;
+
+    wchar_t cls[64]{};
+    if (::GetClassNameW(h, cls, 64) > 0) {
+        static const wchar_t* kIgnoreClasses[] = {
+            L"Progman", L"WorkerW", L"Shell_TrayWnd", L"Shell_SecondaryTrayWnd",
+            L"MoeKoeTaskbarLyricsClass"
+        };
+        for (const wchar_t* name : kIgnoreClasses) {
+            if (::lstrcmpW(cls, name) == 0) return true;
+        }
+    }
+    return false;
+}
+
+HWND TaskbarWindow::FindCoverWindow() const {
+    if (!hwnd_ || !::IsWindowVisible(hwnd_)) return nullptr;
+
+    RECT myRect{};
+    if (!::GetWindowRect(hwnd_, &myRect)) return nullptr;
+    if (myRect.right <= myRect.left || myRect.bottom <= myRect.top) return nullptr;
+
+    HWND hTaskbar = companion_.GetTaskbarHandle();
+
+    // 从歌词窗口往上遍历 Z 序：返回第一个与歌词区域相交的可见窗口
+    for (HWND h = ::GetWindow(hwnd_, GW_HWNDPREV); h != nullptr; h = ::GetWindow(h, GW_HWNDPREV)) {
+        if (ShouldIgnoreCoverWindow(h, hwnd_, hTaskbar)) continue;
+        if (!::IsWindowVisible(h) || ::IsIconic(h)) continue;
+
+        RECT r{};
+        if (!::GetWindowRect(h, &r)) continue;
+        RECT inter{};
+        if (::IntersectRect(&inter, &r, &myRect)) return h;
+    }
+    return nullptr;
+}
+
+bool TaskbarWindow::IsCoveredByOtherWindow() const {
+    return FindCoverWindow() != nullptr;
+}
+
+void TaskbarWindow::DiagnosticOcclusion() {
+    if (!hwnd_) return;
+
+    const bool visible = ::IsWindowVisible(hwnd_) != 0;
+    RECT r{};
+    ::GetWindowRect(hwnd_, &r);
+    const POINT pt{(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    const HWND hit = (r.right > r.left && r.bottom > r.top && r.left > -10000)
+                         ? ::WindowFromPoint(pt) : nullptr;
+
+    // 仅在可见性或命中窗口发生变化时输出，避免日志膨胀
+    if (visible == lastLoggedVisible_ && hit == lastHitHwnd_) return;
+    lastLoggedVisible_ = visible;
+    lastHitHwnd_ = hit;
+
+    Log("[OCCLUSION] lyrics visible=%d fullscreenHidden=%d autoHideHidden=%d rect=(%ld,%ld,%ld,%ld)\n",
+        (int)visible, (int)companion_.IsFullscreenHidden(), (int)companion_.IsAutoHideHidden(),
+        r.left, r.top, r.right, r.bottom);
+
+    if (hit && hit != hwnd_) {
+        HWND root = ::GetAncestor(hit, GA_ROOT);
+        HWND rootOwner = ::GetAncestor(hit, GA_ROOTOWNER);
+        wchar_t cls[128]{};
+        wchar_t clsRoot[128]{};
+        ::GetClassNameW(hit, cls, 127);
+        if (root) ::GetClassNameW(root, clsRoot, 127);
+
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(hit, &pid);
+        wchar_t exePath[MAX_PATH]{};
+        DWORD exeLen = MAX_PATH;
+        HANDLE hProc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProc) {
+            ::QueryFullProcessImageNameW(hProc, 0, exePath, &exeLen);
+            ::CloseHandle(hProc);
+        }
+
+        RECT hr{};
+        ::GetWindowRect(hit, &hr);
+        Log("[OCCLUSION] hit=%p class=%ls root=%p(%ls) rootOwner=%p exe=%ls pid=%lu exstyle=0x%lX rect=(%ld,%ld,%ld,%ld)\n",
+            hit, cls, root, clsRoot, rootOwner, exePath, pid,
+            ::GetWindowLongW(hit, GWL_EXSTYLE),
+            hr.left, hr.top, hr.right, hr.bottom);
+    }
+}
+
+void TaskbarWindow::EnsureUncovered() {
+    if (!hwnd_) return;
+    DiagnosticOcclusion();
+
+    if (!::IsWindowVisible(hwnd_)) return;
+    if (companion_.IsFullscreenHidden()) return;
+    if (isDragging_) return;
+
+    HWND cover = FindCoverWindow();
+    if (!cover) return;
+
+    // 诊断日志（5 秒最多一条）：记录覆盖窗口的类名/进程/样式，便于定位第三方工具
+    const ULONGLONG now = ::GetTickCount64();
+    if (now - lastCoverLogTick_ > 5000) {
+        lastCoverLogTick_ = now;
+        wchar_t cls[128]{};
+        ::GetClassNameW(cover, cls, 127);
+        DWORD pid = 0;
+        ::GetWindowThreadProcessId(cover, &pid);
+        wchar_t exePath[MAX_PATH]{};
+        DWORD exeLen = MAX_PATH;
+        HANDLE hProc = ::OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (hProc) {
+            ::QueryFullProcessImageNameW(hProc, 0, exePath, &exeLen);
+            ::CloseHandle(hProc);
+        }
+        RECT r{};
+        ::GetWindowRect(cover, &r);
+        Log("[TASKBAR-WND] 歌词被遮挡: class=%ls exe=%ls pid=%lu exstyle=0x%lX rect=(%ld,%ld,%ld,%ld)\n",
+            cls, exePath, pid, ::GetWindowLongW(cover, GWL_EXSTYLE),
+            r.left, r.top, r.right, r.bottom);
+    }
+
+    // 节流：1.5 秒内最多重排一次，避免与覆盖窗口反复争夺 Z 序
+    if (lastCoverRaiseTick_ != 0 && now - lastCoverRaiseTick_ < 1500) return;
+    lastCoverRaiseTick_ = now;
+
+    // 桌面整理类工具会把自身窗口插到任务栏所在的 Z 组之上，导致 owned 窗口被盖住。
+    // 这里把歌词窗口提升到 topmost 组最前，重新回到任务栏上方；
+    // 开始菜单等外壳窗口在激活时仍会重新升到我们之上，交互不受影响。
+    ::SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+
+    // 校验提升是否奏效，便于判断对方是否同样强制置顶
+    if (HWND still = FindCoverWindow()) {
+        wchar_t cls2[128]{};
+        ::GetClassNameW(still, cls2, 127);
+        Log("[TASKBAR-WND] 置顶后仍被遮挡: class=%ls\n", cls2);
+    }
 }
 
 void TaskbarWindow::Reposition() {
@@ -642,6 +793,9 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
                 LogWarn("[TASKBAR-WND] Explorer restart recovery: failed to find new Shell_TrayWnd after %dms\n",
                          kMaxRetries * kRetryIntervalMs);
             }
+        } else if (wParam == 6 && self) {
+            // 遮挡守护：桌面整理等第三方窗口交互后可能把歌词窗口盖住
+            self->EnsureUncovered();
         }
         return 0;
     case TaskbarWindow::WM_DELAYED_REPOSITION:
