@@ -47,6 +47,7 @@ void ApplyRendererSettings(AppContext& app) {
         app.config->Appearance().fontFamily.c_str(), app.config->Appearance().fontSize,
         app.config->Appearance().normalOpacity);
     app.renderer->ApplySettings(app.config->Appearance());
+    if (app.mediaCard) app.mediaCard->ApplySettings(app.config->Appearance());
 
     // 同步频谱采集参数（dB 区间、柱数）
     if (app.spectrumCapture) {
@@ -70,7 +71,10 @@ void HandleFrameTick(AppContext& app) {
         if (app.taskbarWindow) app.taskbarWindow->CheckResize();
 
         // 2. APPBAR 自动隐藏：窗口已隐藏时跳过渲染（避免 UpdateLayeredWindow 隐式显示导致闪烁）
-        if (app.taskbarWindow && app.taskbarWindow->IsAutoHideHidden()) return;
+        if (app.taskbarWindow && app.taskbarWindow->IsAutoHideHidden()) {
+            if (app.mediaCard) app.mediaCard->Hide();
+            return;
+        }
 
         // 2.5. 全屏检测防抖：由 FullscreenDetector 独立处理
         if (app.taskbarWindow && app.config && app.config->Advanced().enableFullscreenHide) {
@@ -95,7 +99,10 @@ void HandleFrameTick(AppContext& app) {
         }
 
         // 2.6. 全屏隐藏时跳过渲染（与 APPBAR 同理）
-        if (app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden()) return;
+        if (app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden()) {
+            if (app.mediaCard) app.mediaCard->Hide();
+            return;
+        }
 
         // 3. 从歌词解析器获取当前应渲染的状态
         if (app.parser && app.renderer) {
@@ -161,6 +168,11 @@ void HandleFrameTick(AppContext& app) {
             // 同步方向到渲染器后执行渲染。
             app.renderer->SetVerticalTaskbar(verticalTaskbar);
             app.renderer->Render(state);
+
+            // 4.1. 歌曲卡片：可见时每帧跟随任务栏位置并重绘（进度/悬停/拖动实时更新）
+            if (app.mediaCard && app.mediaCard->IsVisible()) {
+                app.mediaCard->RenderFrame(state, app.taskbarWindow->GetTaskbarInfo());
+            }
 
             // 4.5. 卡片模式动态宽度：长歌词扩展，短歌词滞回缩回
             if (app.config->Appearance().displayMode == "card" &&

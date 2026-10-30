@@ -29,6 +29,10 @@ public:
     // 主循环每帧调用,返回当前应渲染的内容
     RenderState GetCurrentRenderState() const;
 
+    // 用户拖动媒体卡片进度条后调用：把本地播放时间立即置为目标值，
+    // 使界面不必等待播放器回传 playerState 就能显示新进度
+    void SeekTo(double seconds);
+
     bool HasLyrics() const;
     bool IsPlaying() const;
 
@@ -60,6 +64,13 @@ private:
     std::string lastSongName_;
     std::string lastArtist_;
     std::string lastCoverArtUrl_;
+    double      lastDuration_{0.0};  // 最近一次有效的歌曲总时长（秒）
+
+    // 本地 seek 后的“旧进度抑制”窗口：seek 请求要经过
+    // EXE→扩展→页面 异步传递，期间回传的 playerState 仍是旧进度，
+    // 直接采用会让进度条/歌词瞬间跳回原位置
+    double      seekTarget_{-1.0};        // 最近一次 seek 的目标时间（秒）
+    double      seekSuppressUntil_{0.0};  // 抑制截止的本地墙钟时间（秒）
 };
 
 } // namespace moekoe

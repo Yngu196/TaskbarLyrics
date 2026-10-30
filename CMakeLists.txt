@@ -354,6 +354,7 @@ list(APPEND SOURCES
     src/render/renderer.cpp
     src/render/lyric_renderer.cpp
     src/render/card_renderer.cpp
+    src/render/media_card_renderer.cpp
     src/render/marquee_engine.cpp
     src/render/spring_animation.cpp
     src/render/spectrum_capture.cpp
@@ -361,12 +362,14 @@ list(APPEND SOURCES
 list(APPEND HEADERS
     src/render/renderer.h
     src/render/renderer_utils.h
+    src/render/media_card_layout.h
     src/render/spectrum_capture.h
 )
 
 # taskbar/: 任务栏窗口 — 嵌入、定位、全屏检测、Shell 伴侣、多任务栏选择
 list(APPEND SOURCES
     src/taskbar/taskbar_window.cpp
+    src/taskbar/media_card_window.cpp
     src/taskbar/taskbar_embedder.cpp
     src/taskbar/taskbar_geometry.cpp
     src/taskbar/fullscreen_detector.cpp
@@ -375,6 +378,7 @@ list(APPEND SOURCES
 )
 list(APPEND HEADERS
     src/taskbar/taskbar_window.h
+    src/taskbar/media_card_window.h
     src/taskbar/taskbar_embedder.h
     src/taskbar/taskbar_geometry.h
     src/taskbar/fullscreen_detector.h

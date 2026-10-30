@@ -125,6 +125,10 @@ public:
     using ButtonCallback = std::function<void(HoverButton)>;
     void OnButtonClicked(ButtonCallback cb) { onButtonClicked_ = std::move(cb); }
 
+    // 左键单击歌词窗口回调（区别于拖动：按下后位移 ≤4px 视为单击）
+    using ClickCallback = std::function<void()>;
+    void OnLyricsClicked(ClickCallback cb) { onLyricsClicked_ = std::move(cb); }
+
     // 右键菜单回调（菜单项命令 ID）
     using ContextMenuCallback = std::function<void(UINT menuId)>;
     void OnContextMenuCommand(ContextMenuCallback cb) { onContextMenuCmd_ = std::move(cb); }
@@ -177,6 +181,8 @@ private:
     RECT          lastPosRect_{-1, -1, -1, -1};  // 上次 SetWindowPos 的坐标，避免无变化时重复提交 DWM
     POINT         dragStartPos_{0, 0};     // 拖动开始时鼠标屏幕坐标
     POINT         dragStartWinPos_{0, 0};  // 拖动开始时窗口屏幕坐标
+    POINT         clickDownPos_{0, 0};     // 单击判定：按下时鼠标屏幕坐标
+    bool          clickPending_{false};    // 按下后尚未确认是否单击
     int           dragOffsetX_{0};         // 用户拖动产生的累积偏移
     int           dragOffsetY_{0};
     int           dynamicCardWidthDip_{0};  // 卡片模式动态宽度（DIPs），0=使用默认
@@ -187,6 +193,7 @@ private:
     std::string   displayMode_{"karaoke"};  // 显示模式: "karaoke" | "card"
 
     ButtonCallback onButtonClicked_;
+    ClickCallback onLyricsClicked_;
     ContextMenuCallback onContextMenuCmd_;
     HoverChangedCallback onHoverChanged_;
     DragEndCallback onDragEnd_;

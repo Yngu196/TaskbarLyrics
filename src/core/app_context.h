@@ -13,6 +13,7 @@
 #include "render/renderer.h"
 #include "render/spectrum_capture.h"
 #include "taskbar/taskbar_window.h"
+#include "taskbar/media_card_window.h"
 #include "ui/tray_icon.h"
 #include "net/websocket_client.h"
 
@@ -53,6 +54,7 @@ struct AppContext {
     std::unique_ptr<SpectrumCapture>     spectrumCapture;
     std::unique_ptr<TaskbarRenderer>      renderer;        // 依赖 taskbarWindow 的 HWND
     std::unique_ptr<TaskbarWindow>        taskbarWindow;   // 先于 renderer 析构
+    std::unique_ptr<MediaCardWindow>      mediaCard;       // 歌曲卡片弹窗（先于 taskbarWindow 析构）
     std::unique_ptr<TrayIcon>            tray;            // 最后声明，最先析构
 };
 

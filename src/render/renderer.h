@@ -54,6 +54,12 @@ public:
     void Render(const RenderState& state);
     void Resize(UINT width, UINT height, UINT dpi);
 
+    // ═════ 媒体卡片（点击任务栏歌词窗口弹出） ═════
+    // hoverButton: -1=无, 0=上一首, 1=播放/暂停, 2=下一首（与 MediaCardWindow 命中结果对应）
+    // seekPreviewSeconds: >=0 表示进度条正在拖动，按该秒数预览；<0 表示使用 state.currentTime
+    void RenderMediaCard(const RenderState& state, int hoverButton,
+                         double seekPreviewSeconds, bool seekDragging);
+
     // 调试日志开关（由 config.debugLog 控制）
     void SetDebugLog(bool enabled) { debugLog_ = enabled; }
 
@@ -89,6 +95,16 @@ private:
     void PresentToLayeredWindow();
     void ReleasePresentResources();
     bool EnsurePresentResources();
+
+    // 媒体卡片绘制辅助
+    /// 绘制单行文本（自动省略号截断），alignment 控制左/右对齐
+    void DrawMediaCardText(const std::wstring& text, IDWriteTextFormat* format,
+                           const D2D1_RECT_F& rect, ID2D1Brush* brush,
+                           DWRITE_TEXT_ALIGNMENT alignment,
+                           bool ellipsis = true);
+    /// 绘制图标字形（Segoe UI Symbol）
+    void DrawMediaCardIcon(const wchar_t* icon, const D2D1_RECT_F& rect,
+                           IDWriteTextFormat* format, ID2D1Brush* brush);
 
     // ═════ 卡片模式渲染（无卡拉OK效果） ═════
     void RenderCardStyle(const RenderState& state);
@@ -209,6 +225,13 @@ private:
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardNextFormat_;
     Microsoft::WRL::ComPtr<IDWriteTextFormat> cardFallbackFormat_;  // 无封面 fallback 字符
 
+    // 媒体卡片文本格式（固定字号，按 DPI 缩放）
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mediaTitleFormat_;   // 歌曲名（粗体）
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mediaArtistFormat_;  // 歌手（灰色）
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mediaMetaFormat_;    // 来源（小号灰色）
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mediaTimeFormat_;    // 时间标签
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> mediaIconFormat_;    // 控制按钮图标
+
     // 封面图缓存：后台线程下载到内存，通过 atomic swap 传递给渲染线程
     // 渲染线程通过 IWICStream::InitializeFromMemory 直接从内存解码，消除磁盘 I/O
     Microsoft::WRL::ComPtr<ID2D1Bitmap> d2dCoverBitmap_;  // 渲染线程创建的 D2D 位图（与 renderTarget_ 同域）
@@ -227,6 +250,17 @@ private:
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardCurrentBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardNextBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardBackgroundBrush_;  // 卡片背景画刷（随封面主色调变化）
+
+    // 媒体卡片画刷（深色玻璃卡片）
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaPanelBrush_;     // 卡片底色
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaBorderBrush_;    // 卡片描边
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaTextBrush_;      // 主文本
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaSubTextBrush_;   // 次级文本
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaTrackBrush_;     // 进度条轨道
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaAccentBrush_;    // 进度条已播部分 / 强调色
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaKnobBrush_;      // 进度条拖钮
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaIconBrush_;      // 播放按钮上的深色图标
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> mediaHoverBrush_;     // 按钮悬停底色
 
     // 动态主题色提取（P1：封面渲染增强）
     /// 从封面像素中提取的主色调（RGBA）。颜色被"欠饱和"处理以避免背景过于鲜艳。

@@ -403,6 +403,17 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
             ::GetCursorPos(&cur);
             int dx = cur.x - self->dragStartPos_.x;
             int dy = cur.y - self->dragStartPos_.y;
+
+            // 单击判定：按下后位移不超过 4px 视为单击，不移动窗口
+            if (self->clickPending_) {
+                const int adx = dx < 0 ? -dx : dx;
+                const int ady = dy < 0 ? -dy : dy;
+                if (adx > 4 || ady > 4) {
+                    self->clickPending_ = false;
+                }
+            }
+
+            if (!self->clickPending_) {
             RECT wr{};
             ::GetWindowRect(hwnd, &wr);
 
@@ -440,6 +451,7 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
 
             ::SetWindowPos(hwnd, nullptr, newWx, newWy, 0, 0,
                            SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
         }
         if (!self->trackingMouse_) {
             TRACKMOUSEEVENT tme{};
@@ -472,19 +484,42 @@ LRESULT CALLBACK TaskbarWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
         HoverButton btn = self->HitTestButton(x, y);
         if (btn != HoverButton::None && self->onButtonClicked_) {
             self->onButtonClicked_(btn);
-        } else if (!self->positionLocked_) {
+            return 0;
+        }
+
+        // 单击判定：位置锁定时也允许单击（用于弹出/关闭歌曲卡片）
+        if (self->onLyricsClicked_) {
+            self->clickPending_ = true;
+            ::GetCursorPos(&self->clickDownPos_);
+            ::SetCapture(hwnd);
+        }
+
+        if (!self->positionLocked_) {
             self->isDragging_ = true;
             ::GetCursorPos(&self->dragStartPos_);
             RECT wr{};
             ::GetWindowRect(hwnd, &wr);
             self->dragStartWinPos_.x = wr.left;
             self->dragStartWinPos_.y = wr.top;
-            ::SetCapture(hwnd);
+            if (::GetCapture() != hwnd) ::SetCapture(hwnd);
             if (self->onHoverChanged_) self->onHoverChanged_();
         }
         return 0;
     }
     case WM_LBUTTONUP: {
+        if (self->clickPending_) {
+            // 位移未超过阈值的按下-抬起：单击
+            self->clickPending_ = false;
+            self->isDragging_ = false;
+            ::ReleaseCapture();
+            if (self->onHoverChanged_) {
+                self->onHoverChanged_();
+            }
+            if (self->onLyricsClicked_) {
+                self->onLyricsClicked_();
+            }
+            return 0;
+        }
         if (self->isDragging_) {
             self->isDragging_ = false;
             ::ReleaseCapture();

@@ -252,6 +252,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     renderer.SetVerticalTaskbar(taskbarWindow.IsVerticalTaskbar());
     renderer.SetDebugLog(config.Advanced().debugLog);
 
+    // 9.5) 创建歌曲卡片弹窗（单击歌词窗口时显示，含可拖动进度条）
+    app.mediaCard = std::make_unique<MediaCardWindow>();
+    if (!app.mediaCard->Create(hInstance, taskbarWindow.GetHandle(), config.Appearance())) {
+        Log("[STARTUP] Media card window create failed (non-fatal)\n");
+        app.mediaCard.reset();
+    }
+
     // 10) 启动 WebSocket 客户端 + 歌词解析
     app.parser = std::make_unique<LyricsParser>();
     auto& parser = *app.parser;
@@ -317,6 +324,42 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     taskbarWindow.OnHoverChanged([&]() {
         ::PostMessageW(hMsgWnd, WM_RENDER_UPDATE, 0, 0);
     });
+
+    // 单击歌词窗口：切换歌曲卡片显示
+    taskbarWindow.OnLyricsClicked([&]() {
+        if (!app.mediaCard || !app.parser || !app.taskbarWindow) return;
+        if (app.mediaCard->IsVisible()) {
+            app.mediaCard->Hide();
+            return;
+        }
+        auto state = app.parser->GetCurrentRenderState();
+        app.mediaCard->ShowFor(state, app.taskbarWindow->GetTaskbarInfo());
+    });
+
+    if (app.mediaCard) {
+        // 卡片上的上一首 / 播放暂停 / 下一首
+        app.mediaCard->SetOnButton([&](HoverButton btn) {
+            if (!app.wsClient) return;
+            switch (btn) {
+            case HoverButton::Prev:      app.wsClient->SendControl("prev");   break;
+            case HoverButton::PlayPause: app.wsClient->SendControl("toggle"); break;
+            case HoverButton::Next:      app.wsClient->SendControl("next");   break;
+            default: break;
+            }
+        });
+        // 拖动进度条：本地立即更新，并通知 MoeKoeMusic 设置播放器进度
+        app.mediaCard->SetOnSeek([&](double seconds) {
+            if (app.parser) app.parser->SeekTo(seconds);
+            if (app.nativeHost) {
+                nlohmann::json payload;
+                payload["event"] = "seek";
+                payload["position"] = seconds;
+                // 总时长用于页面端把秒数换算成进度条百分比（DOM 兜底通道需要）
+                payload["duration"] = app.parser ? app.parser->GetCurrentRenderState().duration : 0.0;
+                app.nativeHost->SendPayloadEvent(payload);
+            }
+        });
+    }
 
     // 注册歌词窗口右键菜单回调
     // 设置消息窗口句柄，供歌词窗口右键菜单作为所有者
@@ -606,6 +649,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     httpServer.Stop();
     Log("[SHUTDOWN] Disconnecting WebSocket...\n");
     wsClient.Disconnect();
+    if (app.mediaCard) {
+        Log("[SHUTDOWN] Destroying media card window...\n");
+        app.mediaCard->Destroy();
+        app.mediaCard.reset();
+    }
     Log("[SHUTDOWN] Shutting down renderer...\n");
     renderer.Shutdown();
     Log("[SHUTDOWN] Destroying taskbar window...\n");

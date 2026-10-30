@@ -184,6 +184,36 @@ constexpr int WINDOWS_TOOLTIP_MAX_LEN = 127;
 // Windows 平台 WM_* 消息本身就是宏，此处保持一致。
 
 // ═══════════════════════════════════════
+// 媒体卡片（点击任务栏歌词弹出的歌曲卡片，96 DPI 基准值）
+// ═══════════════════════════════════════
+
+/// 卡片整体尺寸
+constexpr float MEDIA_CARD_WIDTH_DP  = 380.0f;
+constexpr float MEDIA_CARD_HEIGHT_DP = 176.0f;
+
+/// 卡片内边距
+constexpr float MEDIA_CARD_PADDING_DP = 16.0f;
+
+/// 封面尺寸与顶部位置
+constexpr float MEDIA_CARD_COVER_SIZE_DP = 84.0f;
+constexpr float MEDIA_CARD_COVER_TOP_DP  = 20.0f;
+
+/// 控制按钮尺寸/间距（播放按钮为圆形大按钮）
+constexpr float MEDIA_CARD_BUTTON_PLAY_DP = 44.0f;
+constexpr float MEDIA_CARD_BUTTON_SIDE_DP = 28.0f;
+constexpr float MEDIA_CARD_BUTTON_GAP_DP  = 8.0f;
+
+/// 进度条距卡片底部的距离、轨道厚度
+constexpr float MEDIA_CARD_PROGRESS_BOTTOM_DP = 36.0f;
+constexpr float MEDIA_CARD_PROGRESS_THICKNESS_DP = 4.0f;
+
+/// 卡片与任务栏之间的间隙
+constexpr float MEDIA_CARD_TASKBAR_GAP_DP = 8.0f;
+
+/// 外部点击检测定时器间隔（毫秒）
+constexpr int MEDIA_CARD_OUTSIDE_CHECK_MS = 120;
+
+// ═══════════════════════════════════════
 // 进程监控
 // ═══════════════════════════════════════
 

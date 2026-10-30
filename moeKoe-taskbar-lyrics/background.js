@@ -184,6 +184,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
         // bridge 转发的 EXE 上报事件 → 广播给 popup
         if (message.type === 'native-host:event') {
+            // 任务栏卡片拖动进度条：EXE 上报 seek 事件，转发给 MoeKoeMusic 页面
+            const seek = extractSeek(message.payload);
+            if (seek) {
+                forwardSeekToPage(seek.position, seek.duration);
+            }
             broadcastToPopup({
                 type: 'nativeEvent',
                 data: message.payload
@@ -432,6 +437,70 @@ function handleMessage(msg) {
             // 忽略未识别类型，避免污染日志或下游
             break;
     }
+}
+
+// ---- 拖动进度条 seek 转发 ----
+
+const SEEK_REQUEST_KEY = 'taskbarSeekRequest';
+
+// 从 bridge 转发的消息中提取 seek 请求（找不到返回 null）
+// 兼容两种结构：EXE 原始行 {type:'message', payload:{event,position,duration}}，或已解包的内层 payload
+function extractSeek(raw) {
+    var payload = raw;
+    if (typeof payload === 'string') {
+        try {
+            payload = JSON.parse(payload);
+        } catch (e) {
+            return null;
+        }
+    }
+    if (!payload || typeof payload !== 'object') return null;
+    var inner = (payload.type === 'message' && payload.payload) ? payload.payload : payload;
+    if (inner && inner.event === 'seek' && typeof inner.position === 'number') {
+        return {
+            position: inner.position,
+            duration: (typeof inner.duration === 'number' ? inner.duration : 0)
+        };
+    }
+    return null;
+}
+
+// 把 seek 请求转发到 MoeKoeMusic 页面。
+//
+// Electron 的扩展环境不保证 chrome.tabs 能覆盖 BrowserWindow 页面，
+// 因此主通道走 chrome.storage.local：content script 监听 storage 变化后执行
+// （content script 与 background 同扩展、共享 storage，不依赖 tabs）。
+// 同时保留 chrome.tabs.sendMessage 作为可用时的低延迟通道。
+function forwardSeekToPage(position, duration) {
+    try {
+        chrome.storage.local.set({
+            [SEEK_REQUEST_KEY]: {
+                position: position,
+                duration: (typeof duration === 'number' ? duration : 0),
+                ts: Date.now()
+            }
+        }).catch(function () {});
+    } catch (e) {
+        console.error('[TaskbarLyrics] 写入 seek 请求失败:', e);
+    }
+
+    if (!chrome.tabs || !chrome.tabs.query) return;
+    // 不按 URL 过滤：MoeKoeMusic 主窗口可能是 file://（生产）或 localhost（开发），
+    // 没有 content script 的标签发送消息会失败，回调里忽略即可
+    chrome.tabs.query({}, (tabs) => {
+        if (chrome.runtime.lastError || !tabs) return;
+        for (const tab of tabs) {
+            if (!tab || !tab.id || tab.id < 0) continue;
+            try {
+                chrome.tabs.sendMessage(tab.id, { type: 'taskbarSeek', position, duration }, () => {
+                    // 页面尚未加载 content.js 时会报错，忽略即可
+                    void chrome.runtime.lastError;
+                });
+            } catch (e) {
+                // chrome.tabs 在 Electron 中可能不可用，交给 storage 通道
+            }
+        }
+    });
 }
 
 // ---- 发送控制命令 ----

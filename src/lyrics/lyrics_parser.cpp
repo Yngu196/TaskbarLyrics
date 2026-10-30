@@ -3,6 +3,7 @@
 #include "lyrics/lyrics_parser.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <regex>
 #include <sstream>
@@ -26,6 +27,11 @@ double GetWallTimeSeconds() {
     return static_cast<double>(counter.QuadPart) / static_cast<double>(freq.QuadPart);
 }
 
+// seek 后抑制旧进度回传的时长；超过该时长则不再抑制（防止桥接失败时永久忽略）
+constexpr double kSeekSettleTimeoutSec = 1.5;
+// 回传时间与 seek 目标相差在此范围内视为播放器已完成 seek
+constexpr double kSeekSettleToleranceSec = 0.75;
+
 } // namespace
 
 void LyricsParser::UpdateLyrics(const LyricsData& data) {
@@ -35,6 +41,13 @@ void LyricsParser::UpdateLyrics(const LyricsData& data) {
 
 void LyricsParser::UpdatePlayerState(const PlayerState& state) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // 保存本地进度：seek 抑制期内若回传的是旧时间，需要用它恢复
+    const double localTime = state_.currentTime;
+
+    // 总时长只在切歌时变化；playerState 消息通常不带 duration，
+    // 因此缓存最近一次有效值，避免卡片进度条总时长被清空
+    if (state.duration > 0.0) lastDuration_ = state.duration;
 
     // MoeKoeMusic 的进度更新消息只含 playing/time，不含歌曲元数据
     //（song/cover 均为空）：保留上一次的非空值，避免封面/歌名被清空
@@ -92,8 +105,41 @@ void LyricsParser::UpdatePlayerState(const PlayerState& state) {
         }
     }
 
+    state_.duration = lastDuration_;
+
+    // seek 抑制窗口：seek 请求经 EXE→扩展→页面 异步传递期间，回传的
+    // playerState 仍是旧进度。若直接采用会让进度/歌词瞬间跳回原位置。
+    //  - 回传已接近目标：说明播放器完成 seek，正常采用并结束抑制
+    //  - 仍在窗口期内且明显偏离目标：保留本地时间，且不重置推算基准
+    if (seekSuppressUntil_ > 0.0) {
+        const double now = GetWallTimeSeconds();
+        const bool settled =
+            std::fabs(state_.currentTime - seekTarget_) <= kSeekSettleToleranceSec;
+        if (!settled && now < seekSuppressUntil_) {
+            state_.currentTime = localTime;
+            return;
+        }
+        seekSuppressUntil_ = 0.0;
+        seekTarget_ = -1.0;
+    }
+
     // 记录本地高精度时钟，用于 GetCurrentRenderState() 中推算时间
     lastUpdateWallTime_ = GetWallTimeSeconds();
+}
+
+void LyricsParser::SeekTo(double seconds) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (seconds < 0.0) seconds = 0.0;
+    if (state_.duration > 0.0) {
+        seconds = std::clamp(seconds, 0.0, state_.duration);
+    }
+    state_.currentTime = seconds;
+    // 重置插值基准：否则 GetCurrentRenderState() 会把旧时间差叠加到目标位置上
+    lastUpdateWallTime_ = GetWallTimeSeconds();
+
+    // 进入抑制窗口：在播放器真正完成 seek 前，忽略与目标差距较大的旧进度回传
+    seekTarget_ = seconds;
+    seekSuppressUntil_ = lastUpdateWallTime_ + kSeekSettleTimeoutSec;
 }
 
 bool LyricsParser::HasLyrics() const {
@@ -146,6 +192,7 @@ RenderState LyricsParser::GetCurrentRenderState() const {
     out.songName    = state_.songName;
     out.songTitle   = state_.songTitle;
     out.artist      = state_.artist;
+    out.duration    = state_.duration;
 
     // ── 本地时钟推算：播放状态下用本地时间插值 currentTime ──
     // 目的：即使 playerState 消息频率低（如每秒一次），progress 也能每帧平滑推进

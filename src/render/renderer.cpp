@@ -196,6 +196,34 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             cardFallbackFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             cardFallbackFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
         }
+
+        // 媒体卡片（点击弹出的歌曲卡片）文本格式：固定字号，按 DPI 缩放
+        auto createMediaFormat = [&](Microsoft::WRL::ComPtr<IDWriteTextFormat>& out,
+                                     DWRITE_FONT_WEIGHT weight, FLOAT sizeDip,
+                                     DWRITE_TEXT_ALIGNMENT align) {
+            dwriteFactory_->CreateTextFormat(
+                cardFamily.c_str(), nullptr, weight,
+                DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+                sizeDip * dpiScale, L"zh-CN", out.GetAddressOf());
+            if (out) {
+                out->SetTextAlignment(align);
+                out->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                out->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+            }
+        };
+        createMediaFormat(mediaTitleFormat_,  DWRITE_FONT_WEIGHT_BOLD,   19.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
+        createMediaFormat(mediaArtistFormat_, DWRITE_FONT_WEIGHT_NORMAL, 13.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
+        createMediaFormat(mediaMetaFormat_,   DWRITE_FONT_WEIGHT_NORMAL, 11.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
+        createMediaFormat(mediaTimeFormat_,   DWRITE_FONT_WEIGHT_NORMAL, 11.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
+        dwriteFactory_->CreateTextFormat(
+            L"Segoe UI Symbol", nullptr, DWRITE_FONT_WEIGHT_NORMAL,
+            DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
+            18.0f * dpiScale, L"en-US", mediaIconFormat_.GetAddressOf());
+        if (mediaIconFormat_) {
+            mediaIconFormat_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+            mediaIconFormat_->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            mediaIconFormat_->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
+        }
     }
 
     if (renderTarget_) {
@@ -276,6 +304,15 @@ void TaskbarRenderer::RecreateBrushes() {
     cardCurrentBrush_.Reset();
     cardNextBrush_.Reset();
     cardBackgroundBrush_.Reset();
+    mediaPanelBrush_.Reset();
+    mediaBorderBrush_.Reset();
+    mediaTextBrush_.Reset();
+    mediaSubTextBrush_.Reset();
+    mediaTrackBrush_.Reset();
+    mediaAccentBrush_.Reset();
+    mediaKnobBrush_.Reset();
+    mediaIconBrush_.Reset();
+    mediaHoverBrush_.Reset();
     const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
     const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
     renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
@@ -295,6 +332,17 @@ void TaskbarRenderer::RecreateBrushes() {
     // 封面位图已随旧 RT 失效（CreateRenderTarget 中重置），主题色回落默认灰蓝
     coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
     renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
+
+    // 媒体卡片画刷（深色玻璃卡片配色；强调色沿用用户高亮色）
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.070f, 0.072f, 0.090f, 0.95f), mediaPanelBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.09f), mediaBorderBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.96f), mediaTextBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.72f, 0.73f, 0.77f, 0.90f), mediaSubTextBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.22f), mediaTrackBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(ParseColor(settings_.highlightColor, 1.0f), mediaAccentBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f), mediaKnobBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.070f, 0.072f, 0.090f, 1.0f), mediaIconBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.12f), mediaHoverBrush_.GetAddressOf());
 }
 
 void TaskbarRenderer::ReleasePresentResources() {
@@ -366,6 +414,15 @@ void TaskbarRenderer::Shutdown() {
     cardNextBrush_.Reset();
     cardCurrentBrush_.Reset();
     cardBackgroundBrush_.Reset();
+    mediaPanelBrush_.Reset();
+    mediaBorderBrush_.Reset();
+    mediaTextBrush_.Reset();
+    mediaSubTextBrush_.Reset();
+    mediaTrackBrush_.Reset();
+    mediaAccentBrush_.Reset();
+    mediaKnobBrush_.Reset();
+    mediaIconBrush_.Reset();
+    mediaHoverBrush_.Reset();
     d2dCoverBitmap_.Reset();
     blurredCoverBg_.Reset();
     blurredBgBrush_.Reset();
@@ -386,6 +443,11 @@ void TaskbarRenderer::Shutdown() {
     cardNextFormat_.Reset();
     cardCurrentFormat_.Reset();
     cardFallbackFormat_.Reset();
+    mediaTitleFormat_.Reset();
+    mediaArtistFormat_.Reset();
+    mediaMetaFormat_.Reset();
+    mediaTimeFormat_.Reset();
+    mediaIconFormat_.Reset();
     translationBrush_.Reset();
     highlightBrush_.Reset();
     normalBrush_.Reset();

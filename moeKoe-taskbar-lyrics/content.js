@@ -21,6 +21,98 @@
     if (window.__taskbarLyricsInjected) return;
     window.__taskbarLyricsInjected = true;
 
+    // ── 任务栏卡片拖动进度条 → 设置播放器进度 ──
+    //
+    // MoeKoeMusic 的播放器由 new Audio() 创建，不挂载在 DOM 上，
+    // document.querySelector('audio') 拿不到。这里用两条互不依赖的通道：
+    //   1) 向页面主世界 postMessage：audio-bridge.js 包装了 Audio 构造函数，
+    //      能拿到真实播放器实例并直接设置 currentTime
+    //   2) DOM 兜底：模拟拖动 MoeKoeMusic 自带进度条（.progress-bar），
+    //      由播放器自己的 Vue 逻辑换算并 seek，不依赖主世界脚本是否生效
+    var lastSeekPosition = -1;
+    var lastSeekAt = 0;
+
+    function chooseProgressBar() {
+        var bars = document.querySelectorAll('.progress-bar');
+        for (var i = 0; i < bars.length; i++) {
+            var r = bars[i].getBoundingClientRect();
+            if (r.width > 20 && r.height > 0) return bars[i];
+        }
+        return null;
+    }
+
+    function simulateProgressBarSeek(position, duration) {
+        if (!isFinite(duration) || duration <= 0) return;
+        var bar = chooseProgressBar();
+        if (!bar) return;
+
+        var rect = bar.getBoundingClientRect();
+        if (!rect.width || rect.width < 20) return;
+
+        var ratio = Math.max(0, Math.min(1, position / duration));
+        var clientX = Math.round(rect.left + ratio * rect.width);
+        var clientY = Math.round(rect.top + rect.height / 2);
+        var opts = {
+            bubbles: true, cancelable: true, view: window,
+            clientX: clientX, clientY: clientY, button: 0
+        };
+        try {
+            // 播放器进度条由 mousedown 开始拖动、document 上的 mouseup 结束并 seek
+            bar.dispatchEvent(new MouseEvent('mousedown', opts));
+            document.dispatchEvent(new MouseEvent('mouseup', opts));
+        } catch (e) {
+            try {
+                bar.dispatchEvent(new MouseEvent('click', opts));
+            } catch (_) {}
+        }
+    }
+
+    function applySeekRequest(position, duration) {
+        var target = Number(position);
+        if (!isFinite(target) || target < 0) return;
+
+        // storage 通道与 tabs 通道可能同时到达：200ms 内同一目标只执行一次
+        var now = Date.now();
+        if (Math.abs(target - lastSeekPosition) < 0.01 && now - lastSeekAt < 200) return;
+        lastSeekPosition = target;
+        lastSeekAt = now;
+
+        try {
+            window.postMessage({
+                channel: 'taskbar-lyrics',
+                type: 'seek',
+                position: target
+            }, '*');
+        } catch (e) {}
+
+        simulateProgressBarSeek(target, Number(duration));
+    }
+
+    try {
+        chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+            if (!msg || msg.type !== 'taskbarSeek') return;
+            applySeekRequest(msg.position, msg.duration);
+            sendResponse({ success: true });
+        });
+    } catch (e) {}
+
+    // background 主通道：通过 chrome.storage.local 下发（不依赖 chrome.tabs）
+    try {
+        chrome.storage.onChanged.addListener(function (changes, area) {
+            if (area !== 'local' || !changes || !changes.taskbarSeekRequest) return;
+            var v = changes.taskbarSeekRequest.newValue;
+            if (!v || typeof v.position !== 'number') return;
+            applySeekRequest(v.position, v.duration);
+        });
+        // 页面加载期间可能错过变化：补读最近 3 秒内的请求
+        chrome.storage.local.get('taskbarSeekRequest').then(function (res) {
+            var v = res && res.taskbarSeekRequest;
+            if (v && typeof v.position === 'number' && Date.now() - (v.ts || 0) < 3000) {
+                applySeekRequest(v.position, v.duration);
+            }
+        }).catch(function () {});
+    } catch (e) {}
+
     // localStorage 在隐私模式/存储禁用时会抛异常，必须兜底，
     // 否则脚本崩溃后连确认对话框都无法弹出
     function safeGetItem(key) {

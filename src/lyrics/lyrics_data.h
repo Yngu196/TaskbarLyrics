@@ -45,6 +45,7 @@ struct PlayerState {
     std::string coverArtUrl;         // 专辑封面 URL（可能为空）
     std::string songName;            // 歌曲名称（用于封面降级显示）
     std::string artist;              // 歌手名称（悬停时展示）
+    double      duration{0.0};       // 歌曲总时长（秒，未知时为 0）
 };
 
 // 悬停时点击的控制按钮
@@ -75,6 +76,7 @@ struct RenderState {
     std::string songName;             // 歌曲名称（用于封面降级显示）
     std::string songTitle;            // 完整曲目标题（可能已包含歌手）
     std::string artist;               // 歌手名称（悬停时展示）
+    double      duration{0.0};        // 歌曲总时长（秒，未知时为 0）
 
     // 频谱数据（纯音乐时使用，由 SpectrumCapture::GetSpectrum() 填充）
     std::vector<float> spectrumBands;

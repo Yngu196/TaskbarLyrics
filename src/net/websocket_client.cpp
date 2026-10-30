@@ -309,6 +309,10 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
                 PlayerState st;
                 st.isPlaying   = true;
                 st.currentTime = j["data"]["currentTime"].get<double>();
+                // 总时长（秒）：媒体卡片的进度条分母
+                if (j["data"].contains("duration") && j["data"]["duration"].is_number()) {
+                    st.duration = j["data"]["duration"].get<double>();
+                }
                 // currentSong 可能是 string 或 object，安全提取
                 if (j["data"].contains("currentSong")) {
                     const auto& cs = j["data"]["currentSong"];
@@ -384,6 +388,9 @@ void WebSocketClient::DispatchWsMessage(const std::string& raw) {
             st.isPlaying   = d.value("isPlaying",   false);
             st.currentTime = d.value("currentTime", 0.0);
             st.songTitle   = d.value("songTitle",   "");
+            if (d.contains("duration") && d["duration"].is_number()) {
+                st.duration = d["duration"].get<double>();
+            }
 
             // 提取封面 URL：支持 data 层级直接包含 coverArtUrl/pic 等字段
             for (const auto& key : {"coverArtUrl", "pic", "cover", "albumArt", "image", "poster"}) {
