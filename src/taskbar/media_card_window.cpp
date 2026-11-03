@@ -50,8 +50,11 @@ bool MediaCardWindow::Create(HINSTANCE hInstance, HWND hLyricsOwner,
     wc.lpszClassName = kWindowClass;
     ::RegisterClassExW(&wc);
 
-    // WS_EX_NOACTIVATE：不抢焦点；WS_EX_LAYERED：UpdateLayeredWindow 透明渲染
-    const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_LAYERED;
+    // WS_EX_NOACTIVATE：不抢焦点；WS_EX_LAYERED：UpdateLayeredWindow 透明渲染；
+    // WS_EX_TOPMOST：卡片弹出后悬停在屏幕区域，最大化窗口会盖住非置顶弹窗
+    // （Win11 媒体浮窗同理为置顶弹出层）
+    const DWORD exStyle = WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_LAYERED |
+                          WS_EX_TOPMOST;
     hwnd_ = ::CreateWindowExW(exStyle, kWindowClass, L"", WS_POPUP,
                               0, 0, 0, 0,
                               nullptr, nullptr, hInstance, this);
@@ -170,8 +173,10 @@ void MediaCardWindow::ShowFor(const RenderState& state, const TaskbarInfo& info)
         visible_ = true;
         // 开卡这次点击可能仍按住：直到左键抬起前不执行外部点击关闭
         ignoreOutsideUntilUp_ = (::GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-        ::SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+        // 每次显示都重新置顶：期间打开的其他置顶窗口（开始菜单、托盘浮窗、
+        // 其他应用的置顶弹窗）可能已盖在卡片之上
+        ::SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
                        SWP_SHOWWINDOW);
         ::SetTimer(hwnd_, kOutsideCheckTimerId,
                    static_cast<UINT>(constants::MEDIA_CARD_OUTSIDE_CHECK_MS), nullptr);
