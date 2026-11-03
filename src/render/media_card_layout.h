@@ -45,46 +45,57 @@ struct MediaCardLayout {
     float timeHeight{0.0f};
 
     // dpiScale = 当前 DPI / 96
+    //
+    // 布局参考 Win11 媒体浮窗：
+    //   ┌──────────────────────────────────┐
+    //   │ ♪ MoeKoe Music        ┌────────┐ │
+    //   │ 歌曲名（粗体）          │  封面   │ │
+    //   │ 歌手                   └────────┘ │
+    //   │        ⏮     ⏸     ⏭             │
+    //   │  ────────●──────────────────      │
+    //   │  0:01                  3:45       │
+    //   └──────────────────────────────────┘
     static MediaCardLayout Compute(float dpiScale) {
         using namespace constants;
         MediaCardLayout l;
         l.width  = MEDIA_CARD_WIDTH_DP * dpiScale;
         l.height = MEDIA_CARD_HEIGHT_DP * dpiScale;
+        const float pad = MEDIA_CARD_PADDING_DP * dpiScale;
 
-        l.coverX    = MEDIA_CARD_PADDING_DP * dpiScale;
+        // 封面：右上角
+        l.coverX    = l.width - pad - MEDIA_CARD_COVER_SIZE_DP * dpiScale;
         l.coverY    = MEDIA_CARD_COVER_TOP_DP * dpiScale;
         l.coverSize = MEDIA_CARD_COVER_SIZE_DP * dpiScale;
 
-        l.textX = l.coverX + l.coverSize + MEDIA_CARD_PADDING_DP * dpiScale;
+        // 文本区：封面左侧
+        l.textX     = pad;
+        l.textRight = l.coverX - 12.0f * dpiScale;
 
-        // 右侧控制按钮：下一首 / 播放暂停 / 上一首
-        const float pad     = MEDIA_CARD_PADDING_DP * dpiScale;
-        const float sideR   = MEDIA_CARD_BUTTON_SIDE_DP * dpiScale * 0.5f;
-        const float playR   = MEDIA_CARD_BUTTON_PLAY_DP * dpiScale * 0.5f;
-        const float gap     = MEDIA_CARD_BUTTON_GAP_DP * dpiScale;
-        l.sideRadius = sideR;
-        l.playRadius = playR;
-        l.nextCx = l.width - pad - sideR;
-        l.playCx = l.nextCx - sideR - gap - playR;
-        l.prevCx = l.playCx - playR - gap - sideR;
+        // 顶部应用标识行（音符 + 应用名）
+        l.metaTop    = 16.0f * dpiScale;
+        l.metaHeight = 15.0f * dpiScale;
 
-        l.textRight = l.prevCx - sideR - gap;
+        // 标题/歌手（应用标识行下方）
+        l.titleTop     = 40.0f * dpiScale;
+        l.titleHeight  = 26.0f * dpiScale;
+        l.artistTop    = 68.0f * dpiScale;
+        l.artistHeight = 20.0f * dpiScale;
 
-        l.titleTop     = 18.0f * dpiScale;
-        l.titleHeight  = 28.0f * dpiScale;
-        l.artistTop    = 47.0f * dpiScale;
-        l.artistHeight = 22.0f * dpiScale;
-        l.metaTop      = 71.0f * dpiScale;
-        l.metaHeight   = 18.0f * dpiScale;
+        // 控制按钮：底部水平居中（prev | play | next 等中心距）
+        l.sideRadius = MEDIA_CARD_BUTTON_SIDE_DP * dpiScale * 0.5f;
+        l.playRadius = MEDIA_CARD_BUTTON_PLAY_DP * dpiScale * 0.5f;
+        l.controlsCy = 136.0f * dpiScale;
+        l.playCx = l.width * 0.5f;
+        l.prevCx = l.playCx - MEDIA_CARD_BUTTON_GAP_DP * dpiScale * 0.5f;
+        l.nextCx = l.playCx + MEDIA_CARD_BUTTON_GAP_DP * dpiScale * 0.5f;
 
-        l.controlsCy = l.coverY + l.coverSize * 0.5f;
-
+        // 进度条与时间
         l.seekX0 = pad;
         l.seekX1 = l.width - pad;
         l.seekCy = (MEDIA_CARD_HEIGHT_DP - MEDIA_CARD_PROGRESS_BOTTOM_DP) * dpiScale;
         l.seekThickness = MEDIA_CARD_PROGRESS_THICKNESS_DP * dpiScale;
         l.knobRadius    = 6.0f * dpiScale;
-        l.timeTop    = (MEDIA_CARD_HEIGHT_DP - 27.0f) * dpiScale;
+        l.timeTop    = (MEDIA_CARD_HEIGHT_DP - 28.0f) * dpiScale;
         l.timeHeight = 16.0f * dpiScale;
         return l;
     }

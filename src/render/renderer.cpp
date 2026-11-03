@@ -333,16 +333,16 @@ void TaskbarRenderer::RecreateBrushes() {
     coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
     renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
 
-    // 媒体卡片画刷（深色玻璃卡片配色；强调色沿用用户高亮色）
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.070f, 0.072f, 0.090f, 0.95f), mediaPanelBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.09f), mediaBorderBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.96f), mediaTextBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.72f, 0.73f, 0.77f, 0.90f), mediaSubTextBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.22f), mediaTrackBrush_.GetAddressOf());
+    // 媒体卡片画刷（参考 Win11 媒体浮窗的浅色主题；强调色沿用用户高亮色）
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.97f, 0.97f, 0.975f, 0.98f), mediaPanelBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.06f), mediaBorderBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.08f, 0.08f, 0.10f, 0.95f), mediaTextBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.45f, 0.45f, 0.48f, 0.95f), mediaSubTextBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.10f), mediaTrackBrush_.GetAddressOf());
     renderTarget_->CreateSolidColorBrush(ParseColor(settings_.highlightColor, 1.0f), mediaAccentBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 1.0f), mediaKnobBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.070f, 0.072f, 0.090f, 1.0f), mediaIconBrush_.GetAddressOf());
-    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(1.0f, 1.0f, 1.0f, 0.12f), mediaHoverBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.15f, 0.15f, 0.17f, 1.0f), mediaKnobBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.08f, 0.08f, 0.10f, 1.0f), mediaIconBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(D2D1::ColorF(0.0f, 0.0f, 0.0f, 0.05f), mediaHoverBrush_.GetAddressOf());
 }
 
 void TaskbarRenderer::ReleasePresentResources() {

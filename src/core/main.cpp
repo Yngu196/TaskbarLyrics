@@ -347,11 +347,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             default: break;
             }
         });
-        // 拖动进度条：本地立即更新，并通知 MoeKoeMusic 设置播放器进度
+        // 拖动进度条：本地立即更新，并通过三通道通知 MoeKoeMusic：
+        //   1. WebSocket control/seek 命令 —— 新版宿主 apiService 直接处理
+        //   2. Native Host seek 事件 —— 旧版宿主经 background/content 注入页面执行
+        //      （仅在 EXE 由宿主托管启动、stdout 已接通时可用）
+        //   3. HTTP /seek/pending —— content script 直接轮询本进程，
+        //      与启动方式无关的兜底通道（stdout 断链时的保底投递）
         app.mediaCard->SetOnSeek([&](double seconds) {
             Log("[SEEK] 卡片请求 pos=%.2f dur=%.2f\n", seconds,
                 app.parser ? app.parser->GetCurrentRenderState().duration : 0.0);
             if (app.parser) app.parser->SeekTo(seconds);
+            if (!app.wsClient->SendSeek(seconds)) {
+                Log("[SEEK] WebSocket 未连接，仅走注入通道\n");
+            }
             if (app.nativeHost) {
                 nlohmann::json payload;
                 payload["event"] = "seek";
@@ -359,6 +367,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                 // 总时长用于页面端把秒数换算成进度条百分比（DOM 兜底通道需要）
                 payload["duration"] = app.parser ? app.parser->GetCurrentRenderState().duration : 0.0;
                 app.nativeHost->SendPayloadEvent(payload);
+            }
+            if (app.httpServer) {
+                app.httpServer->SetPendingSeek(
+                    seconds,
+                    app.parser ? app.parser->GetCurrentRenderState().duration : 0.0);
             }
         });
     }

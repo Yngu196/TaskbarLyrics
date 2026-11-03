@@ -132,6 +132,19 @@ bool WebSocketClient::SendControl(const std::string& command) {
     return result.success;
 }
 
+bool WebSocketClient::SendSeek(double position) {
+    if (!connected_.load()) return false;
+    json j;
+    j["type"] = "control";
+    j["data"] = {{"command", "seek"}, {"position", position}};
+    // client_ 可能正被 ReconnectLoop 并发重建/销毁，读取与发送必须持锁
+    std::lock_guard<std::mutex> lock(clientMutex_);
+    if (!client_) return false;
+    auto result = client_->send(j.dump());
+    LogDebug("[WS] SendSeek(%.2f) success=%d\n", position, result.success ? 1 : 0);
+    return result.success;
+}
+
 void WebSocketClient::RequestReconnect() {
     reconnectNow_.store(true);
 }

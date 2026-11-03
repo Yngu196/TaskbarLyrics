@@ -189,22 +189,22 @@ constexpr int WINDOWS_TOOLTIP_MAX_LEN = 127;
 
 /// 卡片整体尺寸
 constexpr float MEDIA_CARD_WIDTH_DP  = 380.0f;
-constexpr float MEDIA_CARD_HEIGHT_DP = 176.0f;
+constexpr float MEDIA_CARD_HEIGHT_DP = 204.0f;
 
 /// 卡片内边距
 constexpr float MEDIA_CARD_PADDING_DP = 16.0f;
 
-/// 封面尺寸与顶部位置
+/// 封面尺寸与顶部位置（参考图：封面位于卡片右上角）
 constexpr float MEDIA_CARD_COVER_SIZE_DP = 84.0f;
 constexpr float MEDIA_CARD_COVER_TOP_DP  = 20.0f;
 
-/// 控制按钮尺寸/间距（播放按钮为圆形大按钮）
-constexpr float MEDIA_CARD_BUTTON_PLAY_DP = 44.0f;
-constexpr float MEDIA_CARD_BUTTON_SIDE_DP = 28.0f;
-constexpr float MEDIA_CARD_BUTTON_GAP_DP  = 8.0f;
+/// 控制按钮尺寸/间距（底部居中的线性图标，播放键稍大）
+constexpr float MEDIA_CARD_BUTTON_PLAY_DP = 48.0f;
+constexpr float MEDIA_CARD_BUTTON_SIDE_DP = 40.0f;
+constexpr float MEDIA_CARD_BUTTON_GAP_DP  = 100.0f;
 
 /// 进度条距卡片底部的距离、轨道厚度
-constexpr float MEDIA_CARD_PROGRESS_BOTTOM_DP = 36.0f;
+constexpr float MEDIA_CARD_PROGRESS_BOTTOM_DP = 38.0f;
 constexpr float MEDIA_CARD_PROGRESS_THICKNESS_DP = 4.0f;
 
 /// 卡片与任务栏之间的间隙

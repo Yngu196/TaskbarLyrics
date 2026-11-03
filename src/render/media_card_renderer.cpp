@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0
 // media_card_renderer.cpp - 媒体卡片（点击任务栏歌词窗口弹出的歌曲卡片）渲染
 //
-// 布局参考 Windows 11 媒体控制卡片：
+// 布局参考 Windows 11 媒体控制卡片（浅色主题）：
 //   ┌──────────────────────────────────────────┐
-//   │ [封面]  歌曲名                  ⏮  ▶  ⏭  │
-//   │         歌手                              │
-//   │         来源                              │
+//   │ ♪ MoeKoe Music                 ┌───────┐ │
+//   │ 歌曲名（粗体）                  │  封面  │ │
+//   │ 歌手                           └───────┘ │
+//   │           ⏮    ⏸    ⏭                    │
 //   │  ────────●────────────────────────       │
 //   │  0:01                          3:45      │
 //   └──────────────────────────────────────────┘
@@ -119,7 +120,13 @@ void TaskbarRenderer::RenderMediaCard(const RenderState& state, int hoverButton,
         state.songName.empty() ? state.songTitle : state.songName);
     DrawCoverArt(state.coverArtUrl, fallbackChar, L.coverX, L.coverY, L.coverSize);
 
-    // ── 文本信息 ──
+    // ── 顶部应用标识行："♪ MoeKoe Music" ──
+    DrawMediaCardText(L"\u266A MoeKoe Music", mediaMetaFormat_.Get(),
+                      D2D1::RectF(L.textX, L.metaTop,
+                                  L.textRight, L.metaTop + L.metaHeight),
+                      mediaSubTextBrush_.Get(), DWRITE_TEXT_ALIGNMENT_LEADING, false);
+
+    // ── 文本信息（标题 + 歌手，居左） ──
     const std::wstring titleW = songNameW.empty() ? L"未知歌曲" : songNameW;
     DrawMediaCardText(titleW, mediaTitleFormat_.Get(),
                       D2D1::RectF(L.textX, L.titleTop, L.textRight, L.titleTop + L.titleHeight),
@@ -130,13 +137,7 @@ void TaskbarRenderer::RenderMediaCard(const RenderState& state, int hoverButton,
                       D2D1::RectF(L.textX, L.artistTop, L.textRight, L.artistTop + L.artistHeight),
                       mediaSubTextBrush_.Get(), DWRITE_TEXT_ALIGNMENT_LEADING);
 
-    // 来源行：仅显示文本（不再绘制红色音符图标）
-    DrawMediaCardText(L"MoeKoe 音乐", mediaMetaFormat_.Get(),
-                      D2D1::RectF(L.textX, L.metaTop,
-                                  L.textRight, L.metaTop + L.metaHeight),
-                      mediaSubTextBrush_.Get(), DWRITE_TEXT_ALIGNMENT_LEADING, false);
-
-    // ── 控制按钮 ──
+    // ── 控制按钮：三个纯图标（参考图无实心圆底），悬停时淡圆形填充 ──
     const float cy = L.controlsCy;
     auto iconRect = [&](float cx, float half) {
         return D2D1::RectF(cx - half, cy - half, cx + half, cy + half);
@@ -150,20 +151,14 @@ void TaskbarRenderer::RenderMediaCard(const RenderState& state, int hoverButton,
     DrawMediaCardIcon(L"\u23EE", iconRect(L.prevCx, L.sideRadius * 0.9f),
                       mediaIconFormat_.Get(), mediaTextBrush_.Get());
 
-    // 播放/暂停：白色实心圆 + 深色图标（与 Win11 媒体卡片一致）
-    if (mediaKnobBrush_) {
+    if (hoverButton == 1 && mediaHoverBrush_) {
         renderTarget_->FillEllipse(
             D2D1::Ellipse(D2D1::Point2F(L.playCx, cy), L.playRadius, L.playRadius),
-            mediaKnobBrush_.Get());
-    }
-    if (hoverButton == 1 && mediaHoverBrush_) {
-        renderTarget_->DrawEllipse(
-            D2D1::Ellipse(D2D1::Point2F(L.playCx, cy), L.playRadius, L.playRadius),
-            mediaHoverBrush_.Get(), 2.0f);
+            mediaHoverBrush_.Get());
     }
     DrawMediaCardIcon(state.isPlaying ? L"\u23F8" : L"\u25B6",
                       iconRect(L.playCx, L.playRadius * 0.75f),
-                      mediaIconFormat_.Get(), mediaIconBrush_.Get());
+                      mediaIconFormat_.Get(), mediaTextBrush_.Get());
 
     if (hoverButton == 2 && mediaHoverBrush_) {
         renderTarget_->FillEllipse(

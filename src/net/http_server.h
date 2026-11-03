@@ -52,6 +52,11 @@ public:
     // 注册歌词数据回调
     void OnLyrics(LyricsCallback cb) { onLyrics_ = std::move(cb); }
 
+    // 记录待处理 seek（媒体卡片拖动产生）。扩展的 content script 通过
+    // GET /seek/pending 轮询读取（读后即清），用于在 Native Host stdout
+    // 通道不可用（EXE 非宿主托管启动）时仍能送达页面。
+    void SetPendingSeek(double position, double duration);
+
     // 是否正在运行
     bool IsRunning() const { return running_.load(); }
 
@@ -68,6 +73,14 @@ private:
     int port_{0};
     CommandCallback onCommand_;
     LyricsCallback onLyrics_;
+
+    // 待处理 seek（读后即清）。拖动期间 SetPendingSeek 高频覆盖，
+    // 轮询端每次只取最新位置，天然合并中间值。
+    std::mutex seekMutex_;
+    bool seekPending_{false};
+    double seekPosition_{0.0};
+    double seekDuration_{0.0};
+    long long seekSeq_{0};   // 单调递增序号，便于扩展端诊断重复轮询
 };
 
 } // namespace moekoe

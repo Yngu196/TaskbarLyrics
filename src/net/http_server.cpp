@@ -126,6 +126,14 @@ void HttpServer::Stop() {
     }
 }
 
+void HttpServer::SetPendingSeek(double position, double duration) {
+    std::lock_guard<std::mutex> lock(seekMutex_);
+    seekPosition_  = position;
+    seekDuration_ = duration;
+    seekPending_  = true;
+    seekSeq_++;
+}
+
 void HttpServer::ServerLoop(int port) {
     httplib::Server svr;
 
@@ -141,7 +149,7 @@ void HttpServer::ServerLoop(int port) {
     // ===========================================
     // Middleware: CORS headers + auth check
     // ===========================================
-    svr.set_pre_routing_handler([port](const httplib::Request& req, httplib::Response& res) {
+    svr.set_pre_routing_handler([this, port](const httplib::Request& req, httplib::Response& res) {
         // CORS headers (localhost-only origin)
         std::string origin = "http://127.0.0.1:" + std::to_string(port);
         res.set_header("Access-Control-Allow-Origin", origin.c_str());
@@ -153,6 +161,36 @@ void HttpServer::ServerLoop(int port) {
         if (req.method == "OPTIONS") {
             res.status = 204;
             res.set_content("", "text/plain");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
+        // GET /seek/pending - 免鉴权的只读 seek 轮询端点（读后即清）。
+        //
+        // 为什么免鉴权：该端点是 seek 的兜底投递通道，必须在「EXE 非宿主托管
+        // 启动（stdout 无接收方）、扩展 SW 休眠、storage 通道失效」等所有
+        // 异常场景下仍可用。调用方是运行在 file:// 页面里的 content script，
+        // 无法携带本机注册表 token（file:// 非安全上下文，crypto.subtle 不可用，
+        // 无法解密 storage 中的密文 token）。
+        //
+        // 威胁模型权衡：本端点仅暴露「播放位置 + 总时长」（数字，无歌曲名/
+        // 歌词等敏感信息），且宿主 MoeKoeMusic 自身的 WS API（6520 端口）完全
+        // 无鉴权地对外广播完整歌词与播放状态——本端点的信息暴露面严格小于
+        // 宿主已有行为。恶意页面的最坏影响是抢先消费 pending seek（导致
+        // 一次拖动失效），不影响播放本身。
+        if (req.method == "GET" && req.path == "/seek/pending") {
+            res.set_header("Access-Control-Allow-Origin", "*");
+            nlohmann::json j;
+            {
+                std::lock_guard<std::mutex> lock(seekMutex_);
+                j["pending"] = seekPending_;
+                if (seekPending_) {
+                    j["position"] = seekPosition_;
+                    j["duration"]  = seekDuration_;
+                    j["seq"]       = seekSeq_;
+                    seekPending_ = false;  // 读后即清
+                }
+            }
+            res.set_content(j.dump(), "application/json");
             return httplib::Server::HandlerResponse::Handled;
         }
 

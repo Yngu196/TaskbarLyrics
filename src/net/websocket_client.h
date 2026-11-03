@@ -50,6 +50,9 @@ public:
     // 发送控制指令（可选功能）: toggle / next / prev
     bool SendControl(const std::string& command);
 
+    // 发送进度跳转指令（position 为秒数），需要宿主 apiService 支持 seek 命令
+    bool SendSeek(double position);
+
     // 状态查询
     bool IsConnected() const { return connected_.load(); }
 
