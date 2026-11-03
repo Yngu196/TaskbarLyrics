@@ -162,6 +162,13 @@ void WebSocketClient::ReconnectLoop() {
             std::lock_guard<std::mutex> lock(stateMutex_);
             urlCopy = url_;
         }
+        // 端点路径随 MoeKoeMusic 版本变化（新版要求 /moekoe，旧版为根路径）。
+        // 失败重连时交替切换两种形式，避免单一路径不匹配导致永久 404。
+        if (attempt % 2 == 0) {
+            const std::string kPath = "/moekoe";
+            const size_t pos = urlCopy.find(kPath);
+            if (pos != std::string::npos) urlCopy.erase(pos);
+        }
         Log("Reconnect: connecting to " + urlCopy);
 
         // 配置客户端（重建 + 绑定回调 + start 全程持锁，

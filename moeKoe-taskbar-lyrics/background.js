@@ -331,7 +331,10 @@ function connectWebSocket() {
     }
 
     try {
-        const socket = ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}`);
+        // MoeKoeMusic 的 WS 端点路径为 /moekoe（旧版本为根路径）。
+        // 按重连次数交替尝试两种形式，避免路径不匹配导致永久 404。
+        const wsPath = (reconnectAttempts % 2 === 0) ? '/moekoe' : '';
+        const socket = ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}${wsPath}`);
         let connectionTimeout = null;
         let hasConnected = false;
         let cleared = false;

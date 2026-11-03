@@ -349,6 +349,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         });
         // 拖动进度条：本地立即更新，并通知 MoeKoeMusic 设置播放器进度
         app.mediaCard->SetOnSeek([&](double seconds) {
+            Log("[SEEK] 卡片请求 pos=%.2f dur=%.2f\n", seconds,
+                app.parser ? app.parser->GetCurrentRenderState().duration : 0.0);
             if (app.parser) app.parser->SeekTo(seconds);
             if (app.nativeHost) {
                 nlohmann::json payload;
@@ -398,8 +400,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     });
 
 
+    // MoeKoeMusic 的 WebSocket 端点路径为 /moekoe（旧版本为根路径，
+    // 连接失败后由 WebSocketClient 自动交替重试两种路径）
     char url[64];
-    std::snprintf(url, sizeof(url), "ws://127.0.0.1:%d",
+    std::snprintf(url, sizeof(url), "ws://127.0.0.1:%d/moekoe",
                   config.Advanced().websocketPort);
     wsClient.Connect(url);
 
