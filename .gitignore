@@ -68,6 +68,7 @@ moeKoe-taskbar-lyrics/arm64/
 # Local manual build dirs (build-x64 / build-arm64)
 build-*/
 
-# ci/redist bundles official VC143 CRT as CI fallback (DLLs intentionally committed)
-!ci/redist/**/*.dll
+# VC++ CRT DLLs are NOT vendored: scripts/copy_vc_runtime.ps1 reads them from
+# the build machine's own Visual Studio Redist and verifies their PE arch.
+# The global *.dll rule above must stay in force - do not re-add an exception.
 

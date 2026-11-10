@@ -159,9 +159,31 @@ Report $(if ($submoduleOk) { 'OK' } else { 'WARN' }) 'ixwebsocket submodule' `
 $httplib = Join-Path $root 'third_party\httplib\httplib.h'
 Report $(if (Test-Path $httplib) { 'OK' } else { 'FAIL' }) 'third_party/httplib.h' ''
 
-$crt = Join-Path $root "ci\redist\$Arch\Microsoft.VC143.CRT"
-Report $(if (Test-Path $crt) { 'OK' } else { 'WARN' }) 'ci/redist CRT fallback' `
-    $(if (Test-Path $crt) { $crt } else { 'local VS Redist must supply CRT DLLs' })
+# CRT DLLs are no longer vendored in the repo; both CI and local builds read
+# them from the build machine's own VS Redist via copy_vc_runtime.ps1.
+$crtScript = Join-Path $root 'scripts\copy_vc_runtime.ps1'
+$crtDir = $null
+$pfx86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+$vswhere = if ($pfx86) { Join-Path $pfx86 'Microsoft Visual Studio\Installer\vswhere.exe' } else { $null }
+if ($vswhere -and (Test-Path -LiteralPath $vswhere)) {
+    foreach ($vs in (& $vswhere -products * -property installationPath 2>$null)) {
+        if (-not $vs) { continue }
+        $redistRoot = Join-Path $vs 'VC\Redist\MSVC'
+        if (-not (Test-Path -LiteralPath $redistRoot)) { continue }
+        foreach ($ver in (Get-ChildItem -LiteralPath $redistRoot -Directory -ErrorAction SilentlyContinue)) {
+            foreach ($sub in @((Join-Path $ver.FullName "$Arch\Microsoft.VC143.CRT"),
+                              (Join-Path $ver.FullName "onecore\$Arch\Microsoft.VC143.CRT"))) {
+                if (Test-Path -LiteralPath $sub) { $crtDir = $sub; break }
+            }
+            if ($crtDir) { break }
+        }
+        if ($crtDir) { break }
+    }
+}
+Report $(if ($crtDir) { 'OK' } else { 'WARN' }) 'VS Redist CRT source' `
+    $(if ($crtDir) { "$crtDir (no vendored DLLs)" } else { "no $Arch CRT found; CI step would fail - install VC++ ARM64 build tools" })
+Report $(if (Test-Path -LiteralPath $crtScript) { 'OK' } else { 'FAIL' }) 'copy_vc_runtime.ps1' `
+    $(if (Test-Path -LiteralPath $crtScript) { 'CI + local share this resolver' } else { 'missing' })
 
 if ($env:VCPKG_INSTALLED_DIR) {
     $envLeaf = Split-Path $env:VCPKG_INSTALLED_DIR -Leaf

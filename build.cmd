@@ -94,7 +94,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo Build successful! Output: moeKoe-taskbar-lyrics\%PRESET_ARCH%\MoeKoeTaskbarLyrics.exe
+echo Build successful! Output: moeKoe-taskbar-lyrics\%ARCH%\MoeKoeTaskbarLyrics.exe
 if /i "%PRESET_ARCH%"=="x64" echo                   Launcher: moeKoe-taskbar-lyrics\MoeKoeTaskbarLyrics.exe
 goto :eof
 

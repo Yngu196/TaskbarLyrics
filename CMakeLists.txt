@@ -539,7 +539,14 @@ if(MSVC)
                         "Please manually copy msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll to output.")
     else()
         message(STATUS "Copying VC++ CRT DLLs from: ${_CRT_SRC_DIR}")
-        foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
+        # 原生 ARM64 不链接 vcruntime140_1.dll；VS 的 arm64 Redist 目录里该文件
+        # 实为 x64 二进制，混入会触发 scripts/verify_package.py 架构校验失败。
+        # 与 build.yml / release.yml 的 CRT 复制步骤保持同一规则。
+        set(_CRT_DLLS msvcp140.dll vcruntime140.dll)
+        if(NOT MSVC_RUNTIME_ARCH STREQUAL "arm64")
+            list(APPEND _CRT_DLLS vcruntime140_1.dll)
+        endif()
+        foreach(_CRT_DLL IN LISTS _CRT_DLLS)
             if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -581,7 +588,9 @@ if(TARGET_ARCH STREQUAL "x64")
 endif()
 
 # ──── 单元测试 ────
-option(BUILD_TESTING "Build unit tests" ON)
+# 默认关闭：避免每次 configure 都联网探测 Catch2（双仓库各约 15s）。
+# CI 的 x64 build job 显式传 -DBUILD_TESTING=ON；本地跑测试见 README。
+option(BUILD_TESTING "Build unit tests" OFF)
 
 if(BUILD_TESTING)
     enable_testing()

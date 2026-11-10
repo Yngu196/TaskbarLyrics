@@ -135,7 +135,11 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 ### 从干净克隆到构建（推荐）
 
 ```powershell
+git clone --recurse-submodules <repo>
+cd MoeKoeMusic-TaskbarLyrics
+
 # 第一步：准备依赖（自动复用已有 vcpkg；找不到才 clone 到 %LOCALAPPDATA%）
+# 克隆时漏了 --recurse-submodules 也没关系，bootstrap 会自动补 submodule
 .\scripts\bootstrap.ps1 -Arch x64 -Build
 
 # 之后每次构建只需这一条，无需任何用户级环境变量
@@ -165,6 +169,20 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 需要复现特定依赖树时加 `-VcpkgCommit <sha>`（只对全新 clone 生效，不会擅自切换已有的 vcpkg 树）。
 构建前可跑只读自检：`.\scripts\check_build_env.ps1 -Arch x64`。
 
+### VC++ 运行时 DLL 不入库
+
+`msvcp140.dll` / `vcruntime140.dll`（x64 另含 `vcruntime140_1.dll`）**不随仓库分发**，
+构建时从本机 Visual Studio 的 `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 取得：
+
+- 本地构建：`CMakeLists.txt` 的 POST_BUILD 步骤自动复制；
+- CI：`scripts\copy_vc_runtime.ps1` 负责补齐，两条 workflow 复用同一脚本，逐文件校验
+  PE 架构，找不到就明确失败，不会静默产出缺 CRT 的包。
+
+脚本用 `vswhere` 定位 VS，不依赖 `VCToolsRedistDir` 等机器级环境变量，并打印全部候选目录便于排查。
+若构建机确实缺少对应架构的 CRT（尤其 ARM64），请在 Visual Studio Installer 中补齐该架构的
+MSVC 生成工具与 VC++ 可再发行组件，**不要**把 DLL 提交进仓库：这些文件受微软再分发条款约束，
+且混入错误架构时会直接触发 `verify_package.py` 失败。
+
 ### 手动构建
 
 ```powershell
@@ -184,7 +202,9 @@ cmake --build --preset ARM64-Release
 ### 测试、校验与打包
 
 ```powershell
-# 自动化测试
+# 测试默认关闭（避免每次 configure 联网探测 Catch2），首次需显式开启
+cmake --preset x64-Release -DBUILD_TESTING=ON
+cmake --build --preset x64-Release
 ctest --test-dir out\build\x64-Release -C Release --output-on-failure
 
 # 架构校验：逐文件检查根目录 / Launcher、x64、arm64 的 PE Machine 字段
@@ -193,6 +213,8 @@ python scripts\verify_package.py moeKoe-taskbar-lyrics\
 # 打包：根目录同时包含 x64/ 与 arm64/ 即为双架构混合包
 python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
 ```
+
+`BUILD_TESTING` 默认 `OFF`；已有 `out\build\<preset>` 缓存会保留原值，所以开启一次后后续 `.\build.cmd release x64` 仍会连带构建测试。CI 的 x64 build job 显式传 `-DBUILD_TESTING=ON` 并跑 `ctest`，ARM64 job 在 x64 runner 上无法执行测试二进制，只构建不跑。
 
 当前测试覆盖歌词解析、KRC 解析、频谱数学映射与 HTTP 服务生命周期。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 

@@ -48,29 +48,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 本地已初始化 submodule 走 ixwebsocket 源码编译；CI 必须走同一条路径，
+          # 否则「CI 绿」不代表「本地绿」。
+          submodules: recursive
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: ${{ matrix.arch }}
 
-      - name: Install dependencies (vcpkg)
+      - name: Prepare dependencies (bootstrap)
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
+          # Same dependency preparation entry point as a local checkout.
+          # Write GITHUB_ENV first so a script 'return' cannot skip it.
           $vcpkgRoot = "${{ github.workspace }}\vcpkg"
-
-          if (!(Test-Path $vcpkgRoot)) {
-            git clone https://github.com/microsoft/vcpkg.git $vcpkgRoot
-            git -C $vcpkgRoot checkout 75672db6bd812b060482b0f00b5a16b18a0c0f07
-            & "$vcpkgRoot\bootstrap-vcpkg.bat" -disableMetrics
-          }
-
-          & "$vcpkgRoot\vcpkg.exe" install ixwebsocket nlohmann-json zlib mbedtls kissfft --triplet ${{ matrix.arch }}-windows --classic
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
           $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
-          Write-Host "VCPKG_INSTALLED_DIR=$installDir"
-          echo "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
+          "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
+
+          .\scripts\bootstrap.ps1 -Arch ${{ matrix.arch }} `
+            -VcpkgRoot $vcpkgRoot `
+            -VcpkgCommit '75672db6bd812b060482b0f00b5a16b18a0c0f07'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure CMake
         shell: powershell
@@ -78,7 +79,8 @@ jobs:
           cmake -B build-${{ matrix.arch }} -S . `
             -A ${{ matrix.arch }} `
             "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
-            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_BUILD_TYPE=Release `
+            -DBUILD_TESTING=ON
 
       - name: Build
         run: cmake --build build-${{ matrix.arch }} --config Release -- /v:minimal
@@ -88,62 +90,13 @@ jobs:
         if: matrix.arch == 'x64'
         run: ctest --test-dir build-${{ matrix.arch }} -C Release --output-on-failure
 
-      - name: Copy VC++ Redist DLLs
-        shell: powershell
+      - name: Ensure VC++ Redist DLLs
+        shell: pwsh
         run: |
-          # 定位 VC Redist CRT 目录（优先本地 VCToolsRedistDir，多版本回退，最终仓库 ci/redist 兜底）
-          # 背景：arm64 job 的 PATH 指向 HostARM64\ARM64（x64 runner 上不存在）导致 cl.exe 推导失效；
-          #       runner 的 VS Redist 未必装全 arm64 CRT，需多级兜底而非静默跳过。
-          $arch = "${{ matrix.arch }}"
-          $crtDir = $null
-
-          $crtBase = $env:VCToolsRedistDir
-          if ($crtBase) {
-            $c1 = Join-Path $crtBase "$arch\Microsoft.VC143.CRT"
-            if (Test-Path $c1) { $crtDir = $c1 }
-            else {
-              $c2 = Join-Path $crtBase "onecore\$arch\Microsoft.VC143.CRT"
-              if (Test-Path $c2) { $crtDir = $c2 }
-            }
-          }
-
-          if (-not $crtDir) {
-            # 多版本回退：遍历 Redist\MSVC 下所有版本目录
-            $redistRoot = if ($crtBase) { Split-Path $crtBase -Parent } else { $null }
-            if ($redistRoot) {
-              Write-Host "Current Redist dir missing $arch CRT; searching older versions under $redistRoot"
-              foreach ($verDir in Get-ChildItem $redistRoot -Directory -ErrorAction SilentlyContinue) {
-                $p1 = Join-Path $verDir.FullName "$arch\Microsoft.VC143.CRT"
-                if (Test-Path $p1) { $crtDir = $p1; break }
-                $p2 = Join-Path $verDir.FullName "onecore\$arch\Microsoft.VC143.CRT"
-                if (Test-Path $p2) { $crtDir = $p2; break }
-              }
-            }
-          }
-
-          if (-not $crtDir) {
-            # 兜底：使用仓库内随源码提交的官方 VC143 CRT（本机从 VS2022 Redist 14.44.35112 提取）
-            # 说明：runner 的 VS 未必装全各架构 Redist（arm64 常缺失），
-            #        nuget.org 也无官方 VC143 CRT 包，故随仓库携带。
-            $repoCrt = Join-Path "ci\redist\$arch" "Microsoft.VC143.CRT"
-            if (Test-Path $repoCrt) { $crtDir = (Resolve-Path $repoCrt).Path }
-          }
-          if (-not $crtDir) {
-            # 显式失败而非静默跳过，避免产物缺 CRT 却标 success
-            throw "VC++ CRT dir not found for arch $arch (local Redist, older versions, nor repo ci/redist)"
-          }
-
-          Write-Host "Copying VC++ CRT DLLs from: $crtDir"
-          Copy-Item -Path "$crtDir\msvcp140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
-          Copy-Item -Path "$crtDir\vcruntime140.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
-          # vcruntime140_1.dll 仅供 x64/ARM64EC 使用：原生 ARM64 程序不会链接它
-          # （MSVC arm64 目标不产生该导入），且 VS arm64 Redist 中此文件实为 x64 二进制，
-          # 混入会触发 verify_package 架构校验失败并阻断发布，故 arm64 一律不复制。
-          if ($arch -ne "arm64") {
-            Copy-Item -Path "$crtDir\vcruntime140_1.dll" -Destination "moeKoe-taskbar-lyrics\$arch\" -Force
-          }
-          Write-Host "Copied to moeKoe-taskbar-lyrics\$arch\:"
-          Get-ChildItem "moeKoe-taskbar-lyrics\$arch" -Filter *.dll | Select-Object -ExpandProperty Name
+          # CRT DLL 取自构建机自己的 Visual Studio 安装（vswhere 定位），不随仓库分发。
+          # 脚本会打印全部候选目录、逐文件校验 PE 架构，仅在缺失/错架构时复制；
+          # 找不到就明确失败，避免产物缺 CRT 却标 success。
+          .\scripts\copy_vc_runtime.ps1 -Arch ${{ matrix.arch }} -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}"
 
       - name: Package for artifact
         shell: powershell
