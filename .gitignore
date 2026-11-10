@@ -29,6 +29,9 @@ cmake-build-*/
 
 # vcpkg
 vcpkg_installed/
+# scripts/bootstrap.ps1 写下的本机 vcpkg root（绝对路径、机器相关，不入库）
+.vcpkgroot
+.deps/
 
 # CMake
 CMakeCache.txt

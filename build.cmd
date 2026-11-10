@@ -1,6 +1,8 @@
 @echo off
 REM Build script for MoeKoeTaskbarLyrics
-REM Automatically applies MSVC 14.44 toolset to match ixwebsocket.lib
+REM Dependency resolution order is kept in sync with CMakeLists.txt:60-95
+REM and scripts/bootstrap.ps1. Run bootstrap once on a fresh clone:
+REM   powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Arch x64
 REM
 REM Usage:
 REM   build [debug|release|clean] [x64|arm64|all]
@@ -9,15 +11,17 @@ REM     release - Build Release configuration
 REM     clean   - Remove all build directories
 REM     x64/arm64 - Target architecture (default: x64)
 REM     all     - Release only: build x64 -> arm64 -> verify -> package
-REM   Target architecture defaults to x64.
+REM
+REM Optional: set MKK_TOOLSET_VERSION=14.44.35207 to force one MSVC toolset
+REM via /p:PlatformToolsetVersion. Unset by default, so VS picks its own.
 
 setlocal
 
 set "PROJECT_DIR=%~dp0"
 set "BUILD_DIR=%PROJECT_DIR%out\build"
-set "TOOLSET_VERSION=14.44.35207"
+set "TOOLSET_VERSION=%MKK_TOOLSET_VERSION%"
 
-REM ---- 解析目标架构（默认 x64）----
+REM ---- Resolve target architecture (default x64) ----
 set "ARCH=x64"
 if not "%2"=="" set "ARCH=%2"
 
@@ -54,7 +58,7 @@ if /i "%1"=="clean" (
     goto :eof
 )
 
-REM ---- 推导 VCPKG_INSTALLED_DIR（x64->installed/x64-windows, arm64->installed/arm64-windows）----
+REM ---- Resolve VCPKG_INSTALLED_DIR for this VCPKG_TRIPLET ----
 call :resolve_vcpkg_installed_dir
 if errorlevel 1 goto :eof
 
@@ -77,19 +81,25 @@ if errorlevel 1 (
 )
 
 echo.
-echo Building %CONFIG% (%CONFIG_TYPE%) with MSVC %TOOLSET_VERSION%...
-cmake --build "%BUILD_DIR%\%CONFIG%" --config %CONFIG_TYPE% -- /p:PlatformToolsetVersion=%TOOLSET_VERSION%
+if defined TOOLSET_VERSION (
+    echo Building %CONFIG% ^(%CONFIG_TYPE%^) with forced MSVC %TOOLSET_VERSION%...
+    cmake --build "%BUILD_DIR%\%CONFIG%" --config %CONFIG_TYPE% -- /p:PlatformToolsetVersion=%TOOLSET_VERSION%
+) else (
+    echo Building %CONFIG% ^(%CONFIG_TYPE%^)...
+    cmake --build "%BUILD_DIR%\%CONFIG%" --config %CONFIG_TYPE%
+)
 if errorlevel 1 (
     echo Build failed!
     exit /b 1
 )
 
 echo.
-echo Build successful! Output: moeKoe-taskbar-lyrics\%PRESET_ARCH%\%CONFIG_TYPE%\MoeKoeTaskbarLyrics.exe (root MoeKoeTaskbarLyrics.exe is the launcher)
+echo Build successful! Output: moeKoe-taskbar-lyrics\%PRESET_ARCH%\MoeKoeTaskbarLyrics.exe
+if /i "%PRESET_ARCH%"=="x64" echo                   Launcher: moeKoe-taskbar-lyrics\MoeKoeTaskbarLyrics.exe
 goto :eof
 
 REM ============================================================
-REM  all 模式：x64 -> arm64 -> verify -> package。
+REM  all mode: x64 -> arm64 -> verify -> package.
 REM ============================================================
 :all
 if /i not "%1"=="release" (
@@ -129,30 +139,60 @@ echo [all] Done: moeKoe-taskbar-lyrics.zip
 exit /b 0
 
 REM ============================================================
-REM  resolve VCPKG_INSTALLED_DIR for current VCPKG_TRIPLET.
-REM  优先级：环境变量 VCPKG_INSTALLED_DIR -> VCPKG_ROOT -> VCPKG_INSTALLATION_ROOT。
+REM  Resolve VCPKG_INSTALLED_DIR (single source of truth).
+REM  Priority, identical to CMakeLists.txt:60-95:
+REM    VCPKG_INSTALLED_DIR env -> VCPKG_INSTALLATION_ROOT -> VCPKG_ROOT
+REM    -> .vcpkgroot (written by scripts/bootstrap.ps1)
+REM    -> D:\vcpkg -> C:\vcpkg
+REM
+REM  IMPORTANT: single-line IFs only. Inside a parenthesised block cmd.exe
+REM  expands %VAR% when the block is parsed, BEFORE any SET in that block
+REM  runs -> the old script printed an empty "[INFO] Resolved ..." line.
 REM ============================================================
 :resolve_vcpkg_installed_dir
-if defined VCPKG_INSTALLED_DIR (
-    if exist "%VCPKG_INSTALLED_DIR%\include" (
-        echo [INFO] Using VCPKG_INSTALLED_DIR from environment: %VCPKG_INSTALLED_DIR%
-        exit /b 0
-    )
+if defined VCPKG_INSTALLED_DIR if exist "%VCPKG_INSTALLED_DIR%\include" if exist "%VCPKG_INSTALLED_DIR%\lib" goto :resolved_ok
+if defined VCPKG_INSTALLATION_ROOT if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_installation_root
+if defined VCPKG_ROOT if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_vcpkg_root
+
+set "_VCPKG_PINNED="
+if exist "%PROJECT_DIR%.vcpkgroot" (
+    for /f "usebackq tokens=* delims=" %%R in ("%PROJECT_DIR%.vcpkgroot") do if not defined _VCPKG_PINNED set "_VCPKG_PINNED=%%R"
 )
-if defined VCPKG_ROOT (
-    if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\include" (
-        set "VCPKG_INSTALLED_DIR=%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%"
-        echo [INFO] Resolved VCPKG_INSTALLED_DIR: %VCPKG_INSTALLED_DIR%
-        exit /b 0
-    )
-)
-if defined VCPKG_INSTALLATION_ROOT (
-    if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\include" (
-        set "VCPKG_INSTALLED_DIR=%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%"
-        echo [INFO] Resolved VCPKG_INSTALLED_DIR: %VCPKG_INSTALLED_DIR%
-        exit /b 0
-    )
-)
+if defined _VCPKG_PINNED if exist "%_VCPKG_PINNED%\installed\%VCPKG_TRIPLET%\include" if exist "%_VCPKG_PINNED%\installed\%VCPKG_TRIPLET%\lib" goto :use_pinned
+
+if exist "D:\vcpkg\installed\%VCPKG_TRIPLET%\include" if exist "D:\vcpkg\installed\%VCPKG_TRIPLET%\lib" goto :use_d_drive
+if exist "C:\vcpkg\installed\%VCPKG_TRIPLET%\include" if exist "C:\vcpkg\installed\%VCPKG_TRIPLET%\lib" goto :use_c_drive
+goto :resolve_failed
+
+:use_installation_root
+set "VCPKG_INSTALLED_DIR=%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%"
+set "_VCPKG_RESOLVED_BY=VCPKG_INSTALLATION_ROOT env"
+goto :resolved_ok
+:use_vcpkg_root
+set "VCPKG_INSTALLED_DIR=%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%"
+set "_VCPKG_RESOLVED_BY=VCPKG_ROOT env"
+goto :resolved_ok
+:use_pinned
+set "VCPKG_INSTALLED_DIR=%_VCPKG_PINNED%\installed\%VCPKG_TRIPLET%"
+set "_VCPKG_RESOLVED_BY=.vcpkgroot (bootstrap pin)"
+goto :resolved_ok
+:use_d_drive
+set "VCPKG_INSTALLED_DIR=D:\vcpkg\installed\%VCPKG_TRIPLET%"
+set "_VCPKG_RESOLVED_BY=D:\vcpkg fallback"
+goto :resolved_ok
+:use_c_drive
+set "VCPKG_INSTALLED_DIR=C:\vcpkg\installed\%VCPKG_TRIPLET%"
+set "_VCPKG_RESOLVED_BY=C:\vcpkg fallback"
+goto :resolved_ok
+
+:resolved_ok
+if not defined _VCPKG_RESOLVED_BY set "_VCPKG_RESOLVED_BY=VCPKG_INSTALLED_DIR env"
+echo [INFO] Resolved VCPKG_INSTALLED_DIR: %VCPKG_INSTALLED_DIR%
+echo [INFO] Source: %_VCPKG_RESOLVED_BY%
+exit /b 0
+
+:resolve_failed
 echo [ERROR] Cannot resolve VCPKG_INSTALLED_DIR for triplet %VCPKG_TRIPLET%.
-echo         Please set VCPKG_INSTALLED_DIR or VCPKG_ROOT / VCPKG_INSTALLATION_ROOT.
+echo         First run: powershell -ExecutionPolicy Bypass -File "%PROJECT_DIR%scripts\bootstrap.ps1" -Arch %ARCH%
+echo         Or set VCPKG_ROOT / VCPKG_INSTALLATION_ROOT / VCPKG_INSTALLED_DIR.
 exit /b 1

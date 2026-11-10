@@ -118,59 +118,68 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 | Visual Studio | 2022 (v143) |
 | MSVC 工具集 | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
 | CMake | 3.20+ |
-| vcpkg | latest |
+| vcpkg | 由 `scripts\bootstrap.ps1` 自动准备，可用 `-VcpkgCommit` 锁定版本 |
 
 ### 使用 Visual Studio
 
 1. 安装 Visual Studio 2022，勾选「使用 C++ 的桌面开发」、Windows SDK 与 CMake 工具。
-2. 用 Visual Studio 打开项目根目录的 `CMakeLists.txt`，等待 CMake 配置完成。
-3. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」。
-4. 选择「生成 → 生成全部」，或右键 `MoeKoeTaskbarLyrics` 目标并选择「生成」。
-5. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，避免输出文件被占用。
-6. 测试目标可在「测试资源管理器」中运行。
+2. **先执行一次** `.\scripts\bootstrap.ps1 -Arch x64`，生成 `.vcpkgroot` 并安装依赖。
+3. 用 Visual Studio 打开项目根目录的 `CMakeLists.txt`，等待 CMake 配置完成。
+4. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」。
+5. 选择「生成 → 生成全部」，或右键 `MoeKoeTaskbarLyrics` 目标并选择「生成」。
+6. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，避免输出文件被占用。
+7. 测试目标可在「测试资源管理器」中运行。
 
 如果「配置任务 / CMake 设置」不可用，关闭解决方案后重新打开 `CMakeLists.txt`；仍未恢复时删除对应的 `out/build/<preset>` 缓存并重新配置。
 
-### 命令行一键构建（推荐）
+### 从干净克隆到构建（推荐）
 
 ```powershell
-# x64 Release
+# 第一步：准备依赖（自动复用已有 vcpkg；找不到才 clone 到 %LOCALAPPDATA%）
+.\scripts\bootstrap.ps1 -Arch x64 -Build
+
+# 之后每次构建只需这一条，无需任何用户级环境变量
 .\build.cmd release x64
 
-# ARM64 Release（需安装 VS2022 ARM64 工具链与 arm64-windows 依赖）
-.\build.cmd release arm64
+# ARM64（需 VS2022 ARM64 工具链）
+.\scripts\bootstrap.ps1 -Arch arm64 -Build
 
-# 全量构建发布包：x64 → ARM64 → 架构校验 → 打包
+# 全量发布包：x64 → ARM64 → 架构校验 → 打包
+# （先分别 bootstrap 两个架构，再执行）；另需 Python 3
 .\build.cmd release all
 
 # 清理
 .\build.cmd clean x64
 ```
 
-构建脚本会显式传入对应 triplet 的 `VCPKG_INSTALLED_DIR`：
+`bootstrap.ps1` 会把选定的 vcpkg 根目录写入 `.vcpkgroot`（已被 git 忽略）。
+`build.cmd` 与 `CMakeLists.txt` 都读取这个文件，因此**命令行与 Visual Studio IDE 解析到同一套依赖**，
+不再依赖 `VCPKG_ROOT` 之类的机器级环境变量。解析顺序：
 
-- x64 → `<vcpkg>\installed\x64-windows`
-- ARM64 → `<vcpkg>\installed\arm64-windows`
+1. `VCPKG_INSTALLED_DIR` 环境变量（仅在手动指定时临时设置，不要设成用户级常量）
+2. `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` 环境变量
+3. `.vcpkgroot`
+4. `D:\vcpkg` / `C:\vcpkg`（兼容旧环境的最后兜底）
 
-这样可以确保第三方库与目标架构一致，避免跨 triplet fallback。
+第三方库始终按目标 triplet（`x64-windows` / `arm64-windows`）严格校验，禁止跨架构混用。
+需要复现特定依赖树时加 `-VcpkgCommit <sha>`（只对全新 clone 生效，不会擅自切换已有的 vcpkg 树）。
+构建前可跑只读自检：`.\scripts\check_build_env.ps1 -Arch x64`。
 
 ### 手动构建
 
 ```powershell
-# 安装依赖（ixwebsocket / nlohmann-json / zlib / mbedtls / kissfft）
-vcpkg install --triplet x64-windows
-vcpkg install --triplet arm64-windows
-
-# x64
-cmake --preset x64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\x64-windows"
+# 依赖仍由 bootstrap.ps1 准备，只是构建改用 CMake preset
+.\scripts\bootstrap.ps1 -Arch x64
+cmake --preset x64-Release
 cmake --build --preset x64-Release
 
-# ARM64
-cmake --preset ARM64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\arm64-windows"
+.\scripts\bootstrap.ps1 -Arch arm64
+cmake --preset ARM64-Release
 cmake --build --preset ARM64-Release
 ```
 
-> ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需使用相同版本工具集。`CMakePresets.json` 已配置 `/p:PlatformToolsetVersion=14.44.35207`。
+> 默认不强制 MSVC 工具集版本，由 Visual Studio 自行选择。若 vcpkg 静态库与当前工具集出现链接不兼容，
+> 可显式指定：`$env:MKK_TOOLSET_VERSION='14.44.35207'; .\build.cmd release x64`。
 
 ### 测试、校验与打包
 

@@ -73,6 +73,15 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
         endif()
     endif()
 
+    # scripts/bootstrap.ps1 写下的 vcpkg root：命令行走 build.cmd，IDE 走这里，共用同一份记录。
+    if(NOT DEFINED VCPKG_INSTALLED_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/.vcpkgroot")
+        file(STRINGS "${CMAKE_SOURCE_DIR}/.vcpkgroot" _VCPKG_PINNED_ROOT LIMIT_COUNT 1)
+        string(STRIP "${_VCPKG_PINNED_ROOT}" _VCPKG_PINNED_ROOT)
+        if(EXISTS "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}")
+        endif()
+    endif()
+
     # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
     if(NOT DEFINED VCPKG_INSTALLED_DIR)
         foreach(_CANDIDATE

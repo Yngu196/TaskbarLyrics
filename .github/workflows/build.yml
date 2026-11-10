@@ -83,6 +83,11 @@ jobs:
       - name: Build
         run: cmake --build build-${{ matrix.arch }} --config Release -- /v:minimal
 
+      - name: Test
+        # ARM64 job runs on an x64 runner: its test binaries cannot execute here.
+        if: matrix.arch == 'x64'
+        run: ctest --test-dir build-${{ matrix.arch }} -C Release --output-on-failure
+
       - name: Copy VC++ Redist DLLs
         shell: powershell
         run: |
