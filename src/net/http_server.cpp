@@ -194,6 +194,22 @@ void HttpServer::ServerLoop(int port) {
             return httplib::Server::HandlerResponse::Handled;
         }
 
+        // GET /ping - 免鉴权的存活探测端点。
+        //
+        // 为什么免鉴权：popup 的状态回退通道。首选的 bridge 查询（native-host:status）
+        // 在 MV3 Service Worker 被回收、客户端重启后桥接页未重连等场景会失效，
+        // 而鉴权 token 恰恰只能通过同一条桥接链路同步——若 /ping 也要求 token，
+        // 两条通道会同时失效，popup 永远显示"未运行"（实际 EXE 活着）。
+        //
+        // 威胁模型权衡：响应只有存活布尔与服务名，无任何敏感数据；
+        // 探测者至多得知"本机运行着任务栏歌词插件"。
+        if (req.method == "GET" && req.path == "/ping") {
+            res.set_header("Access-Control-Allow-Origin", "*");
+            res.set_content("{\"status\":\"ok\",\"service\":\"MoeKoeTaskbarLyrics\"}",
+                            "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+
         // Auth check: verify X-MoeKoe-Token header
         if (!req.has_header(moekoe::constants::LOCAL_AUTH_HEADER_NAME)) {
             res.status = 403;
@@ -211,11 +227,8 @@ void HttpServer::ServerLoop(int port) {
     });
 
     // ===========================================
-    // GET /ping - health check
+    // GET /ping - health check（在 pre_routing_handler 中免鉴权处理，见上）
     // ===========================================
-    svr.Get("/ping", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content("{\"status\":\"ok\",\"service\":\"MoeKoeTaskbarLyrics\"}", "application/json");
-    });
 
     // ===========================================
     // POST /lyrics - receive lyrics/cover data

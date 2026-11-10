@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 1.0.7
+    VERSION 1.0.8
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 
@@ -57,16 +57,16 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- 手动配置 vcpkg 安装的第三方库（绕过 vcpkg 工具链） ----
-if(NOT DEFINED VCPKG_INSTALLED_DIR)
+if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
     # 优先使用环境变量
-    if(DEFINED ENV{VCPKG_INSTALLED_DIR})
+    if(DEFINED ENV{VCPKG_INSTALLED_DIR} AND NOT "$ENV{VCPKG_INSTALLED_DIR}" STREQUAL "")
         set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
-    elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT})
+    elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT} AND NOT "$ENV{VCPKG_INSTALLATION_ROOT}" STREQUAL "")
         set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
         if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
             set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
         endif()
-    elseif(DEFINED ENV{VCPKG_ROOT})
+    elseif(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
         set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
         if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
             set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
@@ -90,6 +90,16 @@ endif()
 # 所有第三方 native 库（zlib / mbedtls / kissfft / ixwebsocket）必须来自与目标架构一致的同一 triplet（x64-windows / arm64-windows）。
 # 禁止跨 triplet（含 -142 等历史变体）fallback 混用，否则 ARM64 构建可能在链接期混入 x64 库，产生难以诊断的架构错误。
 # 校验规则：VCPKG_INSTALLED_DIR 的最后一个路径组件必须等于目标 VCPKG_TRIPLET。
+if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "" OR NOT EXISTS "${VCPKG_INSTALLED_DIR}")
+    message(FATAL_ERROR
+        "VCPKG_INSTALLED_DIR does not exist: ${VCPKG_INSTALLED_DIR}\n"
+        "Please install the '${VCPKG_TRIPLET}' triplet or set it via one of:\n"
+        "  cmake -DVCPKG_INSTALLED_DIR=<path>\n"
+        "  set VCPKG_INSTALLED_DIR=<path>        (environment variable)\n"
+        "  set VCPKG_INSTALLATION_ROOT=<root>    (environment variable)\n"
+        "  set VCPKG_ROOT=<root>                 (environment variable)")
+endif()
+
 cmake_path(GET VCPKG_INSTALLED_DIR FILENAME _vcpkg_dir_triplet)
 if(NOT _vcpkg_dir_triplet STREQUAL VCPKG_TRIPLET)
     message(FATAL_ERROR
@@ -98,17 +108,6 @@ if(NOT _vcpkg_dir_triplet STREQUAL VCPKG_TRIPLET)
         "All third-party native libraries must come from the same target triplet "
         "(${VCPKG_TRIPLET}); cross-triplet fallback (including -142 variants) is "
         "forbidden to guarantee ARM64/x64 correctness.")
-endif()
-
-# 如果仍未找到，给出明确提示而非直接报错
-if(NOT EXISTS "${VCPKG_INSTALLED_DIR}")
-    message(FATAL_ERROR
-        "VCPKG_INSTALLED_DIR does not exist: ${VCPKG_INSTALLED_DIR}\n"
-        "Please set it via one of:\n"
-        "  cmake -DVCPKG_INSTALLED_DIR=<path>\n"
-        "  set VCPKG_INSTALLED_DIR=<path>        (environment variable)\n"
-        "  set VCPKG_INSTALLATION_ROOT=<root>    (environment variable)\n"
-        "  set VCPKG_ROOT=<root>                 (environment variable)")
 endif()
 
 message(STATUS "Using VCPKG_INSTALLED_DIR: ${VCPKG_INSTALLED_DIR}")
