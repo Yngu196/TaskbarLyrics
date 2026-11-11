@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # 每天仅当日第一次 push 触发构建；pull_request 不受限制
+  # 当天已有「成功」构建才跳过后续 push；pull_request 不受限制
   check:
     runs-on: ubuntu-latest
     if: github.event_name == 'push'
@@ -18,17 +18,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check today's build status
+      - name: Check today's successful build
         id: check_today
         shell: bash
         run: |
           today=$(date -u +%Y-%m-%d)
-          runs=$(gh run list --branch "${{ github.ref_name }}" --workflow build.yml --limit 20 --json status,createdAt --jq "[.[] | select(.status == \"completed\" and (.createdAt | startswith(\"$today\")))] | length")
+          # 只有 conclusion == "success" 才算当天已构建：cancelled / failure /
+          # timed_out 不能锁死当天后续 push，否则一次挂起被取消后整天都无法
+          # 再触发构建，修完问题也验证不了。
+          runs=$(gh run list --branch "${{ github.ref_name }}" --workflow build.yml --limit 20 --json status,conclusion,createdAt --jq "[.[] | select(.status == \"completed\" and .conclusion == \"success\" and (.createdAt | startswith(\"$today\")))] | length")
           if [ "$runs" -gt 0 ]; then
-            echo "Today's build already completed ($runs run(s) found). Skipping."
+            echo "Today's build already succeeded ($runs run(s) found). Skipping."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "No completed build found for today. Proceeding."
+            echo "No successful build found for today. Proceeding."
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
         env:
