@@ -37,7 +37,9 @@ public:
     WebSocketClient& operator=(const WebSocketClient&) = delete;
 
     // 启动连接（异步）
-    bool Connect(const std::string& url = "ws://127.0.0.1:6520");
+    // exactPath=true 表示 url 来自宿主下发的精确端点（1.7.2+），
+    // 不再交替尝试去掉 /moekoe 的根路径
+    bool Connect(const std::string& url = "ws://127.0.0.1:6520", bool exactPath = false);
 
     // 主动断开（不会自动重连）
     void Disconnect();
@@ -84,6 +86,7 @@ private:
 
     // 配置
     std::string url_{"ws://127.0.0.1:6520"};
+    bool        exactPath_{false};
     bool        debugLog_{false};
 
     // 回调

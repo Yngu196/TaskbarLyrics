@@ -610,7 +610,8 @@ struct SpectrumCapture::Impl {
     std::atomic<bool>           reactivateHint{false};
 
     // MoeKoeMusic WebSocket API 端口（用于反查播放器进程）
-    int                         wsPort{6520};
+    // 1.7.2+ 由宿主配置决定，运行时可被 SetWsPort 更新，故用原子量
+    std::atomic<int>            wsPort{6520};
 
     // 进程级捕获连续无音频的会话计数与系统兜底截止时间
     int                         noAudioSessions{0};
@@ -804,7 +805,7 @@ void SpectrumCapture::Impl::CaptureLoop(SpectrumCapture* parent) {
                 Log("[Spectrum] Locating player process; parent chain:\n");
             }
             std::wstring targetName;
-            targetPid = FindPlayerRootPid(wsPort, firstFindAttempt, &targetName);
+            targetPid = FindPlayerRootPid(wsPort.load(), firstFindAttempt, &targetName);
             firstFindAttempt = false;
             if (targetPid == 0) {
                 // 找不到 MoeKoeMusic 进程：等待其出现并重试（日志限频 ~30s 一次）
@@ -997,7 +998,7 @@ SpectrumCapture::~SpectrumCapture() {
 bool SpectrumCapture::Start(int wsPort) {
     if (running_.load()) return true;
 
-    impl_->wsPort = wsPort;
+    impl_->wsPort.store(wsPort);
     running_ = true; // 先置位避免阻塞调用方
     impl_->captureThread = std::make_unique<std::thread>(
         &Impl::CaptureLoop, impl_.get(), this);
@@ -1018,6 +1019,10 @@ void SpectrumCapture::Stop() {
 
 void SpectrumCapture::NotifyPlaybackActive() {
     impl_->reactivateHint.store(true);
+}
+
+void SpectrumCapture::SetWsPort(int wsPort) {
+    if (impl_ && wsPort > 0) impl_->wsPort.store(wsPort);
 }
 
 void SpectrumCapture::SetParams(float dbCeil, float dbFloor, int numBands) {

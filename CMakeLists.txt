@@ -328,13 +328,11 @@ list(APPEND SOURCES
     src/net/websocket_client.cpp
     src/net/http_server.cpp
     src/net/native_messaging.cpp
-    src/net/api_enabler.cpp
 )
 list(APPEND HEADERS
     src/net/websocket_client.h
     src/net/http_server.h
     src/net/native_messaging.h
-    src/net/api_enabler.h
 )
 
 # lyrics/: 歌词处理 — 数据模型、LRC/KRC 解析

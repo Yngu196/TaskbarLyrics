@@ -31,24 +31,6 @@ bool ConstantTimeEquals(const std::string& a, const std::string& b) {
     return diff == 0;
 }
 
-// Validate shutdown command from JSON body，使用 nlohmann::json 替代手工 strstr 解析，
-// 对字段顺序、空格、嵌套结构更健壮。
-// Compatible with: {"command":"shutdown"} and {"type":"control","data":{"command":"shutdown"}}
-bool IsValidShutdownCommand(const std::string& bodyStr) {
-    try {
-        auto j = nlohmann::json::parse(bodyStr);
-        if (j.contains("command") && j["command"].is_string() && j["command"] == "shutdown")
-            return true;
-        if (j.contains("data") && j["data"].is_object() &&
-            j["data"].contains("command") && j["data"]["command"].is_string() &&
-            j["data"]["command"] == "shutdown")
-            return true;
-    } catch (const std::exception&) {
-        // malformed JSON — not a valid shutdown command
-    }
-    return false;
-}
-
 } // namespace
 
 HttpServer::HttpServer() = default;
@@ -229,47 +211,6 @@ void HttpServer::ServerLoop(int port) {
     // ===========================================
     // GET /ping - health check（在 pre_routing_handler 中免鉴权处理，见上）
     // ===========================================
-
-    // ===========================================
-    // POST /lyrics - receive lyrics/cover data
-    // ===========================================
-    svr.Post("/lyrics", [this](const httplib::Request& req, httplib::Response& res) {
-        if (req.body.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"no body\"}", "application/json");
-            return;
-        }
-        if (!onLyrics_) {
-            res.status = 500;
-            res.set_content("{\"error\":\"no handler\"}", "application/json");
-            return;
-        }
-        // 播放期间每行歌词都会 POST 一次，降级为 LogDebug 避免刷屏
-        LogDebug("[HTTP] Received lyrics data (%zu bytes)\n", req.body.size());
-        onLyrics_(req.body);
-        res.set_content("{\"status\":\"accepted\"}", "application/json");
-    });
-
-    // ===========================================
-    // POST / and /shutdown - command endpoints
-    // ===========================================
-    auto shutdownHandler = [this](const httplib::Request& req, httplib::Response& res) {
-        if (req.body.empty()) {
-            res.status = 400;
-            res.set_content("{\"error\":\"no body\"}", "application/json");
-            return;
-        }
-        if (IsValidShutdownCommand(req.body)) {
-            Log("[HTTP] Received valid shutdown command\n");
-            res.set_content("{\"status\":\"shutting_down\"}", "application/json");
-            if (onCommand_) onCommand_("shutdown");
-        } else {
-            res.status = 400;
-            res.set_content("{\"error\":\"invalid command\"}", "application/json");
-        }
-    };
-    svr.Post("/", shutdownHandler);
-    svr.Post("/shutdown", shutdownHandler);
 
     // ===========================================
     // 404 fallback

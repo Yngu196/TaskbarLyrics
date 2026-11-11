@@ -45,11 +45,10 @@ MoeKoeMusic-TaskbarLyrics/
 │   │   ├── lyrics_data.h      #   LyricLine/PlayerState/RenderState 结构
 │   │   ├── lyrics_parser.h/cpp#   LRC/KRC 解析 + 二分查找当前行
 │   │   └── krc_parser.h/cpp   #   KRC 字符级时间轴 + 翻译提取
-│   ├── net/                   # 网络通信 (6)
+│   ├── net/                   # 网络通信 (5)
 │   │   ├── websocket_client.h/cpp # WebSocket 接收 (ixwebsocket)
 │   │   ├── http_server.h/cpp  #   HTTP 服务 (默认6523, Token鉴权)
-│   │   ├── native_messaging.h/cpp # Native Host JSON Lines 协议
-│   │   └── api_enabler.h/cpp  #   API 模式自动检测/开启
+│   │   └── native_messaging.h/cpp # Native Host JSON Lines 协议
 │   ├── render/                # Direct2D 渲染 (9)
 │   │   ├── renderer.h/cpp     #   渲染主循环 + 卡拉OK裁剪
 │   │   ├── renderer_utils.h   #   D2D 工具（画刷/文本/位图）
@@ -202,7 +201,7 @@ MoeKoeMusic-TaskbarLyrics/
 - **协作式退出：** `Disconnect()` 设置 `stopRequested_` + `join()`，超时（2s）后 `TerminateThread` 兜底
 - **消息限制：** 入口检查 `raw.size() > 1MB`，超限丢弃；歌词行数 / 行内字符数分别限 10000 / 1000
 - **回调安全：** 回调中检查 `stopRequested_`，防止 detach 后访问悬挂指针
-- **API 自动开启：** 第 3 次连接失败时触发 `ApiEnabler::TryEnableApi()`
+- **端点来源：** 1.7.2+ 由插件通过 `electronAPI.getApiModeUrl()` 取得后经 Native Host 下发，未取得时回退 `config.websocketPort`
 
 ### 3.2 HTTP 服务器模块
 
@@ -213,11 +212,11 @@ MoeKoeMusic-TaskbarLyrics/
   ```
   请求 → method == "OPTIONS"? → 跳过鉴权 → 204 No Content
        → CheckLocalAuthToken() → Token 缺失 → 403
-       → 路由处理 (GET/ping, POST/lyrics, POST/shutdown 等)
+       → 路由处理 (GET /ping 与 GET /seek/pending 在 pre-routing 中免鉴权直接响应)
   ```
 - **鉴权 Token：** 由 `Config::GetAuthToken()` 从注册表读取（首次自动生成 UUID），不再硬编码
 - **CORS 动态端口：** `Allow-Origin` 使用运行时实际端口
-- **确定性响应体：** ping → `{status, service}`，shutdown → `{status:"shutting_down"}`
+- **端点：** `GET /ping` → `{status:"ok", service}`（popup 存活探测）；`GET /seek/pending` → 读后即清的 seek 兜底投递
 
 ### 3.3 任务栏浮动窗口模块
 
@@ -398,17 +397,13 @@ struct RenderState {
 - **延迟操作：** PostMessage 异步执行防崩溃
 - **老式边框防护：** WM_NCACTIVATE + DwmExtendFrameIntoClientArea 防止遮挡恢复时闪现经典边框
 
-### 3.10 API 自动开启模块
+### 3.10 API 端点发现（MoeKoeMusic 1.7.2+）
 
-**文件：** `src/net/api_enabler.h/cpp`
-
-- **触发时机：** 启动时主动检测 + WS 第 3 次重连失败
-- **工作流程：**
-  ```
-  检测进程 → 定位 config.json → 读取 apiMode
-  → 写入 .tmp → MoveFileEx 原子替换 → ShellExecuteW 重启
-  ```
-- **防重复：** 静态 `s_attempted` 每周期只尝试一次
+- **权限声明：** `manifest.json` 的 `moekoe_permissions` 包含 `moekoe:apiMode`，`minversion` 提升到 `1.7.2`
+- **获取方式：** 桥接页 `native-bridge.js` 调用主世界 `electronAPI.getApiModeUrl()`，
+  取得 `{ http, ws }` 后转交 background，并同步给 EXE（`setApiEndpoint`）
+- **EXE 处理：** 收到端点后用精确 URL 重连 WS，并把端口同步给频谱采集反查播放器进程
+- **兜底：** 端点不可用时回退本地默认端口（WS 6520 / HTTP 6523），不再改写宿主 `config.json`
 
 ### 3.11 主程序入口
 

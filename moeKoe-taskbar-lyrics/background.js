@@ -9,6 +9,10 @@
 const DEFAULT_WS_PORT = 6520;
 const DEFAULT_HTTP_PORT = 6523;
 
+// MoeKoeMusic 1.7.2+ 需要通过 electronAPI.getApiModeUrl() 获取真实端点，
+// 端口与 WS 路径都可能被用户改过，下面是拿不到端点时的兜底。
+const ENDPOINT_STORAGE_KEY = 'apiModeEndpoint';
+
 // WebSocket 协议：默认 ws（明文），可配置为 wss（加密）。
 // 
 // 安全说明：当前使用 ws:// 是因为 MoeKoeMusic 主进程的 apiService 暂未实现 TLS。
@@ -41,6 +45,8 @@ let reconnectTimer = null;         // 挂起中的重连定时器句柄（防止
 let lastConnectTime = null;        // 最后成功连接时间（用于 UI 指示）
 let wsPort = DEFAULT_WS_PORT;
 let wsProtocol = DEFAULT_WS_PROTOCOL;
+let apiWsUrl = '';   // 由 getApiModeUrl() 提供的完整 WS 端点（ws://host:port/path）
+let apiHttpUrl = ''; // 同上的 HTTP 端点，仅用于展示/日志
 
 // ---- Token 管理（加密存储） ----
 // 
@@ -129,13 +135,66 @@ async function getAuthToken() {
 
 async function loadPortConfig() {
     try {
-        const cfg = await chrome.storage.local.get(['wsPort', 'wsProtocol']);
+        const cfg = await chrome.storage.local.get(['wsPort', 'wsProtocol', ENDPOINT_STORAGE_KEY]);
         wsPort = cfg.wsPort || DEFAULT_WS_PORT;
         wsProtocol = cfg.wsProtocol || DEFAULT_WS_PROTOCOL;
+        const saved = cfg[ENDPOINT_STORAGE_KEY];
+        apiWsUrl = (saved && typeof saved.ws === 'string') ? saved.ws : '';
+        apiHttpUrl = (saved && typeof saved.http === 'string') ? saved.http : '';
     } catch (e) {
         wsPort = DEFAULT_WS_PORT;
         wsProtocol = DEFAULT_WS_PROTOCOL;
     }
+}
+
+// 应用 API 模式端点：端点变化时重新连接，并同步给本地 EXE
+function applyApiEndpoint(endpoint) {
+    const wsUrl = (endpoint && typeof endpoint.ws === 'string') ? endpoint.ws : '';
+    const httpUrl = (endpoint && typeof endpoint.http === 'string') ? endpoint.http : '';
+    if (!wsUrl) {
+        console.warn('[TaskbarLyrics] 未获取到 API 模式端点，继续使用本地默认端口');
+        return;
+    }
+
+    const changed = wsUrl !== apiWsUrl;
+    apiWsUrl = wsUrl;
+    apiHttpUrl = httpUrl;
+    try {
+        chrome.storage.local.set({ [ENDPOINT_STORAGE_KEY]: { ws: wsUrl, http: httpUrl } });
+    } catch (_) {}
+
+    // EXE 的 WS 客户端与频谱采集也需要同一端点（不依赖写死端口）
+    sendToHost({ action: 'setApiEndpoint', ws: wsUrl, http: httpUrl }).catch(() => {});
+
+    console.log('[TaskbarLyrics] API 模式端点:', wsUrl);
+    if (changed && !reconnectAborted) {
+        reconnectAttempts = 0;
+        if (reconnectTimer !== null) {
+            clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        if (ws) {
+            // 先摘除回调，防止旧连接关闭时触发额外的重连调度；
+            // 同时清空全局引用，避免 CONNECTING 状态让 connectWebSocket 提前返回
+            const old = ws;
+            ws = null;
+            old.onopen = null;
+            old.onmessage = null;
+            old.onclose = null;
+            old.onerror = null;
+            try { old.close(); } catch (_) {}
+        }
+        connected = false;
+        connectWebSocket();
+    }
+}
+
+// 主动向桥接页索取端点（Service Worker 重启后内存状态丢失）
+function requestApiEndpoint() {
+    if (!bridgePort) return;
+    try {
+        bridgePort.postMessage({ type: 'api-endpoint:get' });
+    } catch (_) {}
 }
 
 // ---- Native Host Bridge 管理 ----
@@ -152,9 +211,17 @@ chrome.runtime.onConnect.addListener((port) => {
 
     bridgePort = port;
     console.log('[TaskbarLyrics] Native Host Bridge 已连接');
+    // 桥接页连接后会主动上报端点，这里再索取一次，覆盖 SW 重启后的状态丢失
+    requestApiEndpoint();
 
     port.onMessage.addListener((message) => {
         if (!message) return;
+
+        // 桥接页上报的 API 模式端点（1.7.2+）
+        if (message.type === 'api-endpoint') {
+            applyApiEndpoint(message.endpoint);
+            return;
+        }
 
         // bridge 转发的响应消息
         if (message.type === 'native-host:response') {
@@ -331,10 +398,16 @@ function connectWebSocket() {
     }
 
     try {
-        // MoeKoeMusic 的 WS 端点路径为 /moekoe（旧版本为根路径）。
-        // 按重连次数交替尝试两种形式，避免路径不匹配导致永久 404。
-        const wsPath = (reconnectAttempts % 2 === 0) ? '/moekoe' : '';
-        const socket = ws = new WebSocket(`${wsProtocol}://127.0.0.1:${wsPort}${wsPath}`);
+        // 1.7.2+ 使用 getApiModeUrl() 提供的完整端点（端口/路径以用户配置为准）；
+        // 拿不到端点时退回本地默认端口，并交替尝试 /moekoe 与根路径兼容旧版本。
+        let url;
+        if (apiWsUrl) {
+            url = apiWsUrl;
+        } else {
+            const wsPath = (reconnectAttempts % 2 === 0) ? '/moekoe' : '';
+            url = `${wsProtocol}://127.0.0.1:${wsPort}${wsPath}`;
+        }
+        const socket = ws = new WebSocket(url);
         let connectionTimeout = null;
         let hasConnected = false;
         let cleared = false;
@@ -542,7 +615,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 reconnectAttempts,
                 reconnectAborted,
                 lastConnectTime,
-                port: wsPort
+                port: wsPort,
+                endpoint: apiWsUrl || null
             });
             return true;
 
@@ -559,6 +633,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'reconnect':
             resetReconnectState();
+            requestApiEndpoint();
             if (ws) {
                 // 先摘除 onclose/onerror：close() 会触发 onclose →
                 // scheduleReconnect()，与下面的立即 connectWebSocket()
@@ -578,19 +653,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
         case 'sendToHost':
             sendToHost(message.payload).then(result => sendResponse(result));
-            return true;
-
-        // content.js 用户授权后触发：通过 Native Bridge 写入 config.json
-        case 'enableApiMode':
-            sendToHost({ action: 'enableApiMode' })
-                .then(result => {
-                    console.log('[TaskbarLyrics] enableApiMode result:', JSON.stringify(result));
-                    sendResponse(result);
-                })
-                .catch(e => {
-                    console.error('[TaskbarLyrics] enableApiMode failed:', e.message);
-                    sendResponse({ result: 'fail', error: e.message });
-                });
             return true;
 
         default:

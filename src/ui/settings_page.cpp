@@ -928,27 +928,6 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
 
     auto c1 = MakeCard("高级设置");
     {
-        auto hint = std::make_unique<TextBlock>();
-        hint->id = "advHint";
-        hint->text = "⚠ 修改端口可能影响使用";
-        hint->style = TextBlock::Style::Caption;
-        c1->AddChild(std::move(hint));
-    }
-    {
-        auto lr = std::make_unique<LabelRow>();
-        lr->id = "wsPort";
-        lr->label = "WebSocket 端口";
-        lr->textValue = std::to_string(adv.websocketPort);
-        lr->readOnly = false;
-        c1->AddChild(std::move(lr));
-    }
-    {
-        auto btn = std::make_unique<Button>();
-        btn->id = "resetPort";
-        btn->text = "重置端口";
-        c1->AddChild(std::move(btn));
-    }
-    {
         auto s = std::make_unique<Slider>();
         s->id = "refreshRate";
         s->label = "刷新率";
@@ -1034,9 +1013,7 @@ void AdvancedPage::CollectChanges(moekoe::Config& cfg) {
     auto& app = cfg.MutableAppearance();
     for (auto& card : children_) {
         for (auto& child : card->Children()) {
-            if (auto* lr = dynamic_cast<LabelRow*>(child.get())) {
-                if (lr->id == "wsPort") adv.websocketPort = atoi(lr->textValue.c_str());
-            } else if (auto* s = dynamic_cast<Slider*>(child.get())) {
+            if (auto* s = dynamic_cast<Slider*>(child.get())) {
                 if (s->id == "refreshRate") adv.refreshRateHz = static_cast<int>(s->value);
             } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                 if (t->id == "debugLog") adv.debugLog = t->value;

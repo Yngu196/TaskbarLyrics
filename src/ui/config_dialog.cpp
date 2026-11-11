@@ -36,8 +36,6 @@ enum {
     IDC_CHK_KARAOKE,
     IDC_CHK_TRANSLATION,
     // 高级页
-    IDC_LABEL_PORT,
-    IDC_EDIT_PORT,
     IDC_LABEL_RATE,
     IDC_EDIT_RATE,
     IDC_SPIN_RATE,
@@ -278,13 +276,6 @@ void ConfigDialog::InitControls(HWND hwnd, const Config& config, bool boundMode)
     CreateLabel(hwnd, 0, L"高级设置", left, y, 200, 20);
     y += rowH;
 
-    // WebSocket 端口
-    CreateLabel(hwnd, IDC_LABEL_PORT, L"WebSocket 端口:", left, y + 3, labelW + 20, 20);
-    wchar_t portBuf[16] = {};
-    _snwprintf_s(portBuf, _TRUNCATE, L"%d", config.Advanced().websocketPort);
-    CreateNumEdit(hwnd, IDC_EDIT_PORT, portBuf, left + labelW + 20 + gap, y, numW + 20, 24);
-    y += rowH;
-
     // 刷新率
     CreateLabel(hwnd, IDC_LABEL_RATE, L"刷新率:", left, y + 3, labelW + 20, 20);
     wchar_t rateBuf[16] = {};
@@ -322,7 +313,6 @@ bool ConfigDialog::ReadControls(HWND hwnd, Config& config) {
     auto opacityStr = GetEditText(hwnd, IDC_EDIT_OPACITY);
     auto fontFamily = WideToUtf8(GetEditText(hwnd, IDC_EDIT_FONT));
     auto fontSizeStr = GetEditText(hwnd, IDC_EDIT_FONTSIZE);
-    auto portStr = GetEditText(hwnd, IDC_EDIT_PORT);
     auto rateStr = GetEditText(hwnd, IDC_EDIT_RATE);
 
     auto& a = config.MutableAppearance();
@@ -335,7 +325,6 @@ bool ConfigDialog::ReadControls(HWND hwnd, Config& config) {
     a.enableTranslation = ::IsDlgButtonChecked(hwnd, IDC_CHK_TRANSLATION) == BST_CHECKED;
 
     auto& adv = config.MutableAdvanced();
-    adv.websocketPort = portStr.empty() ? adv.websocketPort : std::clamp(_wtoi(portStr.c_str()), 1024, 65535);
     adv.refreshRateHz = rateStr.empty() ? adv.refreshRateHz : std::clamp(_wtoi(rateStr.c_str()), 10, 120);
 
     return config.Save();

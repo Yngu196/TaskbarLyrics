@@ -51,10 +51,11 @@ WebSocketClient::~WebSocketClient() {
     Disconnect();
 }
 
-bool WebSocketClient::Connect(const std::string& url) {
+bool WebSocketClient::Connect(const std::string& url, bool exactPath) {
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
         url_ = url;
+        exactPath_ = exactPath;
     }
     stopRequested_.store(false);
 
@@ -171,13 +172,15 @@ void WebSocketClient::ReconnectLoop() {
 
         // 取出当前 URL
         std::string urlCopy;
+        bool exactPath = false;
         {
             std::lock_guard<std::mutex> lock(stateMutex_);
             urlCopy = url_;
+            exactPath = exactPath_;
         }
         // 端点路径随 MoeKoeMusic 版本变化（新版要求 /moekoe，旧版为根路径）。
-        // 失败重连时交替切换两种形式，避免单一路径不匹配导致永久 404。
-        if (attempt % 2 == 0) {
+        // 兜底 URL 失败重连时交替切换两种形式；
+        if (!exactPath && attempt % 2 == 0) {
             const std::string kPath = "/moekoe";
             const size_t pos = urlCopy.find(kPath);
             if (pos != std::string::npos) urlCopy.erase(pos);

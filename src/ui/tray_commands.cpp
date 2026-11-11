@@ -5,7 +5,6 @@
 //
 #include "ui/tray_commands.h"
 
-#include "net/api_enabler.h"
 #include "ui/config_dialog.h"
 #include "core/constants.h"
 #include "ui/d2d_settings_window.h"
