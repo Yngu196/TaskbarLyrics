@@ -159,8 +159,9 @@ Report $(if ($submoduleOk) { 'OK' } else { 'WARN' }) 'ixwebsocket submodule' `
 $httplib = Join-Path $root 'third_party\httplib\httplib.h'
 Report $(if (Test-Path $httplib) { 'OK' } else { 'FAIL' }) 'third_party/httplib.h' ''
 
-# CRT DLLs are no longer vendored in the repo; both CI and local builds read
-# them from the build machine's own VS Redist via copy_vc_runtime.ps1.
+# CRT DLLs are no longer vendored in the repo. copy_vc_runtime.ps1 first reads
+# the build machine's own VS Redist, then falls back to Microsoft's official
+# VC++ redistributable package when the target arch has no local retail CRT.
 $crtScript = Join-Path $root 'scripts\copy_vc_runtime.ps1'
 $crtDir = $null
 $pfx86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
@@ -181,7 +182,7 @@ if ($vswhere -and (Test-Path -LiteralPath $vswhere)) {
     }
 }
 Report $(if ($crtDir) { 'OK' } else { 'WARN' }) 'VS Redist CRT source' `
-    $(if ($crtDir) { "$crtDir (no vendored DLLs)" } else { "no $Arch CRT found; CI step would fail - install VC++ ARM64 build tools" })
+    $(if ($crtDir) { "$crtDir (no vendored DLLs)" } else { "no local $Arch CRT; copy_vc_runtime.ps1 will fetch the official redist (network required)" })
 Report $(if (Test-Path -LiteralPath $crtScript) { 'OK' } else { 'FAIL' }) 'copy_vc_runtime.ps1' `
     $(if (Test-Path -LiteralPath $crtScript) { 'CI + local share this resolver' } else { 'missing' })
 

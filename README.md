@@ -5,8 +5,8 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.8">
-    <img src="https://img.shields.io/badge/release-v1.0.8-blue" alt="release" />
+  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.9">
+    <img src="https://img.shields.io/badge/release-v1.0.9-blue" alt="release" />
   </a>
   <a href="https://github.com/Yngu196/TaskbarLyrics?tab=License-1-ov-file">
     <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
@@ -22,7 +22,7 @@
 - [功能特性](#功能特性)
 - [兼容性说明](#兼容性说明)
 - [安装与使用](#安装与使用)
-- [常见问题](#常见问题)
+- [常见问题排查](#常见问题排查)
 - [构建与测试](#构建与测试)
 - [界面预览](#界面预览)
 - [相关文档](#相关文档)
@@ -132,11 +132,11 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 
 如果「配置任务 / CMake 设置」不可用，关闭解决方案后重新打开 `CMakeLists.txt`；仍未恢复时删除对应的 `out/build/<preset>` 缓存并重新配置。
 
-### 从干净克隆到构建（推荐）
+### 从克隆到构建（推荐）
 
 ```powershell
-git clone --recurse-submodules <repo>
-cd MoeKoeMusic-TaskbarLyrics
+git clone --recurse-submodules https://github.com/Yngu196/TaskbarLyrics.git
+cd TaskbarLyrics
 
 # 第一步：准备依赖（自动复用已有 vcpkg；找不到才 clone 到 %LOCALAPPDATA%）
 # 克隆时漏了 --recurse-submodules 也没关系，bootstrap 会自动补 submodule
@@ -172,16 +172,23 @@ cd MoeKoeMusic-TaskbarLyrics
 ### VC++ 运行时 DLL 不入库
 
 `msvcp140.dll` / `vcruntime140.dll`（x64 另含 `vcruntime140_1.dll`）**不随仓库分发**，
-构建时从本机 Visual Studio 的 `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 取得：
+本地与 CI 的补齐方式不同：
 
-- 本地构建：`CMakeLists.txt` 的 POST_BUILD 步骤自动复制；
-- CI：`scripts\copy_vc_runtime.ps1` 负责补齐，两条 workflow 复用同一脚本，逐文件校验
-  PE 架构，找不到就明确失败，不会静默产出缺 CRT 的包。
+- **本地构建**：`CMakeLists.txt` 的 POST_BUILD 步骤从本机 Visual Studio 的
+  `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 复制。该目录不存在时只发 WARNING，
+  可手动运行 `scripts\copy_vc_runtime.ps1` 补齐（参数见下）。
+- **CI**：`build.yml` / `release.yml` 调用同一个脚本，按两级来源补齐：
+  1. 本机 VS Redist（`vswhere` 定位，不依赖 `VCToolsRedistDir` 等机器级环境变量）；
+  2. 本机没有对应架构的 retail CRT 时（典型是 x64 runner 上编 ARM64），自动下载
+     微软官方 `vc_redist.<arch>.exe`，从 Burn bundle 内嵌 CAB 中提取。用 Windows 自带的
+     `expand.exe`，不引入 7-Zip / WiX 等额外工具。
 
-脚本用 `vswhere` 定位 VS，不依赖 `VCToolsRedistDir` 等机器级环境变量，并打印全部候选目录便于排查。
-若构建机确实缺少对应架构的 CRT（尤其 ARM64），请在 Visual Studio Installer 中补齐该架构的
-MSVC 生成工具与 VC++ 可再发行组件，**不要**把 DLL 提交进仓库：这些文件受微软再分发条款约束，
-且混入错误架构时会直接触发 `verify_package.py` 失败。
+CI 脚本逐文件校验 PE 架构，仅在缺失或架构不符时覆盖；两级来源都拿不到就明确失败，
+不会静默产出缺 CRT 的包。
+
+常用参数：`-Arch x64|arm64`、`-Destination <输出目录>`（必填）、`-VerifyOnly`（只检查、不下载不写入）、
+`-RedistPackage <path>`（离线包）、`-OfficialOnly`（跳过本机 VS，强制统一用官方包版本）。
+官方 permalink 总指向最新 v14 可再发行包，与 v143～v145 工具集二进制兼容，但 CRT 小版本不锁定。
 
 ### 手动构建
 
@@ -211,10 +218,15 @@ ctest --test-dir out\build\x64-Release -C Release --output-on-failure
 python scripts\verify_package.py moeKoe-taskbar-lyrics\
 
 # 打包：根目录同时包含 x64/ 与 arm64/ 即为双架构混合包
+# 输出名可自定义；build.cmd release all 默认产出 moeKoe-taskbar-lyrics.zip
 python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
 ```
 
-`BUILD_TESTING` 默认 `OFF`；已有 `out\build\<preset>` 缓存会保留原值，所以开启一次后后续 `.\build.cmd release x64` 仍会连带构建测试。CI 的 x64 build job 显式传 `-DBUILD_TESTING=ON` 并跑 `ctest`，ARM64 job 在 x64 runner 上无法执行测试二进制，只构建不跑。
+`BUILD_TESTING` 默认 `OFF`；已有 `out\build\<preset>` 缓存会保留原值，所以开启一次后后续 `.\build.cmd release x64` 仍会连带构建测试。
+
+**例外**：Catch2 从 GitHub / gitee 都拉取失败且没有本地源码时，`CMakeLists.txt` 会 `set(BUILD_TESTING OFF ... FORCE)` 把缓存改回 `OFF` 并跳过测试。离线启用可用 `-DCATCH2_SOURCE_DIR=<path>` 指向本地 Catch2 v3.7.1 源码，或把源码放到 `third_party\catch2\`。
+
+CI 的 x64 build job 显式传 `-DBUILD_TESTING=ON` 并跑 `ctest`，ARM64 job 在 x64 runner 上无法执行测试二进制，只构建不跑。
 
 当前测试覆盖歌词解析、KRC 解析、频谱数学映射与 HTTP 服务生命周期。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 
@@ -224,7 +236,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | :---: | :---: | :---: |
 | ![双行歌词模式](Samples/sample1.gif "双行歌词模式") | ![单行歌词模式](Samples/sample2.gif "单行歌词模式") | ![双行歌词模式（歌词双语切换）](Samples/sample3.gif "双行歌词模式（歌词双语切换）") |
 
-| 设置页面 | 歌词窗口菜单 |托盘菜单 |
+| 设置页面 | 歌词窗口菜单 | 托盘菜单 |
 | :---: | :---: | :---: |
 | ![设置页面](Samples/sample4.png "设置页面") | ![菜单](Samples/sample6.png "菜单") | ![菜单](Samples/sample7.png "菜单") |
 
@@ -234,7 +246,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 - [项目状态文档](Docs/项目状态文档.md)
 - [版本更新日志](Docs/版本更新日志.md)
 - [常见问题自查](Docs/常见问题自查.md)
-- [高 DPI 测试矩阵](Docs/高DPI测试矩阵.md)
 - [计划书](Docs/计划书.md)
 
 ## 许可证

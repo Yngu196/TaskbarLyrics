@@ -101,9 +101,9 @@ jobs:
       - name: Ensure VC++ Redist DLLs
         shell: pwsh
         run: |
-          # CRT DLL 取自构建机自己的 Visual Studio 安装（vswhere 定位），不随仓库分发。
-          # 脚本会打印全部候选目录、逐文件校验 PE 架构，仅在缺失/错架构时复制；
-          # 找不到就明确失败，避免产物缺 CRT 却标 success。
+          # CRT DLL 取自构建机自己的 VS 安装；本机缺 ARM64 retail CRT 时，
+          # 脚本自动下载微软官方 VC_redist.arm64.exe 并从中提取，不随仓库分发。
+          # 逐文件校验 PE 架构，仅在缺失/错架构时复制；找不到就明确失败。
           .\scripts\copy_vc_runtime.ps1 -Arch ${{ matrix.arch }} -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}"
 
       - name: Package for artifact

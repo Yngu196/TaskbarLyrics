@@ -3,22 +3,27 @@
     Ensure the VC++ CRT redistributable DLLs are present in a build output directory.
 
 .DESCRIPTION
-    Locates Microsoft.VC143.CRT inside an installed Visual Studio 2022 using
+    Looks for Microsoft.VC143.CRT in installed Visual Studio instances via
     vswhere (plus VSINSTALLDIR / VCToolsRedistDir / common install roots),
-    verifies each DLL's PE machine type matches the target architecture, and
-    copies only the DLLs that are missing or have the wrong architecture.
+    verifies each DLL's PE machine type, and copies only DLLs that are missing
+    or have the wrong architecture.
 
-    This replaces the old ci/redist fallback. No Microsoft binaries are stored
-    in this repository: every DLL comes from the build machine's own Visual
-    Studio installation, which is the source Microsoft licenses for
-    redistribution with an application. Failing to find one is a hard error,
-    never a silently incomplete package.
+    When the build machine has no matching retail CRT (notably ARM64 on x64 CI
+    runners), the DLLs come from Microsoft's official VC++ Redistributable
+    package instead: the Burn bundle's attached CAB is located and expanded
+    with the Windows built-in expand.exe, and only DLLs with the correct PE
+    machine are copied. No Microsoft binaries are stored in this repository.
+    Microsoft permits app-local deployment of these redistributable DLLs (see
+    "Determine which DLLs to redistribute"); central deployment is preferred
+    but would not put the DLLs into the plugin package.
 
+    A missing CRT is always a hard error, never a silently incomplete package.
     Compatible with Windows PowerShell 5.1 and PowerShell 7.
 
 .EXAMPLE
     .\scripts\copy_vc_runtime.ps1 -Arch x64 -Destination "moeKoe-taskbar-lyrics\x64"
     .\scripts\copy_vc_runtime.ps1 -Arch arm64 -Destination "moeKoe-taskbar-lyrics\arm64" -VerifyOnly
+    .\scripts\copy_vc_runtime.ps1 -Arch arm64 -Destination "..." -RedistPackage C:\temp\vc_redist.arm64.exe
 #>
 [CmdletBinding()]
 param(
@@ -28,8 +33,15 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Destination,
 
-    # Only check, never write. Useful as a CI preflight.
-    [switch]$VerifyOnly
+    # Only check, never write. Useful as a CI preflight; skips the download.
+    [switch]$VerifyOnly,
+
+    # Offline use: an already downloaded official redistributable package.
+    [string]$RedistPackage,
+
+    # Skip local VS Redist lookup and always use the official package. Useful
+    # for reproducible CRT versions and for exercising the fallback locally.
+    [switch]$OfficialOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -112,6 +124,175 @@ function Fail {
     throw $Message
 }
 
+# aka.ms permalinks always serve the latest supported v14 redistributable, so
+# the payload is newer than (or equal to) any VS 2015-2026 toolset and stays
+# binary compatible. The trade-off is that the exact CRT version is not pinned.
+$redistUrls = @{
+    x64   = 'https://aka.ms/vc14/vc_redist.x64.exe'
+    arm64 = 'https://aka.ms/vc14/vc_redist.arm64.exe'
+}
+
+function Test-CabFile {
+    param([string]$Path)
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $buf = New-Object byte[] 4
+            if ($stream.Read($buf, 0, 4) -ne 4) { return $false }
+            return ([System.Text.Encoding]::ASCII.GetString($buf) -eq 'MSCF')
+        } finally { $stream.Dispose() }
+    } catch { return $false }
+}
+
+function Invoke-CabExpand {
+    param([string]$CabPath, [string]$OutDir)
+    $expand = Join-Path $env:WINDIR 'System32\expand.exe'
+    if (-not (Test-Path -LiteralPath $expand -PathType Leaf)) {
+        Say "[WARN] expand.exe not found: $expand"
+        return $false
+    }
+    New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+    & $expand '-F:*' $CabPath $OutDir | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Say "[WARN] expand.exe failed ($LASTEXITCODE) for $CabPath"
+        return $false
+    }
+    return $true
+}
+
+function Get-LargestEmbeddedCab {
+    param([string]$ExePath, [string]$OutPath)
+    $bytes = [System.IO.File]::ReadAllBytes($ExePath)
+    # ISO-8859-1 is a 1:1 byte<->char mapping, so string offsets equal file
+    # offsets. It exists on both .NET Framework (PS 5.1) and .NET (PS 7).
+    $text = [System.Text.Encoding]::GetEncoding(28591).GetString($bytes)
+    $bestOffset = -1
+    $bestSize = 0
+    $pos = 0
+    while ($pos -lt $text.Length -and ($idx = $text.IndexOf('MSCF', $pos, [StringComparison]::Ordinal)) -ge 0) {
+        if ($idx + 16 -le $bytes.Length) {
+            $size = [BitConverter]::ToInt32($bytes, $idx + 8)
+            if ($size -gt 0 -and ($idx + $size) -le $bytes.Length -and $size -gt $bestSize) {
+                $bestOffset = $idx
+                $bestSize = $size
+            }
+        }
+        $pos = $idx + 4
+    }
+    if ($bestOffset -lt 0) {
+        Say "[WARN] no embedded CAB container found in $ExePath"
+        return $null
+    }
+    $cab = New-Object byte[] $bestSize
+    [Array]::Copy($bytes, $bestOffset, $cab, 0, $bestSize)
+    [System.IO.File]::WriteAllBytes($OutPath, $cab)
+    return $OutPath
+}
+
+function Add-CrtFromOfficialPackage {
+    param(
+        [string[]]$Dlls,
+        [int]$Machine,
+        [string]$Arch,
+        [string]$Dest,
+        [string]$LocalPackage
+    )
+    $work = Join-Path ([System.IO.Path]::GetTempPath()) ('mkk-crt-' + [guid]::NewGuid().ToString('N'))
+    # Invoke-WebRequest draws a full progress bar into the CI log otherwise.
+    $oldProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        New-Item -ItemType Directory -Path $work -Force | Out-Null
+        $package = Join-Path $work 'vc_redist.exe'
+        if ($LocalPackage) {
+            if (-not (Test-Path -LiteralPath $LocalPackage -PathType Leaf)) {
+                Say "[WARN] -RedistPackage not found: $LocalPackage"
+                return $false
+            }
+            Copy-Item -LiteralPath $LocalPackage -Destination $package
+            Say "Official redist package (local): $LocalPackage"
+        } else {
+            $url = $redistUrls[$Arch]
+            if (-not $url) { Say "[WARN] no official redist URL for $Arch"; return $false }
+            Say "Downloading official VC++ redistributable: $url"
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $package -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+            } catch {
+                Say "[WARN] download failed: $($_.Exception.Message)"
+                return $false
+            }
+        }
+        if (-not (Test-Path -LiteralPath $package -PathType Leaf) -or (Get-Item -LiteralPath $package).Length -lt 1MB) {
+            Say '[WARN] redist package missing or implausibly small'
+            return $false
+        }
+        $head = New-Object byte[] 2
+        $fs = [System.IO.File]::OpenRead($package)
+        try { [void]$fs.Read($head, 0, 2) } finally { $fs.Dispose() }
+        if ([System.Text.Encoding]::ASCII.GetString($head) -ne 'MZ') {
+            Say '[WARN] redist package is not a PE executable'
+            return $false
+        }
+
+        # Burn bundle layout: PE stub -> UX container (CAB) -> attached
+        # container (CAB) holding the MSI and the payload CAB. The attached
+        # container is the largest CAB in the file.
+        $attached = Join-Path $work 'attached.cab'
+        if (-not (Get-LargestEmbeddedCab -ExePath $package -OutPath $attached)) { return $false }
+        $stage1 = Join-Path $work 'stage1'
+        if (-not (Invoke-CabExpand -CabPath $attached -OutDir $stage1)) { return $false }
+        # The x64 bundle carries several payload CABs (x64, ARM64, ...); the
+        # largest one is not necessarily the target architecture. Expand them
+        # all and let PE machine checks pick the right files.
+        $innerCabs = @(Get-ChildItem -LiteralPath $stage1 -File -ErrorAction SilentlyContinue |
+            Where-Object { Test-CabFile $_.FullName })
+        if ($innerCabs.Count -eq 0) { Say '[WARN] payload CAB not found in attached container'; return $false }
+        $payload = New-Object System.Collections.Generic.List[string]
+        $index = 0
+        foreach ($cab in $innerCabs) {
+            $stage = Join-Path $work "payload_$index"
+            if (Invoke-CabExpand -CabPath $cab.FullName -OutDir $stage) {
+                foreach ($f in (Get-ChildItem -LiteralPath $stage -File -ErrorAction SilentlyContinue)) {
+                    $payload.Add($f.FullName)
+                }
+            }
+            $index++
+        }
+
+        foreach ($dll in $Dlls) {
+            # MSI payload names are suffixed, e.g. msvcp140.dll_arm64. Pick by
+            # prefix AND PE machine: vcruntime140_1.dll_arm64 in the ARM64
+            # package is in fact an x64 binary, and the x64 bundle contains
+            # both x64 and ARM64 payloads.
+            $src = $null
+            foreach ($path in $payload) {
+                $name = [System.IO.Path]::GetFileName($path)
+                if (-not $name.StartsWith($dll, [StringComparison]::OrdinalIgnoreCase)) { continue }
+                if ((Get-PeMachine $path) -eq $Machine) { $src = $path; break }
+            }
+            if (-not $src) {
+                Say ("[WARN] official package has no {0} with machine 0x{1:X4}" -f $dll, $Machine)
+                return $false
+            }
+            $to = Join-Path $Dest $dll
+            Copy-Item -LiteralPath $src -Destination $to -Force
+            $actual = Get-PeMachine $to
+            if ($actual -ne $Machine) {
+                Say ("[WARN] copied {0} but PE machine is 0x{1:X4}" -f $dll, $actual)
+                return $false
+            }
+            Say ("  copied {0,-24} machine=0x{1:X4}  (official redist)" -f $dll, $actual)
+        }
+        return $true
+    } catch {
+        Say "[WARN] official redist fallback failed: $($_.Exception.Message)"
+        return $false
+    } finally {
+        $ProgressPreference = $oldProgress
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 $global:LASTEXITCODE = 0
 Say ("VC++ CRT: arch=$Arch expected PE machine=0x{0:X4} ($expectedName)" -f $expectedMachine)
 Say "VC++ CRT: DLLs=$($needed -join ', ')"
@@ -150,7 +331,7 @@ if ($missing.Count -eq 0) {
 }
 Say "Missing or wrong-architecture: $($missing -join ', ')"
 if ($VerifyOnly) {
-    Fail "CRT DLLs missing/wrong in $dest (VerifyOnly; no files written)"
+    Fail "CRT DLLs missing/wrong in $dest (VerifyOnly; no files written, no package downloaded)"
 }
 
 # --- Collect Visual Studio install roots ----------------------------------
@@ -225,20 +406,14 @@ foreach ($root in $roots) {
 $ordered = @($candidates |
     Where-Object { Test-Path -LiteralPath $_.Path -PathType Container } |
     Sort-Object -Property @{ Expression = 'Priority' }, @{ Expression = 'Version'; Descending = $true })
+if ($OfficialOnly) {
+    Say "Local VS Redist lookup skipped (-OfficialOnly)"
+    $ordered = @()
+}
 
 Say "Candidate Redist directories searched:"
 foreach ($c in $ordered) { Say ("  - {0}" -f $c.Path) }
-if ($ordered.Count -eq 0) {
-    Say "  (none found)"
-    $msg = @"
-No VC++ CRT directory for $Arch found on this machine.
-Searched VS installs via vswhere, VSINSTALLDIR, VCToolsRedistDir and common
-install roots for: VC\Redist\MSVC\<version>\$Arch\Microsoft.VC143.CRT
-Install the "MSVC v143 C++ ARM64 build tools" / "C++ Redistributable"
-component in Visual Studio Installer, then re-run.
-"@
-    Fail $msg
-}
+if ($ordered.Count -eq 0) { Say "  (none found)" }
 
 $source = $null
 foreach ($c in $ordered) {
@@ -258,26 +433,35 @@ foreach ($c in $ordered) {
     }
     Say ("  rejected {0} -> {1}" -f $c.Path, ($reasons -join '; '))
 }
-if (-not $source) {
-    $msg = @"
-No VC++ CRT directory for $Arch contains all of [$($missing -join ', ')] as
-valid $expectedName PE binaries. Rejected candidates are listed above.
-Install the matching VC++ Redistributable / ARM64 build tools in Visual Studio
-Installer rather than vendoring DLLs into the repository.
+
+if ($source) {
+    Say "Source: $source"
+    foreach ($dll in $missing) {
+        $from = Join-Path $source $dll
+        $to = Join-Path $dest $dll
+        Copy-Item -LiteralPath $from -Destination $to -Force
+        $actual = Get-PeMachine $to
+        if ($actual -ne $expectedMachine) {
+            Fail ("Copied $dll but PE machine is 0x{0:X4}, expected 0x{1:X4}" -f $actual, $expectedMachine)
+        }
+        Say ("  copied {0,-24} machine=0x{1:X4}" -f $dll, $actual)
+    }
+} else {
+    if ($VerifyOnly) {
+        Fail "CRT DLLs missing/wrong in $dest, and no local VS CRT matched (VerifyOnly; no files written)"
+    }
+    Say "No local VS CRT matched; falling back to Microsoft's official redistributable."
+    if (-not (Add-CrtFromOfficialPackage -Dlls $missing -Machine $expectedMachine -Arch $Arch -Dest $dest -LocalPackage $RedistPackage)) {
+        $msg = @"
+No VC++ CRT for $Arch could be resolved.
+Local Visual Studio Redist candidates: $($ordered.Count) (listed above).
+Official redistributable fallback also failed: $($redistUrls[$Arch]).
+The package is fetched from aka.ms and expanded with the Windows built-in
+expand.exe; check network access, or pass -RedistPackage with a local copy.
 "@
-    Fail $msg
+        Fail $msg
+    }
 }
 
-Say "Source: $source"
-foreach ($dll in $missing) {
-    $from = Join-Path $source $dll
-    $to = Join-Path $dest $dll
-    Copy-Item -LiteralPath $from -Destination $to -Force
-    $actual = Get-PeMachine $to
-    if ($actual -ne $expectedMachine) {
-        Fail ("Copied $dll but PE machine is 0x{0:X4}, expected 0x{1:X4}" -f $actual, $expectedMachine)
-    }
-    Say ("  copied {0,-24} machine=0x{1:X4}" -f $dll, $actual)
-}
 Say "OK: VC++ CRT ready in $dest"
 $global:LASTEXITCODE = 0

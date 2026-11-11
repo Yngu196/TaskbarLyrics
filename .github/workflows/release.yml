@@ -57,6 +57,7 @@ jobs:
         shell: pwsh
         run: |
           # 与 build.yml 复用同一脚本，避免构建/发布两条链路的 CRT 行为分叉。
+          # 本机无对应架构 retail CRT 时自动下载微软官方可再发行包提取，DLL 不入库。
           .\scripts\copy_vc_runtime.ps1 -Arch ${{ matrix.arch }} -Destination "moeKoe-taskbar-lyrics\${{ matrix.arch }}"
 
       - name: Package
