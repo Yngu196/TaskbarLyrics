@@ -34,6 +34,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# PowerShell 7.3+ turns a non-zero native exit code into a terminating error
+# when $ErrorActionPreference is 'Stop'. vswhere is only a hint here - its
+# failure must not abort the search before the other install roots are tried.
+# The variable does not exist in Windows PowerShell 5.1, hence Get-Variable.
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
+
 $machineOf = @{ x64 = 0x8664; arm64 = 0xAA64 }
 $expectedMachine = $machineOf[$Arch]
 $expectedName = if ($Arch -eq 'arm64') { 'ARM64' } else { 'AMD64' }
@@ -78,8 +86,26 @@ function Test-CrtDir {
 
 function Say { param([string]$Message) Write-Host $Message }
 
+function Write-GitHubDiagnostic {
+    param([string]$Message)
+    if ($env:GITHUB_ACTIONS -ne 'true') { return }
+    # Workflow commands require %, CR and LF to be escaped. Publishing the
+    # reason as an annotation makes it readable through the anonymous
+    # check-runs/annotations API, not only through admin-only job logs.
+    $oneLine = ($Message -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A')
+    Write-Host "::error::$oneLine"
+    if ($env:GITHUB_STEP_SUMMARY) {
+        $lines = @('### VC++ CRT resolution failed', '', '```text') +
+                 @($Message -split "`r?`n") + @('```', '')
+        [System.IO.File]::AppendAllText(
+            $env:GITHUB_STEP_SUMMARY,
+            (($lines -join "`r`n") + "`r`n"))
+    }
+}
+
 function Fail {
     param([string]$Message)
+    Write-GitHubDiagnostic $Message
     # GitHub Actions' PowerShell wrapper can exit with $LASTEXITCODE even when
     # a script throws. Set it explicitly so a missing CRT can never go green.
     $global:LASTEXITCODE = 1
@@ -142,8 +168,12 @@ $pf86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
 if ($pf86) {
     $vswhere = Join-Path $pf86 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
-        $installs = & $vswhere -products * -property installationPath 2>$null
-        foreach ($install in $installs) { Add-Root $install }
+        try {
+            $installs = & $vswhere -products * -property installationPath 2>$null
+            foreach ($install in $installs) { Add-Root $install }
+        } catch {
+            Say "[WARN] vswhere lookup failed: $($_.Exception.Message)"
+        }
     }
 }
 Add-Root $env:VSINSTALLDIR
@@ -216,6 +246,17 @@ foreach ($c in $ordered) {
         $source = $c.Path
         break
     }
+    $reasons = New-Object System.Collections.Generic.List[string]
+    foreach ($dll in $missing) {
+        $probe = Join-Path $c.Path $dll
+        if (-not (Test-Path -LiteralPath $probe -PathType Leaf)) {
+            $reasons.Add("${dll}: missing")
+            continue
+        }
+        $actual = Get-PeMachine $probe
+        $reasons.Add(("{0}: machine=0x{1:X4}" -f $dll, $actual))
+    }
+    Say ("  rejected {0} -> {1}" -f $c.Path, ($reasons -join '; '))
 }
 if (-not $source) {
     $msg = @"

@@ -40,6 +40,9 @@ jobs:
       always() &&
       (github.event_name != 'push' || needs.check.outputs.skip != 'true')
     runs-on: windows-latest
+    # 最后一道护栏：任何未在步骤内自行超时的步骤（含未来新增的）都不能
+    # 占满 GitHub 默认的 6 小时 job 上限。留给 vcpkg 编译足够余量。
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +91,9 @@ jobs:
       - name: Test
         # ARM64 job runs on an x64 runner: its test binaries cannot execute here.
         if: matrix.arch == 'x64'
-        run: ctest --test-dir build-${{ matrix.arch }} -C Release --output-on-failure
+        # CMakeLists.txt 已给 HttpLifecycle 设 TIMEOUT=30；命令行保持同一数值，
+        # 保证无论谁调用 ctest 都不会被一个挂住的测试拖到 job 上限。
+        run: ctest --test-dir build-${{ matrix.arch }} -C Release --output-on-failure --timeout 30
 
       - name: Ensure VC++ Redist DLLs
         shell: pwsh

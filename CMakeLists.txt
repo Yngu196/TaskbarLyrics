@@ -789,6 +789,9 @@ if(BUILD_TESTING AND _catch2_ready)
         Catch2::Catch2 Threads::Threads ws2_32
     )
     add_test(NAME HttpLifecycle COMMAND $<TARGET_FILE:test_http_lifecycle> -s)
+    # 生命周期测试涉及线程 join 与 socket，死锁时会无限挂起。把超时写进测试
+    # 属性而不是只依赖 CI 命令的 --timeout，任何调用方（含本地 ctest）都受保护。
+    set_tests_properties(HttpLifecycle PROPERTIES TIMEOUT 30)
 
     # 复制 VC++ Redist CRT DLL 到测试可执行文件输出目录
     # 测试 exe 用 /MD 动态链接运行时，需要 msvcp140.dll / vcruntime140.dll /

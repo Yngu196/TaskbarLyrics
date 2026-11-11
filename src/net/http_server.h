@@ -64,13 +64,13 @@ private:
     void ServerLoop(int port);
 
     std::thread serverThread_;
-    std::function<void()> stopCallback_;
-    // 保护 serverThread_、port_ 和 Start/Stop 的生命周期转换。
+    // 保护 serverThread_ 与 Start/Stop 的生命周期转换。
+    // 约定：绝不在持有此锁时 join 工作线程——ServerLoop 的收尾路径若需要
+    // 同一把锁，就会形成锁序反转死锁（CI 上 HttpLifecycle 曾因此永久挂起）。
     // running_ 只表示 ServerLoop 已进入监听阶段，不能单独作为线程存活判断。
     mutable std::mutex lifecycleMutex_;
     std::atomic<bool> running_{false};
     std::atomic<bool> stopRequested_{false};
-    int port_{0};
     CommandCallback onCommand_;
     LyricsCallback onLyrics_;
 
