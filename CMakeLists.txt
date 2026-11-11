@@ -300,12 +300,14 @@ set(SOURCES
     src/core/app_context.cpp
     src/core/crash_handler.cpp
     src/core/message_window.cpp
+    src/core/single_instance.cpp
 )
 set(HEADERS
     src/core/app_context.h
     src/core/crash_handler.h
     src/core/message_window.h
     src/core/constants.h
+    src/core/single_instance.h
 )
 
 # config/: 配置管理
@@ -793,13 +795,34 @@ if(BUILD_TESTING AND _catch2_ready)
     # 属性而不是只依赖 CI 命令的 --timeout，任何调用方（含本地 ctest）都受保护。
     set_tests_properties(HttpLifecycle PROPERTIES TIMEOUT 30)
 
+    # 测试目标：单实例获取与宿主重载接管（仅 Win32 内核对象，无 UI/网络依赖）
+    add_executable(test_single_instance
+        tests/test_single_instance.cpp
+        src/core/single_instance.cpp
+    )
+    target_include_directories(test_single_instance PRIVATE src)
+    if(MSVC)
+        target_compile_options(test_single_instance PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_single_instance PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        set_target_properties(test_single_instance PROPERTIES WIN32_EXECUTABLE OFF)
+    endif()
+    target_link_libraries(test_single_instance PRIVATE
+        Catch2::Catch2 Threads::Threads
+    )
+    add_test(NAME SingleInstance COMMAND $<TARGET_FILE:test_single_instance> -s)
+    set_tests_properties(SingleInstance PROPERTIES TIMEOUT 30)
+
     # 复制 VC++ Redist CRT DLL 到测试可执行文件输出目录
     # 测试 exe 用 /MD 动态链接运行时，需要 msvcp140.dll / vcruntime140.dll /
     # vcruntime140_1.dll。主程序通过 POST_BUILD 已复制，但测试目标默认不会，
     # 缺失时 Windows 会从 PATH 加载旧版本 msvcp140.dll，导致 std::mutex 等
     # STL 同步原语在运行时崩溃（STATUS_ACCESS_VIOLATION）。
     if(MSVC AND EXISTS "${_CRT_SRC_DIR}")
-        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser test_spectrum_math test_http_lifecycle)
+        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser test_spectrum_math test_http_lifecycle test_single_instance)
             foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
                 if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                     add_custom_command(TARGET ${_TEST_TARGET} POST_BUILD

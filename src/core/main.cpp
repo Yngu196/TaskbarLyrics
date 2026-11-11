@@ -12,6 +12,7 @@
 #include "net/api_enabler.h"
 #include "core/constants.h"
 #include "core/crash_handler.h"
+#include "core/single_instance.h"
 #include "lyrics/krc_parser.h"
 #include "util/logger.h"
 #include "util/environment_check.h"
@@ -72,16 +73,40 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         }
     }
 
-    // 单实例保护：避免多个进程竞争任务栏窗口导致闪烁/消息丢失
-    HANDLE instanceMutex = ::CreateMutexW(nullptr, FALSE, L"MoeKoeTaskbarLyrics_Mutex");
-    if (::GetLastError() == ERROR_ALREADY_EXISTS) {
-        Log("[STARTUP] Duplicate instance detected (pid=%lu), exiting\n",
-            ::GetCurrentProcessId());
-        if (instanceMutex) ::CloseHandle(instanceMutex);
+    // 单实例保护：避免多个进程竞争任务栏窗口导致闪烁/消息丢失。
+    //
+    // 宿主重载插件时会在旧 EXE 完成优雅退出（HTTP/WebSocket 收尾约 2s）之前
+    // spawn 新 EXE。若此时仍按旧逻辑在 ERROR_ALREADY_EXISTS 上直接 return 0，
+    // 宿主会把这次 exit(0) 记作「本地程序已退出」、删掉进程记录且不再自动
+    // 拉起，最终插件已加载却没有任何 EXE 存活。
+    // 因此托管启动（stdio 为管道）改为限时等待旧实例释放命名互斥体后接管；
+    // 独立运行保持原来的「重复实例秒退」语义。
+    const bool hostManaged = IsHostManagedLaunch();
+    InstanceLockOptions lockOptions;
+    lockOptions.managed = hostManaged;
+    const InstanceLock instanceLock = AcquireInstanceLock(lockOptions);
+    if (instanceLock.result != InstanceAcquireResult::Acquired) {
+        if (instanceLock.result == InstanceAcquireResult::Error) {
+            LogError("[STARTUP] CreateMutexW failed: %lu (pid=%lu)\n",
+                     instanceLock.lastError, ::GetCurrentProcessId());
+            return 1;
+        }
+        Log("[STARTUP] Duplicate instance detected (pid=%lu, managed=%d), exiting\n",
+            ::GetCurrentProcessId(), hostManaged ? 1 : 0);
         return 0;
     }
+    // 成功时故意不关闭 instanceLock.handle：命名互斥体必须一直被本进程持有，
+    // 否则内核会销毁名字，后续实例就检测不到重复。进程退出时由内核统一关闭。
+    if (instanceLock.timedOut) {
+        LogWarn("[STARTUP] Previous instance still alive after %lums; starting anyway "
+                "(two instances may briefly coexist)\n", instanceLock.waitedMs);
+    } else if (instanceLock.waitedMs >= kInstanceTakeoverPollMs) {
+        Log("[STARTUP] Took over after previous instance exited (waited %lums, pid=%lu)\n",
+            instanceLock.waitedMs, ::GetCurrentProcessId());
+    }
 
-    Log("[STARTUP] WinMain entered\n");
+    Log("[STARTUP] WinMain entered (pid=%lu, launch=%s)\n",
+        ::GetCurrentProcessId(), hostManaged ? "host-managed" : "standalone");
 
     // Winsock 初始化（ixwebsocket 依赖）
     WSADATA wsaData;
