@@ -14,8 +14,8 @@ root_dir = os.path.basename(os.path.normpath(src_dir))
 
 with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk(src_dir):
-        # 排除 debug.log，避免调试日志进入分发包
-        files = [f for f in files if f.lower() != "debug.log"]
+        # 排除 debug.log 与调试符号（.pdb），避免它们进入分发包
+        files = [f for f in files if f.lower() != "debug.log" and not f.lower().endswith(".pdb")]
         for file in files:
             file_path = os.path.join(root, file)
             rel_path = os.path.relpath(file_path, src_dir).replace('\\', '/')

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 1.0.8
+    VERSION 1.0.9
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 
@@ -528,7 +528,13 @@ if(MSVC)
                         "Please manually copy msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll to output.")
     else()
         message(STATUS "Copying VC++ CRT DLLs from: ${_CRT_SRC_DIR}")
-        foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
+        # vcruntime140_1.dll 只服务于 x64 的异常处理，ARM64 运行时不需要；
+        # VS 的 arm64 Redist 目录里那份实际是 AMD64 文件，拷进包会污染架构校验
+        set(_CRT_DLLS msvcp140.dll vcruntime140.dll)
+        if(NOT MSVC_RUNTIME_ARCH STREQUAL "arm64")
+            list(APPEND _CRT_DLLS vcruntime140_1.dll)
+        endif()
+        foreach(_CRT_DLL ${_CRT_DLLS})
             if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
