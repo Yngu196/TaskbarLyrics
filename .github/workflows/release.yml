@@ -31,11 +31,10 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          # 与 build.yml 和本地完全相同的依赖准备入口。
+          # 与 build.yml 和本地完全相同的依赖准备入口：bootstrap 写 .vcpkgroot，
+          # configure 读该 pin。不要设 VCPKG_INSTALLED_DIR，否则显式覆盖会绕过
+          # pin，CI 就永远测不到构建契约本身。
           $vcpkgRoot = "${{ github.workspace }}\vcpkg"
-          $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
-          "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
-
           .\scripts\bootstrap.ps1 -Arch ${{ matrix.arch }} `
             -VcpkgRoot $vcpkgRoot `
             -VcpkgCommit '75672db6bd812b060482b0f00b5a16b18a0c0f07'
@@ -44,9 +43,10 @@ jobs:
       - name: Configure CMake
         shell: powershell
         run: |
+          # 刻意不传 VCPKG_INSTALLED_DIR：CMake 解析 bootstrap 写下的
+          # .vcpkgroot，与 build.cmd / VS IDE 走同一条路径。
           cmake -B build-${{ matrix.arch }} -S . `
             -A ${{ matrix.arch }} `
-            "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_TESTING=OFF
 

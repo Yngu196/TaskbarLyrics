@@ -69,11 +69,11 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # Same dependency preparation entry point as a local checkout.
-          # Write GITHUB_ENV first so a script 'return' cannot skip it.
+          # bootstrap writes .vcpkgroot; the configure step reads that pin,
+          # so CI exercises exactly the same resolution path as a developer.
+          # Do NOT set VCPKG_INSTALLED_DIR: an override would bypass the pin
+          # and hide regressions in the build contract.
           $vcpkgRoot = "${{ github.workspace }}\vcpkg"
-          $installDir = "$vcpkgRoot\installed\${{ matrix.arch }}-windows"
-          "VCPKG_INSTALLED_DIR=$installDir" >> $env:GITHUB_ENV
-
           .\scripts\bootstrap.ps1 -Arch ${{ matrix.arch }} `
             -VcpkgRoot $vcpkgRoot `
             -VcpkgCommit '75672db6bd812b060482b0f00b5a16b18a0c0f07'
@@ -82,9 +82,10 @@ jobs:
       - name: Configure CMake
         shell: powershell
         run: |
+          # VCPKG_INSTALLED_DIR is deliberately not passed: CMake resolves
+          # .vcpkgroot written by bootstrap.ps1, same as build.cmd / VS IDE.
           cmake -B build-${{ matrix.arch }} -S . `
             -A ${{ matrix.arch }} `
-            "-DVCPKG_INSTALLED_DIR=$env:VCPKG_INSTALLED_DIR" `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_TESTING=ON
 

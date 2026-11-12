@@ -60,23 +60,23 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- 手动配置 vcpkg 安装的第三方库（绕过 vcpkg 工具链） ----
+# 统一解析契约（与 build.cmd / bootstrap.ps1 / check_build_env.ps1 同序）：
+#   1. 显式覆盖：VCPKG_INSTALLED_DIR 环境变量或 cmake -DVCPKG_INSTALLED_DIR=<path>
+#   2. .vcpkgroot：bootstrap.ps1 写下的 vcpkg 根，必须优先于机器级环境变量，
+#      否则 bootstrap 装进 A、构建却从环境变量指向的 B 取库。
+#   3. VCPKG_INSTALLATION_ROOT / VCPKG_ROOT（兼容旧环境，逐个尝试完整树）
+#   4. D:/vcpkg、C:/vcpkg（最后兜底）
+# 所有分支解析的都是同一个量：<root>/installed/<VCPKG_TRIPLET>。
 if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
-    # 优先使用环境变量
+    # 1. 显式覆盖：与其余链一样要求目标树完整，避免空目录把 configure 钉死。
     if(DEFINED ENV{VCPKG_INSTALLED_DIR} AND NOT "$ENV{VCPKG_INSTALLED_DIR}" STREQUAL "")
-        set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
-    elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT} AND NOT "$ENV{VCPKG_INSTALLATION_ROOT}" STREQUAL "")
-        set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
-        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
-            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
-        endif()
-    elseif(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
-        set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
-        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
-            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+        set(_VCPKG_OVERRIDE "$ENV{VCPKG_INSTALLED_DIR}")
+        if(EXISTS "${_VCPKG_OVERRIDE}/include" AND EXISTS "${_VCPKG_OVERRIDE}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_OVERRIDE}")
         endif()
     endif()
 
-    # scripts/bootstrap.ps1 写下的 vcpkg root：命令行走 build.cmd，IDE 走这里，共用同一份记录。
+    # 2. bootstrap.ps1 写下的 pin：命令行走 build.cmd，IDE 走这里，共用同一份记录。
     if(NOT DEFINED VCPKG_INSTALLED_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/.vcpkgroot")
         file(STRINGS "${CMAKE_SOURCE_DIR}/.vcpkgroot" _VCPKG_PINNED_ROOT LIMIT_COUNT 1)
         string(STRIP "${_VCPKG_PINNED_ROOT}" _VCPKG_PINNED_ROOT)
@@ -85,7 +85,20 @@ if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
         endif()
     endif()
 
-    # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
+    # 3. 兼容旧环境：逐个候选尝试，不能因某个变量已定义但树不完整就跳过后面的候选。
+    if(NOT DEFINED VCPKG_INSTALLED_DIR)
+        foreach(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}" "$ENV{VCPKG_ROOT}")
+            if(_VCPKG_BASE STREQUAL "")
+                continue()
+            endif()
+            if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
+                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    # 4. 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
     if(NOT DEFINED VCPKG_INSTALLED_DIR)
         foreach(_CANDIDATE
                 "D:/vcpkg/installed/${VCPKG_TRIPLET}"

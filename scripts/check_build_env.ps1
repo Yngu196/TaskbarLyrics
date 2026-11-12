@@ -6,9 +6,12 @@
 #   .\scripts\check_build_env.ps1 -Arch arm64 -VcpkgRoot 'D:\vcpkg'
 #   .\scripts\check_build_env.ps1 -Arch x64 -Entry vs
 #
-# build.cmd and CMakeLists.txt now share ONE resolution order (see below),
-# so -Entry is kept only for regression comparison. A complete tree sitting
-# in some other directory must NOT count: the build will not use it.
+# Mirrors the single resolution contract shared with build.cmd,
+# CMakeLists.txt and bootstrap.ps1:
+#   explicit override > .vcpkgroot > VCPKG_INSTALLATION_ROOT/VCPKG_ROOT
+#   > D:/C: fallback.
+# -Entry is kept only for regression comparison. A complete tree sitting in a
+# lower-priority directory must NOT count: the build will not use it.
 # This script never writes anything.
 
 param(
@@ -87,9 +90,13 @@ if ($Arch -eq 'arm64') {
 }
 
 # --- vcpkg resolution ------------------------------------------------------
-# Mirrors build.cmd :resolve_vcpkg_installed_dir and CMakeLists.txt:60-95:
-#   VCPKG_INSTALLED_DIR env -> VCPKG_INSTALLATION_ROOT -> VCPKG_ROOT
-#   -> .vcpkgroot (bootstrap pin) -> D:\vcpkg -> C:\vcpkg
+# Single contract shared with build.cmd, CMakeLists.txt and bootstrap.ps1:
+#   explicit override (-InstalledDir / VCPKG_INSTALLED_DIR env / -VcpkgRoot)
+#   -> .vcpkgroot (bootstrap pin) -> VCPKG_INSTALLATION_ROOT / VCPKG_ROOT
+#   -> D:\vcpkg -> C:\vcpkg
+# The pin MUST outrank machine-level env vars: otherwise bootstrap installs
+# into A while the build silently reads B (and this preflight would have
+# reported OK on B, hiding the conflict).
 $pinPath = Join-Path $root '.vcpkgroot'
 $pin = $null
 if (Test-Path $pinPath) { $pin = (Get-Content $pinPath -TotalCount 1).Trim() }
@@ -98,21 +105,24 @@ $pinnedDir = if ($pin) { Join-Path $pin "installed\$triplet" } else { $null }
 $probe = @()
 if ($InstalledDir) { $probe += ,@($InstalledDir, '-InstalledDir (simulates VCPKG_INSTALLED_DIR)') }
 if ($env:VCPKG_INSTALLED_DIR) { $probe += ,@($env:VCPKG_INSTALLED_DIR, 'VCPKG_INSTALLED_DIR env') }
-if ($env:VCPKG_INSTALLATION_ROOT) { $probe += ,@((Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\$triplet"), 'VCPKG_INSTALLATION_ROOT env') }
-if ($env:VCPKG_ROOT) { $probe += ,@((Join-Path $env:VCPKG_ROOT "installed\$triplet"), 'VCPKG_ROOT env') }
 if ($VcpkgRoot) { $probe += ,@((Join-Path $VcpkgRoot "installed\$triplet"), '-VcpkgRoot (bootstrap selected root)') }
 if ($pinnedDir) { $probe += ,@($pinnedDir, '.vcpkgroot (bootstrap pin)') }
+if ($env:VCPKG_INSTALLATION_ROOT) { $probe += ,@((Join-Path $env:VCPKG_INSTALLATION_ROOT "installed\$triplet"), 'VCPKG_INSTALLATION_ROOT env') }
+if ($env:VCPKG_ROOT) { $probe += ,@((Join-Path $env:VCPKG_ROOT "installed\$triplet"), 'VCPKG_ROOT env') }
 $probe += ,@("D:\vcpkg\installed\$triplet", 'D:/vcpkg fallback')
 $probe += ,@("C:\vcpkg\installed\$triplet", 'C:/vcpkg fallback')
 
 $installed = $null
 $resolvedBy = $null
+$hits = @()
 foreach ($p in $probe) {
     $c = $p[0]
     if ($c -and (Test-Path (Join-Path $c 'include')) -and (Test-Path (Join-Path $c 'lib'))) {
-        $installed = $c
-        $resolvedBy = $p[1]
-        break
+        $hits += ,@($c, $p[1])
+        if (-not $installed) {
+            $installed = $c
+            $resolvedBy = $p[1]
+        }
     }
 }
 if (-not $installed) {
@@ -123,6 +133,16 @@ if (-not $installed) {
     }
 } else {
     Report 'OK' 'resolved via' "$resolvedBy"
+    # A lower-priority complete tree is not a failure, but it is exactly the
+    # situation that used to cause "installed into A, linked from B". Surface
+    # it instead of silently reporting only the first hit.
+    if ($hits.Count -gt 1) {
+        $ignoredPaths = @($hits | Where-Object { $_[0] -ne $installed } |
+            ForEach-Object { $_[0] } | Sort-Object -Unique)
+        if ($ignoredPaths.Count -gt 0) {
+            Report 'WARN' 'other complete trees' "ignored: $($ignoredPaths -join '; ')"
+        }
+    }
     $leaf = Split-Path $installed -Leaf
     Report $(if ($leaf -eq $triplet) { 'OK' } else { 'FAIL' }) 'triplet name match' "$leaf (expected $triplet) -> $installed"
     $manifestDir = Join-Path $root "vcpkg_installed\$triplet"

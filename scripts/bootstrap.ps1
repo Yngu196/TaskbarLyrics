@@ -13,9 +13,10 @@
 # existing vcpkg tree is never switched silently (a WARN is printed instead).
 #
 # The selected vcpkg root is written to .vcpkgroot (git-ignored, one line).
-# Both build.cmd and CMakeLists.txt read that file, so the command line and
-# the VS IDE resolve the exact same dependency tree without any machine-level
-# environment variable.
+# build.cmd, CMakeLists.txt and check_build_env.ps1 read that pin BEFORE any
+# machine-level VCPKG_* environment variable, so the command line, the VS IDE
+# and the preflight all resolve the tree this script just populated.
+# VCPKG_INSTALLED_DIR remains the only explicit override and is checked below.
 #
 # This uses vcpkg classic mode (installed/<triplet>), matching the existing
 # find_library / POST_BUILD assumptions in CMakeLists.txt. It does NOT switch
@@ -79,7 +80,7 @@ if ($VcpkgRoot) {
     }
 }
 if (-not $selected) {
-    foreach ($candidate in @($env:VCPKG_ROOT, $env:VCPKG_INSTALLATION_ROOT, 'D:\vcpkg', 'C:\vcpkg')) {
+    foreach ($candidate in @($env:VCPKG_INSTALLATION_ROOT, $env:VCPKG_ROOT, 'D:\vcpkg', 'C:\vcpkg')) {
         if (Test-VcpkgSourceTree $candidate) {
             $selected = $candidate
             $source = 'existing local vcpkg'
@@ -93,6 +94,32 @@ if (-not $selected) {
 }
 
 $selected = [System.IO.Path]::GetFullPath($selected)
+
+# --- 1.5 Refuse to populate a tree the consumers will not read ----------
+# VCPKG_INSTALLED_DIR is the only explicit override on the consumer side:
+# build.cmd, CMakeLists.txt and check_build_env.ps1 all honour it first.
+# If it points at a different root, everything installed below would be
+# silently ignored. Fail fast instead of producing a puzzling link error.
+$overrideInstalled = $env:VCPKG_INSTALLED_DIR
+if ($overrideInstalled) {
+    $overrideFull = [System.IO.Path]::GetFullPath($overrideInstalled)
+    $overrideLeaf = Split-Path $overrideFull -Leaf
+    if ($overrideLeaf -ne $triplet) {
+        throw "VCPKG_INSTALLED_DIR must end with '$triplet': $overrideFull"
+    }
+    $overrideRoot = [System.IO.Path]::GetFullPath((Split-Path (Split-Path $overrideFull -Parent) -Parent))
+    $trimChars = [char[]]@([char]'\', [char]'/')
+    $sameRoot = [string]::Equals(
+        $overrideRoot.TrimEnd($trimChars), $selected.TrimEnd($trimChars),
+        [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $sameRoot) {
+        $msg = "VCPKG_INSTALLED_DIR points at '$overrideRoot' but bootstrap selected '$selected'. " +
+               'The build would read a different tree than the one installed here. ' +
+               "Clear VCPKG_INSTALLED_DIR, or pass -VcpkgRoot '$overrideRoot'."
+        throw $msg
+    }
+}
+
 if (-not (Test-VcpkgSourceTree $selected)) {
     Initialize-VcpkgClone -Path $selected -Commit $VcpkgCommit
     $source = 'fresh clone'
@@ -163,15 +190,16 @@ foreach ($f in $required) {
 }
 Say "Verified $($required.Count) required files under $installed"
 
-# --- 6. Pin the root for both build.cmd and CMakeLists.txt ----------------
+# --- 6. Pin the root for build.cmd, CMakeLists.txt and the preflight ------
 Set-Content -Path $pinFile -Value $selected -Encoding ASCII -NoNewline
 Say "Pinned vcpkg root in $pinFile (git-ignored)"
-Say 'Hint: do NOT set VCPKG_INSTALLED_DIR as a permanent user variable; it would break other architectures.'
+Say 'Hint: leave VCPKG_INSTALLED_DIR unset; .vcpkgroot is the single source of truth.'
 
 # --- 7. Optional build -----------------------------------------------------
 if ($Build) {
-    $env:VCPKG_ROOT = $selected
-    Remove-Item Env:\VCPKG_INSTALLED_DIR -ErrorAction SilentlyContinue
+    # The pin now outranks machine-level env vars, so there is no need to
+    # temporarily set VCPKG_ROOT or delete VCPKG_INSTALLED_DIR here. A
+    # conflicting explicit override was already rejected in step 1.5.
     $buildCmd = Join-Path $root 'build.cmd'
     & $buildCmd release $Arch
     if ($LASTEXITCODE -ne 0) { throw "build failed for $Arch" }

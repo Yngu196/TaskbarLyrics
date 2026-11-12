@@ -166,13 +166,16 @@ cd TaskbarLyrics
 ```
 
 `bootstrap.ps1` 会把选定的 vcpkg 根目录写入 `.vcpkgroot`（已被 git 忽略）。
-`build.cmd` 与 `CMakeLists.txt` 都读取这个文件，因此**命令行与 Visual Studio IDE 解析到同一套依赖**，
-不再依赖 `VCPKG_ROOT` 之类的机器级环境变量。解析顺序：
+`build.cmd`、`CMakeLists.txt` 与 `check_build_env.ps1` 都**优先**读取这个 pin，
+因此命令行、Visual Studio IDE 与只读自检都解析到 bootstrap 刚装好的同一套依赖树；
+机器级的 `VCPKG_ROOT` / `VCPKG_INSTALLATION_ROOT` 只在 pin 不存在时才生效。解析顺序：
 
-1. `VCPKG_INSTALLED_DIR` 环境变量（仅在手动指定时临时设置，不要设成用户级常量）
-2. `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` 环境变量
-3. `.vcpkgroot`
-4. `D:\vcpkg` / `C:\vcpkg`（兼容旧环境的最后兜底）
+1. 显式覆盖：`VCPKG_INSTALLED_DIR` 环境变量或 `cmake -DVCPKG_INSTALLED_DIR=<path>`（CI 与临时切换依赖树用；不要设成用户级常量）
+2. `.vcpkgroot`（bootstrap 写下的 pin）
+3. `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` 环境变量（兼容旧环境）
+4. `D:\vcpkg` / `C:\vcpkg`（最后兜底）
+
+**冲突会直接失败**：`bootstrap.ps1` 在安装前检查 `VCPKG_INSTALLED_DIR`——若它反推出的 vcpkg 根与本次选定根不同，或末级目录不是目标 triplet，脚本报错退出，避免「装到 A、构建却从 B 取库」。自检脚本也会列出被忽略的其他完整依赖树。想临时切换依赖树，请用 `-VcpkgRoot` 或把覆盖变量指向同一根。
 
 第三方库始终按目标 triplet（`x64-windows` / `arm64-windows`）严格校验，禁止跨架构混用。
 需要复现特定依赖树时加 `-VcpkgCommit <sha>`（只对全新 clone 生效，不会擅自切换已有的 vcpkg 树）。

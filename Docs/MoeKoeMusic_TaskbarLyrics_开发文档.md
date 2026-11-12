@@ -661,9 +661,10 @@ struct RenderState {
 早期构建把依赖路径绑在开发者机器的环境变量和固定盘符上，换台机器就 configure 失败。现在的约定是：
 
 1. **单一准备入口**：`bootstrap.ps1` 复用/克隆 vcpkg → 按 commit 定位版本 → `--classic` 安装 5 个依赖 → 校验 CMake 实际会读的 12 个文件 → 补 `git submodule update --init --recursive` → 把选定的根写进 `.vcpkgroot`（git 忽略）。
-2. **命令行与 IDE 同源**：`build.cmd` 和 `CMakeLists.txt` 都读 `.vcpkgroot`，因此 Visual Studio 打开 `CMakeLists.txt` 与 `.\build.cmd release x64` 解析到同一套依赖，不需要任何用户级环境变量。解析优先级：
-   `VCPKG_INSTALLED_DIR` → `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` → `.vcpkgroot` → `D:\vcpkg` / `C:\vcpkg`（旧环境兜底）。
-3. **不要把 `VCPKG_INSTALLED_DIR` 设成用户级常量**：它指向某一个 triplet，切架构时会把错误的库喂给 CMake。
+2. **四条链同源**：`bootstrap.ps1` 是唯一做「选根」决策的一方，把结果写进 `.vcpkgroot`；`build.cmd`、`CMakeLists.txt`、`check_build_env.ps1` 都只读 pin，不再各自重新决策。四条链解析的是同一个量 `installedDir = <root>\installed\<triplet>`。优先级：
+   显式覆盖（`VCPKG_INSTALLED_DIR` env / `cmake -D...` / bootstrap 的 `-VcpkgRoot`）→ `.vcpkgroot` → `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` → `D:\vcpkg` / `C:\vcpkg`（旧环境兜底）。
+   **pin 必须排在机器级环境变量之前**：否则 bootstrap 装进 A、构建却从环境变量指向的 B 取库，而自检还会误报通过。CI 也因此刻意不设 `VCPKG_INSTALLED_DIR`，让每次构建都在验证 pin 链路。
+3. **冲突 fail-fast**：`bootstrap.ps1` 安装前检查 `VCPKG_INSTALLED_DIR`，若它反推出的 vcpkg 根与本次选定根不同（或末级目录不是目标 triplet），直接抛错并给出修复建议；`check_build_env.ps1` 则列出被忽略的其他完整依赖树。不要把该变量设成用户级常量：它指向某一个 triplet，切架构时会把错误的库喂给 CMake。
 4. **架构强绑定**：`CMakeLists.txt` 校验 `VCPKG_INSTALLED_DIR` 的最后一级目录必须等于目标 `VCPKG_TRIPLET`，禁止跨 triplet（含 `-142` 历史变体）fallback——ARM64 混入 x64 库往往到运行期才暴露为 `Bad Image`。
 5. **不走 `CMAKE_TOOLCHAIN_FILE`**：vcpkg 工具链会带来 MSVC 工具集不匹配的链接错误；项目改用 `find_library` / `find_path` 手写导入目标。`ixwebsocket` 的取值顺序是：`third_party/ixwebsocket`（git submodule，源码编译，CI 与本地一致）→ vcpkg `buildtrees` 源码 → 目标 triplet 下的预编译库。所以**优先源码、不是优先 vcpkg 预编译库**。
 6. **CRT 不入库**，见 5.5。
@@ -686,7 +687,7 @@ cd TaskbarLyrics
 cmake --preset x64-Release
 cmake --build --preset x64-Release
 
-# 只读自检：按 build.cmd 的顺序逐项检查依赖、submodule、CRT、工具集
+# 只读自检：按统一解析契约逐项检查依赖、submodule、CRT、工具集
 .\scripts\check_build_env.ps1 -Arch x64
 
 # 全量发布包：x64 → ARM64 → 架构校验 → 打包（需两个架构都已 bootstrap、且装了 Python 3）

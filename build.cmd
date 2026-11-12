@@ -1,7 +1,10 @@
 @echo off
 REM Build script for MoeKoeTaskbarLyrics
-REM Dependency resolution order is kept in sync with CMakeLists.txt:60-95
-REM and scripts/bootstrap.ps1. Run bootstrap once on a fresh clone:
+REM Dependency resolution order is kept in sync with CMakeLists.txt,
+REM scripts/bootstrap.ps1 and scripts/check_build_env.ps1:
+REM   explicit override > .vcpkgroot > VCPKG_INSTALLATION_ROOT/VCPKG_ROOT
+REM   > D:\vcpkg / C:\vcpkg
+REM Run bootstrap once on a fresh clone:
 REM   powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -Arch x64
 REM
 REM Usage:
@@ -140,10 +143,13 @@ exit /b 0
 
 REM ============================================================
 REM  Resolve VCPKG_INSTALLED_DIR (single source of truth).
-REM  Priority, identical to CMakeLists.txt:60-95:
-REM    VCPKG_INSTALLED_DIR env -> VCPKG_INSTALLATION_ROOT -> VCPKG_ROOT
-REM    -> .vcpkgroot (written by scripts/bootstrap.ps1)
+REM  Priority, identical to CMakeLists.txt / bootstrap.ps1 /
+REM  check_build_env.ps1:
+REM    VCPKG_INSTALLED_DIR env -> .vcpkgroot (bootstrap pin)
+REM    -> VCPKG_INSTALLATION_ROOT -> VCPKG_ROOT
 REM    -> D:\vcpkg -> C:\vcpkg
+REM  The pin outranks machine-level env vars so the tree bootstrap just
+REM  populated is the tree we actually link against.
 REM
 REM  IMPORTANT: single-line IFs only. Inside a parenthesised block cmd.exe
 REM  expands %VAR% when the block is parsed, BEFORE any SET in that block
@@ -151,14 +157,15 @@ REM  runs -> the old script printed an empty "[INFO] Resolved ..." line.
 REM ============================================================
 :resolve_vcpkg_installed_dir
 if defined VCPKG_INSTALLED_DIR if exist "%VCPKG_INSTALLED_DIR%\include" if exist "%VCPKG_INSTALLED_DIR%\lib" goto :resolved_ok
-if defined VCPKG_INSTALLATION_ROOT if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_installation_root
-if defined VCPKG_ROOT if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_vcpkg_root
 
 set "_VCPKG_PINNED="
 if exist "%PROJECT_DIR%.vcpkgroot" (
     for /f "usebackq tokens=* delims=" %%R in ("%PROJECT_DIR%.vcpkgroot") do if not defined _VCPKG_PINNED set "_VCPKG_PINNED=%%R"
 )
 if defined _VCPKG_PINNED if exist "%_VCPKG_PINNED%\installed\%VCPKG_TRIPLET%\include" if exist "%_VCPKG_PINNED%\installed\%VCPKG_TRIPLET%\lib" goto :use_pinned
+
+if defined VCPKG_INSTALLATION_ROOT if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_INSTALLATION_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_installation_root
+if defined VCPKG_ROOT if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\include" if exist "%VCPKG_ROOT%\installed\%VCPKG_TRIPLET%\lib" goto :use_vcpkg_root
 
 if exist "D:\vcpkg\installed\%VCPKG_TRIPLET%\include" if exist "D:\vcpkg\installed\%VCPKG_TRIPLET%\lib" goto :use_d_drive
 if exist "C:\vcpkg\installed\%VCPKG_TRIPLET%\include" if exist "C:\vcpkg\installed\%VCPKG_TRIPLET%\lib" goto :use_c_drive
