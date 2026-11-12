@@ -579,7 +579,7 @@ struct RenderState {
 | Windows SDK   | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
 | MSVC 工具集     | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
-| CMake         | 3.20+       |
+| CMake         | 3.21+（`CMakePresets.json` schema version 3） |
 | vcpkg         | 最新版（manifest 模式） |
 
 **依赖（`vcpkg.json` 声明，共 5 项）：** `ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`

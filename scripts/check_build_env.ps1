@@ -48,8 +48,10 @@ Write-Output ('')
 
 # --- Toolchain -------------------------------------------------------------
 $cmakeVer = Find-CommandVersion -Exe 'cmake' -Pattern 'version\s+(\d+\.\d+\.\d+)'
-Report $(if ($cmakeVer -and $cmakeVer -ge [version]'3.20.0') { 'OK' } else { 'FAIL' }) `
-    'CMake >= 3.20' $(if ($cmakeVer) { "$cmakeVer" } else { 'cmake not on PATH' })
+# CMakePresets.json 是 schema version 3，需要 CMake >= 3.21；
+# 与 CMakeLists.txt 的 cmake_minimum_required 及 README 表格保持一致。
+Report $(if ($cmakeVer -and $cmakeVer -ge [version]'3.21.0') { 'OK' } else { 'FAIL' }) `
+    'CMake >= 3.21' $(if ($cmakeVer) { "$cmakeVer" } else { 'cmake not on PATH' })
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
 $vsPath = $null

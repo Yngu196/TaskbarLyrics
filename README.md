@@ -117,15 +117,24 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 | Windows SDK | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
 | MSVC 工具集 | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
-| CMake | 3.20+ |
+| CMake | 3.21+ |
 | vcpkg | 由 `scripts\bootstrap.ps1` 自动准备，可用 `-VcpkgCommit` 锁定版本 |
+
+> CMake 最低 3.21 的原因：`CMakePresets.json` 使用 schema `version: 3`，该版本自 CMake 3.21 起才受支持（3.20 只支持到 version 2）。`cmake_minimum_required`、本表格、开发文档与 `scripts\check_build_env.ps1` 的自检阈值都保持同一数值。
 
 ### 使用 Visual Studio
 
 1. 安装 Visual Studio 2022，勾选「使用 C++ 的桌面开发」、Windows SDK 与 CMake 工具。
-2. **先执行一次** `.\scripts\bootstrap.ps1 -Arch x64`，生成 `.vcpkgroot` 并安装依赖。
+2. **按目标架构分别准备依赖**：vcpkg 依赖按 triplet 安装，`x64-windows` 与 `arm64-windows` 互不通用。要构建哪一组 preset，就先执行对应的 bootstrap：
+
+   ```powershell
+   .\scripts\bootstrap.ps1 -Arch x64      # x64-Release / x64-Debug
+   .\scripts\bootstrap.ps1 -Arch arm64    # ARM64-Release / ARM64-Debug
+   ```
+
+   两个架构共用同一个 vcpkg 根目录（写入 `.vcpkgroot`），但依赖分别落在 `installed\x64-windows` / `installed\arm64-windows`。只跑过 `-Arch x64` 就切到 ARM64 配置，CMake 会因找不到对应 triplet 直接报错。
 3. 用 Visual Studio 打开项目根目录的 `CMakeLists.txt`，等待 CMake 配置完成。
-4. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」。
+4. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」；切换到另一架构前先确认第 2 步已为它准备过依赖。
 5. 选择「生成 → 生成全部」，或右键 `MoeKoeTaskbarLyrics` 目标并选择「生成」。
 6. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，避免输出文件被占用。
 7. 测试目标可在「测试资源管理器」中运行。
@@ -228,7 +237,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 CI 的 x64 build job 显式传 `-DBUILD_TESTING=ON` 并跑 `ctest`，ARM64 job 在 x64 runner 上无法执行测试二进制，只构建不跑。
 
-当前测试覆盖歌词解析、KRC 解析、频谱数学映射与 HTTP 服务生命周期。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
+当前测试覆盖歌词解析、KRC 解析、频谱数学映射、HTTP 服务生命周期与单实例启动/接管（含跨进程接管）。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 
 ## 界面预览
 

@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.20)
+# CMake 3.21 是下限：CMakePresets.json 使用 schema "version": 3，
+# 该 schema 自 CMake 3.21 起才受支持（3.20 只支持到 version 2）。
+# 保持与 CMakePresets.json / README / check_build_env.ps1 同一数值。
+cmake_minimum_required(VERSION 3.21)
 
 project(MoeKoeTaskbarLyrics
     VERSION 1.0.8
