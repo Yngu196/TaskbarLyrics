@@ -249,7 +249,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 **例外**：Catch2 从 GitHub / gitee 都拉取失败且没有本地源码时，`CMakeLists.txt` 会 `set(BUILD_TESTING OFF ... FORCE)` 把缓存改回 `OFF` 并跳过测试。离线启用可用 `-DCATCH2_SOURCE_DIR=<path>` 指向本地 Catch2 v3.7.1 源码，或把源码放到 `third_party\catch2\`。
 
-CI 的 x64 build job 显式传 `-DBUILD_TESTING=ON` 并跑 `ctest`，ARM64 job 在 x64 runner 上无法执行测试二进制，只构建不跑。
+**CI 不跑单元测试**：`build.yml` 与 `release.yml` 都不开启 `BUILD_TESTING`（默认 `OFF`），只构建主程序，不下载 Catch2、不编译测试二进制、不执行 `ctest`。测试是本地显式开启的能力——改动 `HttpLifecycle` 的线程生命周期或 `SingleInstance` 的接管逻辑后，请在本机按上面的命令跑一次 `ctest`；**CI 绿不代表这两处回归已验证**。
 
 当前测试覆盖歌词解析、KRC 解析、频谱数学映射、HTTP 服务生命周期与单实例启动/接管（含跨进程接管）。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 

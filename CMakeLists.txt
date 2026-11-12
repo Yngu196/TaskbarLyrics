@@ -607,7 +607,7 @@ endif()
 
 # ──── 单元测试 ────
 # 默认关闭：避免每次 configure 都联网探测 Catch2（双仓库各约 15s）。
-# CI 的 x64 build job 显式传 -DBUILD_TESTING=ON；本地跑测试见 README。
+# CI 不传该开关（默认 OFF，只构建主程序）；本地显式开启跑测试见 README。
 option(BUILD_TESTING "Build unit tests" OFF)
 
 if(BUILD_TESTING)
@@ -808,7 +808,7 @@ if(BUILD_TESTING AND _catch2_ready)
     )
     add_test(NAME HttpLifecycle COMMAND $<TARGET_FILE:test_http_lifecycle> -s)
     # 生命周期测试涉及线程 join 与 socket，死锁时会无限挂起。把超时写进测试
-    # 属性而不是只依赖 CI 命令的 --timeout，任何调用方（含本地 ctest）都受保护。
+    # 属性而不是只依赖调用方命令行的 --timeout，任何本地 ctest 调用都受保护。
     set_tests_properties(HttpLifecycle PROPERTIES TIMEOUT 30)
 
     # 测试目标：单实例获取与宿主重载接管（仅 Win32 内核对象，无 UI/网络依赖）

@@ -142,7 +142,7 @@ MoeKoeMusic-TaskbarLyrics/
 | 辅助技术    | UIAutomation              | 任务栏几何查询（UIA 枚举）                  |
 | 构建系统    | CMake 3.21+ Presets       | VS2022 生成器；schema `version: 3`      |
 | 依赖管理    | vcpkg **classic 模式**     | 按 triplet 安装到 `installed/<triplet>` |
-| 单元测试    | Catch2 v3.7.1 + CTest     | 5 个测试目标，默认 `BUILD_TESTING=OFF`    |
+| 单元测试    | Catch2 v3.7.1 + CTest     | 5 个测试目标，默认 `BUILD_TESTING=OFF`；仅本地显式开启，CI 不运行 |
 | CRT 分发   | VS Redist / 官方 vc_redist | app-local DLL，逐文件校验 PE 架构           |
 
 ### 2.3 性能目标
@@ -673,7 +673,7 @@ struct RenderState {
 4. **架构强绑定**：`CMakeLists.txt` 校验 `VCPKG_INSTALLED_DIR` 的最后一级目录必须等于目标 `VCPKG_TRIPLET`，禁止跨 triplet（含 `-142` 历史变体）fallback——ARM64 混入 x64 库往往到运行期才暴露为 `Bad Image`。
 5. **不走 `CMAKE_TOOLCHAIN_FILE`**：vcpkg 工具链会带来 MSVC 工具集不匹配的链接错误；项目改用 `find_library` / `find_path` 手写导入目标。`ixwebsocket` 的取值顺序是：`third_party/ixwebsocket`（git submodule，源码编译，CI 与本地一致）→ vcpkg `buildtrees` 源码 → 目标 triplet 下的预编译库。所以**优先源码、不是优先 vcpkg 预编译库**。
 6. **CRT 不入库**，见 5.5。
-7. **依赖数据与路径解析分离**：`vcpkg_contract.ps1` 只提供包名和必需文件清单，不参与选根。四条链保留各自的薄解析实现，是为了不让 `build.cmd` / `cmake configure` 为读一个路径额外起 PowerShell 进程；解析顺序的一致性靠独立契约测试断言，而不是靠跨语言共享一份实现。
+7. **依赖数据与路径解析分离**：`vcpkg_contract.ps1` 只提供包名和必需文件清单，不参与选根。四条链保留各自的薄解析实现，是为了不让 `build.cmd` / `cmake configure` 为读一个路径额外起 PowerShell 进程；解析顺序的一致性靠独立的**本地**契约测试断言（不进 CI），而不是靠跨语言共享一份实现。
 
 ### 5.3 常用命令（PowerShell）
 
@@ -721,7 +721,7 @@ ctest --test-dir out\build\x64-Release -C Release --output-on-failure --timeout 
 | `HttpLifecycle` | HTTP 服务 Start/Stop 线程生命周期（曾因持锁 join + 端口 connect 唤醒死锁，见 3.2） |
 | `SingleInstance` | 单实例获取、独立秒退、托管等待接管、超时继续、跨进程接管（见 3.18） |
 
-三层超时护栏：CMake 给 `HttpLifecycle` / `SingleInstance` 设 `TIMEOUT 30`、CI `ctest --timeout 30`、`build.yml` job `timeout-minutes: 45`。WASAPI、Direct2D 设备丢失、Explorer 重启属真机集成测试范围，未自动化。
+**本地两层超时护栏**：CMake 给 `HttpLifecycle` / `SingleInstance` 设 `TIMEOUT 30`（写进测试属性，任何调用方都生效），命令行 `ctest --timeout 30` 保持同值。`build.yml` 的 job `timeout-minutes: 45` 属编译侧兜底，余量留给 vcpkg 首次编译，与测试无关。**CI 不运行 ctest**，因此线程生命周期死锁、单实例接管这类回归只有本地手动跑才能发现。WASAPI、Direct2D 设备丢失、Explorer 重启属真机集成测试范围，未自动化。
 
 ### 5.5 VC++ 运行时 DLL（不入库）
 
@@ -757,10 +757,10 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 | Workflow | 触发 | 内容 |
 | --- | --- | --- |
-| `build.yml` | push / PR / `workflow_dispatch` | `check` 当天限流（**只认 `conclusion == "success"`**，cancelled/failure 不锁死后续 push）→ `build` 矩阵 `x64` + `arm64`：bootstrap → CMake → 编译 → CRT → artifact |
+| `build.yml` | push / PR / `workflow_dispatch` | `check` 当天限流（**只认 `conclusion == "success"`**，cancelled/failure 不锁死后续 push）→ `build` 矩阵 `x64` + `arm64`：bootstrap → CMake → 编译 → CRT → artifact；**不跑测试** |
 | `release.yml` | `v*` tag | 同一套 bootstrap/CRT 逻辑，双架构 artifact 合并 → `verify_package.py` → changelog → GitHub Release |
 
-两个 workflow 都 `submodules: recursive`、每个 matrix job 各自 bootstrap；`build.yml` 显式 `-DBUILD_TESTING=ON` 并只在 x64 job 跑 `ctest`（ARM64 二进制无法在 x64 runner 执行），`release.yml` 为 `OFF`。CI 与本地共用 `bootstrap.ps1` / `copy_vc_runtime.ps1`，避免两条链路行为分叉。
+两个 workflow 都 `submodules: recursive`、每个 matrix job 各自 bootstrap；两者都不开启 `BUILD_TESTING`（`release.yml` 显式 `OFF`，`build.yml` 用 `CMakeLists.txt` 的默认 `OFF`），**CI 只构建、不跑单元测试**——既不下载 Catch2，也不编译测试二进制，从根上避免 ctest 挂起把 job 拖到上限。单元测试是本地显式开启的能力，见 5.4。CI 与本地共用 `bootstrap.ps1` / `copy_vc_runtime.ps1`，避免两条链路行为分叉。
 
 ### 5.9 卸载
 
@@ -795,7 +795,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | CORS 动态端口 | 默认 `Allow-Origin` 用运行时端口；两个免鉴权 GET 为 `*` |
 | 跨线程窗口操作 | 网络线程一律 `PostMessageW` 到 UI 线程，避免跨线程窗口调用死锁 |
 | 架构强绑定 | vcpkg triplet 严格校验 + 发布包逐文件 PE Machine 校验 + 双架构完整性前置检查 |
-| 测试超时护栏 | `TIMEOUT 30` 测试属性 / `ctest --timeout 30` / job `timeout-minutes: 45` |
+| 测试超时护栏（本地） | `TIMEOUT 30` 测试属性 / `ctest --timeout 30`；CI 不运行测试，job `timeout-minutes: 45` 属编译侧兜底 |
 | 构建契约可复现 | `bootstrap.ps1` + `.vcpkgroot` + CI 同一入口，CRT 不入库 |
 
 ### 6.3 调试与日志
@@ -856,7 +856,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | CMake 下限 | `CMakePresets.json` 的 schema `version` | `cmake_minimum_required`、README 环境表、本文 5.1、`check_build_env.ps1` 阈值 |
 | 依赖包名 | `vcpkg.json` 的 `dependencies` | README、本文 5.1；`bootstrap.ps1` / `check_build_env.ps1` 经 `vcpkg_contract.ps1` 读取，**不再各自声明** |
 | 必需文件清单 | `scripts\vcpkg_contract.ps1` | `CMakeLists.txt` 的 `find_*` / POST_BUILD（消费侧，不是声明）、本文 5.1 |
-| 测试目标 | `CMakeLists.txt` 的 `add_test` | README「测试覆盖」、本文 5.4、`build.yml` 的 ctest 步骤 |
+| 测试目标 | `CMakeLists.txt` 的 `add_test` | README「测试覆盖」、本文 5.4（仅本地能力；CI 不运行） |
 | CRT 行为 | `copy_vc_runtime.ps1` | `CMakeLists.txt` POST_BUILD、`build.yml` / `release.yml`、README、本文 5.5 |
 | 部署路径 | 插件 `manifest.json` / 宿主扩展目录 | README「安装与使用」、本文 5.6 |
 
