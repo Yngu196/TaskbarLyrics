@@ -13,6 +13,10 @@
 # -Entry is kept only for regression comparison. A complete tree sitting in a
 # lower-priority directory must NOT count: the build will not use it.
 # This script never writes anything.
+#
+# Dependency names (vcpkg.json) and the required-file list come from
+# scripts/vcpkg_contract.ps1, shared with bootstrap.ps1 so the installer and
+# this preflight can never drift apart.
 
 param(
     [ValidateSet('x64', 'arm64')]
@@ -26,6 +30,7 @@ param(
 $ErrorActionPreference = 'SilentlyContinue'
 $root = Split-Path -Parent $PSScriptRoot
 $triplet = "$Arch-windows"
+. (Join-Path $PSScriptRoot 'vcpkg_contract.ps1')
 $fail = 0
 $warn = 0
 
@@ -150,20 +155,22 @@ if (-not $installed) {
         Report 'WARN' 'manifest tree unused' "complete vcpkg_installed\$triplet exists but is not what gets resolved"
     }
 
-    $headers = @('zlib.h', 'nlohmann\json.hpp', 'kissfft\kiss_fft.h', 'ixwebsocket\IXWebSocket.h')
-    $libs = @('z.lib', 'mbedtls.lib', 'mbedx509.lib', 'mbedcrypto.lib', 'kissfft-float.lib', 'ixwebsocket.lib')
-    $dlls = @('z.dll', 'kissfft-float.dll')
-    foreach ($h in $headers) {
-        Report $(if (Test-Path (Join-Path $installed "include\$h")) { 'OK' } else { 'FAIL' }) "include/$h" ''
+    # One list, owned by vcpkg_contract.ps1, shared with bootstrap.ps1.
+    # Do NOT name the loop variable $entry: PowerShell variable names are
+    # case-insensitive, so it would collide with the [ValidateSet] -Entry
+    # parameter above and silently skip these checks under SilentlyContinue.
+    foreach ($fileEntry in @(Get-VcpkgRequiredFiles)) {
+        $rel = $fileEntry.Path
+        $display = $rel -replace '\\', '/'
+        $level = if (Test-Path (Join-Path $installed $rel)) { 'OK' } else { 'FAIL' }
+        Report $level $display $fileEntry.Detail
     }
-    foreach ($l in $libs) {
-        Report $(if (Test-Path (Join-Path $installed "lib\$l")) { 'OK' } else { 'FAIL' }) "lib/$l" ''
+    foreach ($fileEntry in @(Get-VcpkgOptionalFiles)) {
+        $rel = $fileEntry.Path
+        $display = $rel -replace '\\', '/'
+        $level = if (Test-Path (Join-Path $installed $rel)) { 'OK' } else { 'WARN' }
+        Report $level $display $fileEntry.Detail
     }
-    foreach ($d in $dlls) {
-        Report $(if (Test-Path (Join-Path $installed "bin\$d")) { 'OK' } else { 'FAIL' }) "bin/$d" 'POST_BUILD copy_if_different requires this'
-    }
-    $debugDll = Join-Path $installed 'debug\bin\kissfft-float.dll'
-    Report $(if (Test-Path $debugDll) { 'OK' } else { 'WARN' }) 'debug/bin/kissfft-float.dll' 'needed only for Debug builds'
 }
 
 if (-not $pin) {
@@ -173,6 +180,15 @@ if (-not $pin) {
 }
 
 # --- Repo-local contracts --------------------------------------------------
+# vcpkg.json is the single declaration of dependency names. A malformed or
+# empty list must fail here, not surface later as a puzzling vcpkg error.
+try {
+    $contractPackages = @(Get-VcpkgPackages -RepoRoot $root)
+    Report 'OK' 'vcpkg.json dependency list' "$($contractPackages.Count) packages: $($contractPackages -join ' ')"
+} catch {
+    Report 'FAIL' 'vcpkg.json dependency list' $_.Exception.Message
+}
+
 $submoduleHeader = Join-Path $root 'third_party\ixwebsocket\ixwebsocket\IXWebSocket.h'
 $submoduleOk = Test-Path $submoduleHeader
 Report $(if ($submoduleOk) { 'OK' } else { 'WARN' }) 'ixwebsocket submodule' `

@@ -181,6 +181,17 @@ cd TaskbarLyrics
 需要复现特定依赖树时加 `-VcpkgCommit <sha>`（只对全新 clone 生效，不会擅自切换已有的 vcpkg 树）。
 构建前可跑只读自检：`.\scripts\check_build_env.ps1 -Arch x64`。
 
+### 依赖清单的唯一来源
+
+依赖名只在 `vcpkg.json` 的 `dependencies` 里声明（当前 5 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`）。
+`bootstrap.ps1` 与 `check_build_env.ps1` 都通过 `scripts\vcpkg_contract.ps1` 读取它；该模块还持有**唯一一份**
+「CMake 实际会用的 12 个文件」清单，安装后校验与只读自检共用。所以**增删依赖只需改 `vcpkg.json` 一处**；
+只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1`（文件路径无法从端口名推导）。
+
+`bootstrap.ps1` 安装时带 `--classic`：脚本工作目录里有 `vcpkg.json`，去掉该参数 vcpkg 会切到 manifest 模式、
+把包装进 `vcpkg_installed\`，而项目的 `find_library` 不读那个目录。**仓库里有 `vcpkg.json` 不代表启用了 manifest 模式。**
+将来若真要切 manifest 模式，需先从依赖里移除 `ixwebsocket`——CMake 已用 `add_subdirectory` 定义了同名 target。
+
 ### VC++ 运行时 DLL 不入库
 
 `msvcp140.dll` / `vcruntime140.dll`（x64 另含 `vcruntime140_1.dll`）**不随仓库分发**，

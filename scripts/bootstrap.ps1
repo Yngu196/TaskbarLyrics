@@ -21,6 +21,10 @@
 # This uses vcpkg classic mode (installed/<triplet>), matching the existing
 # find_library / POST_BUILD assumptions in CMakeLists.txt. It does NOT switch
 # the project to manifest mode.
+#
+# Dependency names and the required-file list are NOT declared in this file:
+# scripts/vcpkg_contract.ps1 reads vcpkg.json (the single source of truth) and
+# owns the one copy of the file list, shared with check_build_env.ps1.
 
 [CmdletBinding()]
 param(
@@ -35,7 +39,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $triplet = "$Arch-windows"
-$packages = @('ixwebsocket', 'nlohmann-json', 'zlib', 'mbedtls', 'kissfft')
+. (Join-Path $PSScriptRoot 'vcpkg_contract.ps1')
+# vcpkg.json is the only place where a dependency is added or removed.
+$packages = @(Get-VcpkgPackages -RepoRoot $root)
 $pinFile = Join-Path $root '.vcpkgroot'
 
 function Say([string]$msg) { Write-Output $msg }
@@ -169,23 +175,20 @@ if (-not (Test-Path $submoduleHeader)) {
     }
 }
 
-# --- 4. Install the five dependencies for this triplet --------------------
+# --- 4. Install the dependencies declared in vcpkg.json -------------------
+# --classic is REQUIRED: cwd contains vcpkg.json, so without it vcpkg would
+# silently switch to manifest mode and write to vcpkg_installed/ instead.
 Say "Installing: $($packages -join ' ') --triplet $triplet --classic"
 & $vcpkgExe install @packages --triplet $triplet --classic
 if ($LASTEXITCODE -ne 0) { throw "vcpkg install failed for $triplet" }
 
 # --- 5. Verify the files CMakeLists.txt actually consumes -----------------
 $installed = Join-Path $selected "installed\$triplet"
-$required = @(
-    'include\zlib.h', 'include\nlohmann\json.hpp',
-    'include\kissfft\kiss_fft.h', 'include\ixwebsocket\IXWebSocket.h',
-    'lib\z.lib', 'lib\mbedtls.lib', 'lib\mbedx509.lib', 'lib\mbedcrypto.lib',
-    'lib\kissfft-float.lib', 'lib\ixwebsocket.lib',
-    'bin\z.dll', 'bin\kissfft-float.dll'
-)
-foreach ($f in $required) {
-    if (-not (Test-Path (Join-Path $installed $f))) {
-        throw "Incomplete install: missing $installed\$f"
+$required = @(Get-VcpkgRequiredFiles)
+foreach ($fileEntry in $required) {
+    $rel = $fileEntry.Path
+    if (-not (Test-Path (Join-Path $installed $rel))) {
+        throw "Incomplete install: missing $installed\$rel"
     }
 }
 Say "Verified $($required.Count) required files under $installed"

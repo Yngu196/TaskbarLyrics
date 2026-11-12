@@ -69,7 +69,8 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── x64/  arm64/  icons/  resources/   # 各架构主程序 + 运行时 DLL（构建产物）
 ├── scripts/
 │   ├── bootstrap.ps1          # 干净克隆 → 依赖就位（vcpkg classic + submodule）
-│   ├── check_build_env.ps1    # 只读构建环境自检
+│   ├── vcpkg_contract.ps1     # 依赖契约：读 vcpkg.json 的包名 + 唯一一份 12 文件清单
+│   ├── check_build_env.ps1    # 只读构建环境自检（与 bootstrap 共用契约模块）
 │   ├── copy_vc_runtime.ps1    # CRT 两级来源补齐 + 逐文件 PE 架构校验
 │   ├── pack_zip.py / verify_package.py  # 打包 / 双架构完整性 + PE 校验
 │   └── build.bat              # 已废弃的独立构建逻辑，仅转发参数给根目录 build.cmd
@@ -81,7 +82,7 @@ MoeKoeMusic-TaskbarLyrics/
 ├── CMakeLists.txt             # 手动定位 vcpkg、triplet 强绑定、POST_BUILD CRT、测试目标
 ├── CMakePresets.json          # VS2022 x64/ARM64 × Debug/Release 四个 preset（schema version 3）
 ├── build.cmd                  # configure / build / clean / release all 统一入口
-├── vcpkg.json                 # 依赖名与版本记录；构建不使用 manifest 模式（见 5.1）
+├── vcpkg.json                 # 依赖清单唯一来源；构建不使用 manifest 模式（见 5.1）
 ├── TaskbarLyrics-config.json  # 示例配置
 ├── .vcpkgroot                 # bootstrap 写下的 vcpkg 根路径（git 忽略，不入库）
 └── README.md / Docs/ / icons/ / resources/ / public/ / Samples/
@@ -654,13 +655,17 @@ struct RenderState {
 | vcpkg | 由 `scripts\bootstrap.ps1` 准备 | **classic 模式**，按 triplet 装到 `installed\x64-windows` / `installed\arm64-windows`；`-VcpkgCommit <sha>` 可锁定全新 clone 的版本 |
 | Python | 3.x | 仅 `verify_package.py` / `pack_zip.py` 与 `build.cmd release all` 需要 |
 
-**5 项依赖：** `ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`。项目并**不使用 vcpkg manifest 模式**：`vcpkg.json` 只是依赖名与版本的记录。即使本机残留 `vcpkg_installed\<triplet>\`（旧 manifest 产物，已被 `.gitignore` 忽略），`build.cmd` / `CMakeLists.txt` 也不会解析它，`check_build_env.ps1` 会明确报 `manifest tree unused`；清理与否都不影响构建。
+**依赖清单唯一来源：`vcpkg.json` 的 `dependencies`**（当前 5 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`）。`bootstrap.ps1` 不再手写包名；两个 PowerShell 脚本都 dot-source `scripts\vcpkg_contract.ps1`，由它读取 `vcpkg.json`，并持有**唯一一份**「CMake 实际会读的 12 个文件」清单——`bootstrap.ps1` 装完后的校验与 `check_build_env.ps1` 的只读自检都消费同一份定义。增删依赖只需改 `vcpkg.json` 一处；只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1` 的文件清单（文件路径无法从端口名推导，这一处无法消除）。
+
+`bootstrap.ps1` 的 `--classic` **必须保留**：脚本 cwd 就是含 `vcpkg.json` 的项目根，去掉它 vcpkg 会切到 manifest 模式、把包装进 `vcpkg_installed\`，而 `CMakeLists.txt` 的 `find_library` 不读该目录。将来若真的切 manifest 模式，必须先从 `vcpkg.json` 移除 `ixwebsocket`——`CMakeLists.txt` 已通过 `add_subdirectory(third_party/ixwebsocket)` 定义 `ixwebsocket::ixwebsocket` target，两者会重名冲突。
+
+项目并**不使用 vcpkg manifest 模式**。即使本机残留 `vcpkg_installed\<triplet>\`（旧 manifest 产物，已被 `.gitignore` 忽略），`build.cmd` / `CMakeLists.txt` 也不会解析它，`check_build_env.ps1` 会明确报 `manifest tree unused`；清理与否都不影响构建。`vcpkg.json` 的 `version` 字段与 `project(VERSION)` 属另一条版本同步链，见 7.2。
 
 ### 5.2 构建契约（为什么这样设计）
 
 早期构建把依赖路径绑在开发者机器的环境变量和固定盘符上，换台机器就 configure 失败。现在的约定是：
 
-1. **单一准备入口**：`bootstrap.ps1` 复用/克隆 vcpkg → 按 commit 定位版本 → `--classic` 安装 5 个依赖 → 校验 CMake 实际会读的 12 个文件 → 补 `git submodule update --init --recursive` → 把选定的根写进 `.vcpkgroot`（git 忽略）。
+1. **单一准备入口**：`bootstrap.ps1` 复用/克隆 vcpkg → 按 commit 定位版本 → 从 `vcpkg.json`（经 `vcpkg_contract.ps1`）取包名并 `--classic` 安装 → 按契约模块的 12 文件清单校验 → 补 `git submodule update --init --recursive` → 把选定的根写进 `.vcpkgroot`（git 忽略）。
 2. **四条链同源**：`bootstrap.ps1` 是唯一做「选根」决策的一方，把结果写进 `.vcpkgroot`；`build.cmd`、`CMakeLists.txt`、`check_build_env.ps1` 都只读 pin，不再各自重新决策。四条链解析的是同一个量 `installedDir = <root>\installed\<triplet>`。优先级：
    显式覆盖（`VCPKG_INSTALLED_DIR` env / `cmake -D...` / bootstrap 的 `-VcpkgRoot`）→ `.vcpkgroot` → `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` → `D:\vcpkg` / `C:\vcpkg`（旧环境兜底）。
    **pin 必须排在机器级环境变量之前**：否则 bootstrap 装进 A、构建却从环境变量指向的 B 取库，而自检还会误报通过。CI 也因此刻意不设 `VCPKG_INSTALLED_DIR`，让每次构建都在验证 pin 链路。
@@ -668,6 +673,7 @@ struct RenderState {
 4. **架构强绑定**：`CMakeLists.txt` 校验 `VCPKG_INSTALLED_DIR` 的最后一级目录必须等于目标 `VCPKG_TRIPLET`，禁止跨 triplet（含 `-142` 历史变体）fallback——ARM64 混入 x64 库往往到运行期才暴露为 `Bad Image`。
 5. **不走 `CMAKE_TOOLCHAIN_FILE`**：vcpkg 工具链会带来 MSVC 工具集不匹配的链接错误；项目改用 `find_library` / `find_path` 手写导入目标。`ixwebsocket` 的取值顺序是：`third_party/ixwebsocket`（git submodule，源码编译，CI 与本地一致）→ vcpkg `buildtrees` 源码 → 目标 triplet 下的预编译库。所以**优先源码、不是优先 vcpkg 预编译库**。
 6. **CRT 不入库**，见 5.5。
+7. **依赖数据与路径解析分离**：`vcpkg_contract.ps1` 只提供包名和必需文件清单，不参与选根。四条链保留各自的薄解析实现，是为了不让 `build.cmd` / `cmake configure` 为读一个路径额外起 PowerShell 进程；解析顺序的一致性靠独立契约测试断言，而不是靠跨语言共享一份实现。
 
 ### 5.3 常用命令（PowerShell）
 
@@ -846,9 +852,10 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 | 项目 | 事实来源 | 需要同步的位置 |
 | --- | --- | --- |
-| 版本号 | `CMakeLists.txt` 的 `project(VERSION)` | `constants.h::PLUGIN_VERSION`、插件 `manifest.json`、README 发布徽章与 tag、`Docs\版本更新日志.md` |
+| 版本号 | `CMakeLists.txt` 的 `project(VERSION)` | `constants.h::PLUGIN_VERSION`、插件 `manifest.json`、`vcpkg.json` 的 `version`、README 发布徽章与 tag、`Docs\版本更新日志.md` |
 | CMake 下限 | `CMakePresets.json` 的 schema `version` | `cmake_minimum_required`、README 环境表、本文 5.1、`check_build_env.ps1` 阈值 |
-| 依赖清单 | `bootstrap.ps1` 的 `$packages` | `vcpkg.json`、README、本文 5.1、`check_build_env.ps1` 的 12 文件校验 |
+| 依赖包名 | `vcpkg.json` 的 `dependencies` | README、本文 5.1；`bootstrap.ps1` / `check_build_env.ps1` 经 `vcpkg_contract.ps1` 读取，**不再各自声明** |
+| 必需文件清单 | `scripts\vcpkg_contract.ps1` | `CMakeLists.txt` 的 `find_*` / POST_BUILD（消费侧，不是声明）、本文 5.1 |
 | 测试目标 | `CMakeLists.txt` 的 `add_test` | README「测试覆盖」、本文 5.4、`build.yml` 的 ctest 步骤 |
 | CRT 行为 | `copy_vc_runtime.ps1` | `CMakeLists.txt` POST_BUILD、`build.yml` / `release.yml`、README、本文 5.5 |
 | 部署路径 | 插件 `manifest.json` / 宿主扩展目录 | README「安装与使用」、本文 5.6 |
