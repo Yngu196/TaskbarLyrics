@@ -315,7 +315,7 @@ bool Config::Load() {
 
 bool Config::Save() const {
     const std::string path = GetConfigPath();
-    // 原子写入：先写 .tmp 再 MoveFileEx 替换（与 api_enabler.cpp 写盘模式一致），
+    // 原子写入：先写 .tmp 再 MoveFileEx 替换，
     // 避免进程崩溃/断电时留下被截断损坏的 config.json
     const std::string tmpPath = path + ".tmp";
     std::ofstream out(tmpPath, std::ios::trunc);

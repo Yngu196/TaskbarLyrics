@@ -1,6 +1,6 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
-> **对应代码版本：** v1.0.8（`CMakeLists.txt` 的 `project(VERSION)`、`constants.h::PLUGIN_VERSION`、插件 `manifest.json` 三者一致；README 的发布徽章指向 v1.0.9 tag，属发布标记与代码版本字段未同步，见 7.2）
+> **对应代码版本：** v1.0.9（`CMakeLists.txt` 的 `project(VERSION)`、`constants.h::PLUGIN_VERSION`、插件 `manifest.json`、`vcpkg.json` 与 README 发布徽章一致；`Docs\项目状态文档.md` 头部仍写 v1.0.7，见 7.2）
 > **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** GPL-3.0 | **最后校对：** 2026-11-12
 
 > 本文说明**设计取舍、模块边界与协议契约**；面向使用者和开发者的可执行命令以仓库根目录 [README](../README.md) 为准。两者不一致时，以代码与 README 为准，并请顺手修正本文。
@@ -30,11 +30,11 @@ MoeKoeMusic 是 Electron + Vue 3 开源音乐播放器，**缺少任务栏歌词
 
 | 通道 | 端点 | 用途 |
 | --- | --- | --- |
-| WebSocket 客户端 | `ws://127.0.0.1:6520/moekoe` | 订阅宿主的歌词与播放状态，发送 `control` / `seek` |
-| HTTP 服务 | `http://127.0.0.1:6523` | 扩展 `content.js` 推送歌词/封面，popup 探活与 seek 兜底轮询 |
-| Native Host | stdin/stdout JSON Lines | 宿主管理 EXE 生命周期、转发 `enableApiMode` / `seek` 事件 |
+| WebSocket 客户端 | `ws://127.0.0.1:6520/moekoe`（兜底）／宿主下发的完整 URL | 订阅宿主的歌词与播放状态，发送 `control` / `seek` |
+| HTTP 服务 | `http://127.0.0.1:6523` | 仅 `/ping` 探活与 `/seek/pending` 兜底轮询 |
+| Native Host | stdin/stdout JSON Lines | 宿主管理 EXE 生命周期、下发 `setApiEndpoint`、转发 `seek` 事件 |
 
-WebSocket 端点路径随 MoeKoeMusic 版本变化（新版 `/moekoe`，旧版根路径），`WebSocketClient` 在失败重连时交替尝试两种形式，扩展侧 `background.js` 同样按重连次数交替切换，避免单一路径 404 导致永久连不上。
+MoeKoeMusic 1.7.2+ 由扩展调用 `getApiModeUrl()` 取得 `{ http, ws }`，经 `setApiEndpoint` 下发；EXE 以精确路径重连（`exactPath=true`），并把端口同步给频谱采集。端点不可用时回退本地端口，只有兜底 URL 的重连才交替尝试 `/moekoe` 与根路径。
 
 ### 1.4 项目结构
 
@@ -50,7 +50,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   ├── launcher/launcher.cpp  # 架构感知启动器，固定 x64 编译（见 3.17）
 │   ├── lyrics/                # lyrics_data.h / lyrics_parser / krc_parser
 │   ├── net/                   # websocket_client / http_server（cpp-httplib）/
-│   │                          # native_messaging / api_enabler
+│   │                          # native_messaging（含 setApiEndpoint 端点下发）
 │   ├── render/                # renderer + renderer_utils / lyric_renderer / card_renderer /
 │   │                          # media_card_renderer / media_card_layout / marquee_engine /
 │   │                          # spring_animation / spectrum_capture（WASAPI loopback）
@@ -61,7 +61,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── util/                  # logger / process_monitor / environment_check /
 │                              # compat_mode / diagnostic_exporter
 ├── moeKoe-taskbar-lyrics/     # MV3 扩展 + 双架构产物目录
-│   ├── manifest.json          #   moekoe_native_hosts / auto_start / bridge 声明
+│   ├── manifest.json          #   moekoe_native_hosts / auto_start / bridge / moekoe:apiMode 权限（minversion 1.7.2）
 │   ├── background.js          #   Service Worker：WS 订阅 + Native Host Bridge 转发
 │   ├── popup.* / content.js / audio-bridge.js
 │   ├── native-bridge.html/js  #   background ↔ Electron preload ↔ main 的中转
@@ -78,7 +78,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   └── test_lyrics_parser / test_krc_parser / test_spectrum_math /
 │       test_http_lifecycle / test_single_instance (.cpp)
 ├── third_party/               # httplib / concurrentqueue（内置）、ixwebsocket（git submodule）
-├── .github/workflows/         # build.yml（push/PR 双架构 + 测试）、release.yml（v* tag 发布）
+├── .github/workflows/         # build.yml（push/PR 双架构构建，不跑测试）、release.yml（v* tag 发布）
 ├── CMakeLists.txt             # 手动定位 vcpkg、triplet 强绑定、POST_BUILD CRT、测试目标
 ├── CMakePresets.json          # VS2022 x64/ARM64 × Debug/Release 四个 preset（schema version 3）
 ├── build.cmd                  # configure / build / clean / release all 统一入口
@@ -200,12 +200,12 @@ MoeKoeMusic-TaskbarLyrics/
 
 **文件：** `src/net/websocket_client.h/cpp`
 
-- 连接 `ws://127.0.0.1:<websocketPort>/moekoe`，接收 `lyrics` / `playerState` 消息；`ReconnectLoop` 在失败重连时交替去掉/保留 `/moekoe`，兼容新旧宿主端点
+- 连接 `ws://127.0.0.1:<websocketPort>/moekoe`（兜底 URL），接收 `lyrics` / `playerState` 消息；兜底 URL 失败重连时 `ReconnectLoop` 交替去掉/保留 `/moekoe`，兼容新旧宿主端点
 - **重连策略：** 退避基数 1/1/2/4/8/15 秒 + ±30% 随机抖动，`MAX_RECONNECT_ATTEMPTS = 5` 后封顶 15 秒，防多实例同步重连
 - **协作式退出：** `Disconnect()` 置 `stopRequested_`、令 `aliveToken_` 失效，先 `join()` 重连线程，再把 `ix::WebSocket` 所有权移出锁、交给独立线程异步 `stop()`。**不使用 `TerminateThread`**；`THREAD_JOIN_TIMEOUT_MS` 现在只用于封面下载 worker 的限时等待，超时是 `detach()` 而不是强杀
 - **消息限制：** 入口检查 `raw.size() > 1 MB` 丢弃；歌词行数 / 行内字符数分别限 10000 / 1000
 - **回调安全：** 回调按值持有 `aliveToken_` 并双检 `stopRequested_`，异步清理线程晚到的回调不会访问已析构对象
-- **API 开启不再挂在这里：** 旧版「第 3 次重连失败触发 `TryEnableApi()`」已移除。现在是 `main.cpp` 启动时直接调用 `ApiEnabler::WriteApiMode()`（不依赖扩展链路），并通过 Native Host 的 `enableApiMode` 消息提供第二条入口，见 3.10
+- **端点来源：** 1.7.2+ 由插件调用 `electronAPI.getApiModeUrl()` 取得 `{ http, ws }`，经 Native Host `setApiEndpoint` 下发；`Connect(wsUrl, exactPath=true)` 使用宿主给出的精确 URL，不再交替路径，同时把端口同步给频谱采集。未取得端点时回退 `config.websocketPort`，见 3.10
 
 ### 3.2 HTTP 服务器模块
 
@@ -218,11 +218,12 @@ MoeKoeMusic-TaskbarLyrics/
   GET /ping                  → 免鉴权 → {"status":"ok","service":...}
   GET /seek/pending          → 免鉴权 → 读后即清的 seek 兜底通道
   其余请求                    → X-MoeKoe-Token 缺失/不符 → 403（恒定时间比较）
-                             → 通过 → POST /lyrics、POST /、POST /shutdown、404
+                             → 通过 → 未匹配路由 → 404（set_error_handler）
   ```
   `/ping` 与 `/seek/pending` 免鉴权是有意的：前者是 popup 在桥接链路失效时的探活回退，后者供 `file://` 页面里的 content script 轮询（拿不到注册表 token）。两者响应都不含敏感数据。
 - **鉴权 Token：** `Config::GetAuthToken()` 从注册表读取（首次自动生成 UUID）；检测到 fallback token 时 `Start()` 直接拒绝启动，避免鉴权形同虚设
 - **CORS：** 默认 `Allow-Origin: http://127.0.0.1:<实际端口>`；两个免鉴权 GET 放宽为 `*`
+- **端点：** 仅 `GET /ping`（存活探测）与 `GET /seek/pending`（读后即清的 seek 兜底）；历史 `/lyrics`、`/` 与 `/shutdown` 端点已移除，其余请求由 `set_error_handler` 返回 404
 - **生命周期：** `Stop()` 把工作线程所有权移出临界区后再 `join()`；`ServerLoop()` 内另起 stopper 线程反复 `svr.stop()` 直到 `listenDone`。这套设计修复了早期「持锁 join + 端口 connect 唤醒」造成的锁序反转死锁，见 5.4
 
 ### 3.3 任务栏浮动窗口模块
@@ -407,14 +408,12 @@ struct RenderState {
 - **延迟操作：** PostMessage 异步执行防崩溃
 - **老式边框防护：** WM_NCACTIVATE + DwmExtendFrameIntoClientArea 防止遮挡恢复时闪现经典边框
 
-### 3.10 API 模式开启模块（极简版）
+### 3.10 API 端点发现（MoeKoeMusic 1.7.2+）
 
-**文件：** `src/net/api_enabler.h/cpp`
-
-- **职责边界：** 只把 `%APPDATA%\moekoemusic\config.json` 的 `settings.apiMode` 写成 `"on"`。**不检测进程、不 Kill、不重启宿主**；重启由用户在 MoeKoeMusic UI 手动完成（README 亦要求修改 API 模式后重启）
-- **触发时机：** ① `main.cpp` 启动阶段直接调用 `WriteApiMode()`，不依赖 `content.js → background → bridge → main` 链路，避免任一环节断裂导致配置永远不被写入；② 扩展用户授权后经 Native Host 的 `{"payload":{"action":"enableApiMode"}}` 触发，并回传 `enableApiMode` 结果事件
-- **工作流程：** 读取 JSON → `apiMode` 已是 `on` 则跳过 → 写 `<path>.tmp` → `MoveFileExA(REPLACE_EXISTING | WRITE_THROUGH)` 原子替换 → 失败回退直接写 → 异常统一捕获返回 `false`
-- **幂等性：** 靠「已是 on 就跳过」实现；旧版的进程检测、`ShellExecuteW` 重启与 `s_attempted` 静态标志均已移除
+- **权限声明：** `manifest.json` 的 `moekoe_permissions` 包含 `moekoe:apiMode`，`minversion` 提升到 `1.7.2`；不再改写宿主 `config.json`，`src/net/api_enabler.*` 已移除
+- **获取方式：** 桥接页 `native-bridge.js` 调用主世界 `electronAPI.getApiModeUrl()`，取得 `{ http, ws }` 后转交 `background.js`，再由 `setApiEndpoint` 消息同步给 EXE
+- **EXE 处理：** `main.cpp` 的 Native Host 消息处理器收到 `setApiEndpoint` 后，用 `WebSocketClient::Connect(wsUrl, exactPath=true)` 以精确 URL 重连，并用 `PortFromUrl` 把端口同步给 `SpectrumCapture::SetWsPort`
+- **兜底：** 端点不可用时仍以 `config.websocketPort` 组成 `/moekoe` URL 连接，重连时交替尝试根路径；HTTP 侧仍监听 `config.httpServerPort`（默认 6523）
 
 ### 3.11 主程序入口
 
@@ -431,7 +430,7 @@ struct RenderState {
 
 阶段2: 应用初始化
   RegisterMessageClass → CreateWindowExW(HWND_MESSAGE) 隐式消息窗口
-  → AppContext / Config.Load + 日志级别 → ApiEnabler::WriteApiMode
+  → AppContext / Config.Load + 日志级别
   → 自启动注册表同步 → TrayIcon.Initialize
 
 阶段3: 业务模块初始化
@@ -441,7 +440,7 @@ struct RenderState {
   → TaskbarRenderer.Initialize + ApplyRendererSettings
   → MediaCardWindow.Create（失败非致命）
   → LyricsParser → SpectrumCapture.Start
-  → WebSocketClient.Connect(ws://127.0.0.1:<port>/moekoe) + 三类回调
+  → WebSocketClient.Connect(ws://127.0.0.1:<port>/moekoe)（兜底）+ 三类回调；宿主下发 setApiEndpoint 后以精确 URL 重连
   → HttpServer.Start(<httpPort>)（启动失败非致命）
   → NativeMessagingHost + stdin 读取线程 → SetTimer(帧定时)
 
@@ -466,7 +465,7 @@ struct RenderState {
 - **频谱采集：** 独立于播放状态的 WASAPI loopback 捕获，进程启动即运行
 - **线程管理：** HTTP 服务、Native Host stdin、WebSocket 重连等线程统一创建/清理；网络线程**禁止直接操作窗口**，一律 `PostMessageW` 到 UI 线程
 - **关闭耗时：** 从收到 `shutdown` 到 `[SHUTDOWN] Complete` 实测约 2 秒（HTTP 工作线程收尾 + WebSocket 异步清理）。这正是宿主重载时新 EXE 提前 spawn 的窗口，见 3.18
-- **退出触发源：** Native Host `shutdown` 指令、HTTP `shutdown` 命令、托盘/菜单退出，三者都只是把 `app.running` 置 `false`；`PostQuitMessage` 在工作线程中无效，故不用它跨线程停主循环
+- **退出触发源：** Native Host `shutdown` 指令与托盘/菜单退出，两者都只是把 `app.running` 置 `false`；HTTP `/shutdown` 端点已移除。`PostQuitMessage` 在工作线程中无效，故不用它跨线程停主循环
 
 #### Z-order 三重防护
 
@@ -593,10 +592,8 @@ struct RenderState {
 | --- | --- | --- | --- | --- |
 | GET | `/ping` | 免 | `{"status":"ok","service":"MoeKoeTaskbarLyrics"}` | popup 在桥接链路失效时的存活探测回退 |
 | GET | `/seek/pending` | 免 | `{"pending":true,"position":..,"duration":..,"seq":..}` | seek 兜底轮询，**读后即清** |
-| POST | `/lyrics` | 需要 | `{"status":"accepted"}` | 扩展推送歌词/封面/播放状态；空体 400 |
-| POST | `/`、`/shutdown` | 需要 | `{"status":"shutting_down"}` | body 含 `command:"shutdown"` 或嵌套 `data.command:"shutdown"`；其余 400 |
 | OPTIONS | `*` | 免 | 204 No Content | CORS 预检 |
-| 其他 | — | 需要 | 404 `{"error":"not found"}` | — |
+| 其他 | — | 需要 | 404 `{"error":"not found"}` | 历史 `POST /lyrics`、`POST /`、`POST /shutdown` 已移除 |
 
 **鉴权头：** `X-MoeKoe-Token: <Config::GetAuthToken() 生成的注册表 UUID>`，恒定时间比较；缺失或不匹配均 403。若 Token 退化为内置 fallback 值，`HttpServer::Start()` 直接拒绝启动。
 
@@ -612,13 +609,13 @@ struct RenderState {
 | data\[].startTime          | int64  | 12345         | 开始时间(ms) |
 | data\[].isPlaying          | bool   | true          | 播放状态     |
 
-`POST /lyrics` 对封面与歌名字段做多别名兼容（`coverArtUrl` / `pic` / `cover` …、`artist` / `author` …），也接受 `currentSong` 嵌套对象与 KRC 字符串，详见 `main.cpp` 的 `OnLyrics`。
+歌词与封面数据只经 WebSocket 的 `lyrics` / `playerState` 消息进入 EXE；字段别名兼容（`coverArtUrl` / `pic` / `cover` …、`artist` / `author` …）、`currentSong` 嵌套对象与 KRC 字符串解析见 `websocket_client.cpp`，HTTP 侧不再接收歌词推送。
 
 ### 4.4 端口清单
 
 | 端口   | 用途                   | 协议        | 可配置 |
 | ---- | -------------------- | --------- | --- |
-| 6520 | 宿主 WebSocket (歌词+状态+控制) | WebSocket | 是   |
+| 6520 | 宿主 WebSocket (歌词+状态+控制) | WebSocket | 否（1.7.2+ 端点由宿主下发；`config.websocketPort` 仅作兜底） |
 | 6521 | 宿主 KuGou Music API  | HTTP      | 否（由 MoeKoeMusic 主进程提供，**非本插件监听**） |
 | 6523 | 本插件 HTTP 服务          | HTTP      | 是   |
 
@@ -629,10 +626,9 @@ struct RenderState {
 | 方向 | 报文 | 行为 |
 | --- | --- | --- |
 | 宿主 → EXE | `{"type":"shutdown"}` | 回 `shutdown_ack`，`Run()` 返回 `false`，主循环退出 |
-| 宿主 → EXE | `{"type":"message","payload":{"action":"enableApiMode"}}` | 写宿主 `config.json` 并回结果事件 |
+| 宿主 → EXE | `{"type":"message","payload":{"action":"setApiEndpoint","ws":..,"http":..}}` | 1.7.2+ 端点下发：以精确 URL 重连 WS，并同步端口给频谱采集 |
 | EXE → 宿主 | `{"type":"message","payload":{"event":"shutdown_ack"}}` | shutdown 确认 |
 | EXE → 宿主 | `{"type":"message","payload":{"event":"seek","position":..,"duration":..}}` | 卡片进度条拖动，由 `background.js` 转发到宿主页面 |
-| EXE → 宿主 | `{"type":"message","payload":{"action":"enableApiMode","result":"ok","path":..}}` | 授权结果 |
 
 - **stdin EOF：** 独立运行时没有写入者，`Run()` 返回 `true`、程序继续运行；这是「独立模式不因 stdin 关闭而退出」的关键。
 - **宿主侧生命周期：** `stopAll()` / `stopHostByKey()` 发 shutdown 后等待退出，1.5 秒超时再留 500ms 宽限并 `tree-kill` 兜底；插件侧关闭 stdin 线程用 `CancelSynchronousIo` 循环（见 3.11）。
@@ -860,9 +856,9 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | CRT 行为 | `copy_vc_runtime.ps1` | `CMakeLists.txt` POST_BUILD、`build.yml` / `release.yml`、README、本文 5.5 |
 | 部署路径 | 插件 `manifest.json` / 宿主扩展目录 | README「安装与使用」、本文 5.6 |
 
-> **当前已知不一致（2026-11-12，留待发布时拍板）**：
-> 1. README 发布徽章指向 `v1.0.9` tag，而代码内三处版本字段仍是 `1.0.8`；
-> 2. `Docs\版本更新日志.md` 最新条目停在 `v1.0.8`。`release.yml` 按 tag 从该文件提取 Release notes，找不到对应条目时只报 WARNING 并继续，会发布**无 Release notes** 的版本；
-> 3. `Docs\项目状态文档.md` 头部仍写 `v1.0.7`。
+> **当前已知不一致（2026-11-14 复核）**：
+> 1. 代码版本字段（`CMakeLists.txt` / `constants.h` / `manifest.json` / `vcpkg.json`）、README 徽章与 `Docs\版本更新日志.md` 的 `v1.0.9` 条目已一致；
+> 2. `Docs\项目状态文档.md` 头部仍写 `v1.0.7`，属历史状态文档未同步，不影响构建与发布；
+> 3. `release.yml` 按 tag 从 `Docs\版本更新日志.md` 提取 Release notes，发版前需确认 tag 与最新条目一致。
 >
-> 本次只更新开发文档，未擅自改代码版本字段或其他文档，以免在未经确认的情况下改动发布标记。
+> 本节只记录状态，不擅自改动版本字段或发布标记。

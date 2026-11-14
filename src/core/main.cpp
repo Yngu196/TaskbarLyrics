@@ -9,7 +9,6 @@
 //   - crash_handler.h/.cpp    GlobalExceptionHandler
 //
 #include "core/app_context.h"
-#include "net/api_enabler.h"
 #include "core/constants.h"
 #include "core/crash_handler.h"
 #include "core/single_instance.h"
@@ -35,6 +34,25 @@ using namespace moekoe::constants;
 
 // 日志快捷方式（使用统一日志系统）
 using moekoe::Log;
+
+// 从 ws:// 或 http:// 端点中提取端口（失败返回 0）
+int PortFromUrl(const std::string& url) {
+    const size_t schemeEnd = url.find("://");
+    const size_t hostStart = (schemeEnd == std::string::npos) ? 0 : schemeEnd + 3;
+    const size_t colon = url.find(':', hostStart);
+    if (colon == std::string::npos) return 0;
+    const size_t end = url.find_first_of("/?#", colon + 1);
+    const std::string portStr = url.substr(
+        colon + 1, (end == std::string::npos ? url.size() : end) - colon - 1);
+    if (portStr.empty()) return 0;
+    int port = 0;
+    for (char c : portStr) {
+        if (c < '0' || c > '9') return 0;
+        port = port * 10 + (c - '0');
+        if (port > 65535) return 0;
+    }
+    return port > 0 ? port : 0;
+}
 
 } // namespace
 
@@ -151,21 +169,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
         SetLogLevel(LogLevel::Debug);
     }
     Log("[STARTUP] Config loaded\n");
-
-    // 启动时直接写入 MoeKoeMusic 的 config.json，确保 apiMode 已开启
-    // 不依赖 Native Bridge 链路（content.js → background → bridge → main），
-    // 避免链路中任一环节断裂导致 config.json 永远不被写入。
-    // WriteApiMode 内部已做幂等检查（apiMode='on' 时直接跳过）。
-    {
-        const std::string cfgPath = ApiEnabler::GetConfigPath();
-        if (!cfgPath.empty()) {
-            bool apiOk = ApiEnabler::WriteApiMode(cfgPath);
-            Log("[STARTUP] ApiEnabler::WriteApiMode %s (path=%s)\n",
-                apiOk ? "OK" : "FAILED", cfgPath.c_str());
-        } else {
-            Log("[STARTUP] ApiEnabler::GetConfigPath returned empty, skipping\n");
-        }
-    }
 
     config.SetAutoStart(config.IsAutoStart());
     Log("[STARTUP] AutoStart=%s\n", config.IsAutoStart() ? "ON" : "OFF");
@@ -445,124 +448,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                   config.Advanced().websocketPort);
     wsClient.Connect(url);
 
-    // 10.5) 启动 HTTP 服务器（用于 popup.js 通信：ping / shutdown / lyrics）
+    // 10.5) 启动 HTTP 服务器（仅保留 popup 存活探测与 seek 兜底轮询）
     app.httpServer = std::make_unique<HttpServer>();
     auto& httpServer = *app.httpServer;
-    httpServer.OnCommand([&app](const std::string& command) {
-        Log("[HTTP] Command received: %s\n", command.c_str());
-        if (command == "shutdown") {
-            Log("[HTTP] Shutdown via HTTP, exiting...\n");
-            // PostQuitMessage 只向"调用线程"的消息队列投递 WM_QUIT，
-            // 在 HTTP 工作线程中调用无效；running 为原子标志，
-            // 主循环（PeekMessage 轮询）会在 ≤1ms 内自然退出
-            app.running = false;
-        }
-    });
-    // HTTP /lyrics 端点：接收外部歌词+封面数据
-    httpServer.OnLyrics([&](const std::string& jsonBody) {
-        try {
-            nlohmann::json j = nlohmann::json::parse(jsonBody);
-
-            // 提取并更新播放器状态（封面 URL、歌曲名等）
-            PlayerState st;
-            if (j.contains("isPlaying") && j["isPlaying"].is_boolean()) {
-                st.isPlaying = j["isPlaying"].get<bool>();
-            }
-            if (j.contains("currentTime") && j["currentTime"].is_number()) {
-                st.currentTime = j["currentTime"].get<double>();
-            }
-
-            // 提取封面 URL（支持多种字段名）
-            for (const auto& key : {"coverArtUrl", "pic", "cover", "albumArt", "image", "poster"}) {
-                if (j.contains(key) && j[key].is_string()) {
-                    st.coverArtUrl = j[key].get<std::string>();
-                    break;
-                }
-            }
-            // 从 currentSong 嵌套对象提取封面
-            if (st.coverArtUrl.empty() && j.contains("currentSong") && j["currentSong"].is_object()) {
-                const auto& cs = j["currentSong"];
-                for (const auto& key : {"pic", "cover", "albumArt", "image", "poster"}) {
-                    if (cs.contains(key) && cs[key].is_string()) {
-                        st.coverArtUrl = cs[key].get<std::string>();
-                        break;
-                    }
-                }
-            }
-
-            // 提取歌曲名称
-            if (j.contains("songName") && j["songName"].is_string()) {
-                st.songName = j["songName"].get<std::string>();
-            } else if (j.contains("currentSong") && j["currentSong"].is_object() &&
-                       j["currentSong"].contains("name")) {
-                st.songName = j["currentSong"]["name"].get<std::string>();
-            }
-            // 提取歌手名称（悬停时展示；MoeKoeMusic 的歌曲对象使用 author）
-            for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
-                if (j.contains(key) && j[key].is_string()) {
-                    st.artist = j[key].get<std::string>();
-                    break;
-                }
-            }
-            if (st.artist.empty() && j.contains("currentSong") && j["currentSong"].is_object()) {
-                for (const auto& key : {"artist", "author", "author_name", "singer", "singer_name"}) {
-                    if (j["currentSong"].contains(key) && j["currentSong"][key].is_string()) {
-                        st.artist = j["currentSong"][key].get<std::string>();
-                        break;
-                    }
-                }
-            }
-
-            parser.UpdatePlayerState(st);
-
-            // 提取歌词数据（如果存在）
-            if (j.contains("lyricsData") || j.contains("data")) {
-                LyricsData data;
-                auto& ld = j.contains("lyricsData") ? j["lyricsData"] : j["data"];
-
-                if (ld.is_array()) {
-                    for (const auto& lineJson : ld) {
-                        if (data.lines.size() >= constants::MAX_LYRIC_LINES) break;
-                        LyricLine line;
-                        line.text       = lineJson.value("text", "");
-                        line.translated = lineJson.value("translated", "");
-
-                        if (lineJson.contains("characters") && lineJson["characters"].is_array()) {
-                            for (const auto& c : lineJson["characters"]) {
-                                if (line.characters.size() >= constants::MAX_CHARS_PER_LINE) break;
-                                CharacterTiming ct;
-                                ct.ch        = c.value("char", "");
-                                ct.startTime = c.value("startTime", static_cast<int64_t>(0));
-                                ct.endTime   = c.value("endTime",   static_cast<int64_t>(0));
-                                if (!ct.ch.empty()) {
-                                    line.characters.push_back(std::move(ct));
-                                }
-                            }
-                        }
-                        data.lines.push_back(std::move(line));
-                    }
-                } else if (ld.is_string()) {
-                    // KRC 字符串格式：使用公共解析方法
-                    data = ParseKrcString(ld.get<std::string>());
-                }
-
-                data.valid = !data.lines.empty();
-                if (data.valid) {
-                    parser.UpdateLyrics(data);
-                    // 窗口显示/置顶转交 UI 线程（HTTP 工作线程不得直接操作窗口）
-                    ::PostMessageW(hMsgWnd, WM_SHOW_LYRICS_WINDOW, 0, 0);
-                }
-            }
-
-            // 播放期间每行歌词推送一次，降级为 LogDebug 避免刷屏
-            LogDebug("[HTTP] Lyrics processed: cover='%s' song='%s'\n",
-                st.coverArtUrl.c_str(), st.songName.c_str());
-        } catch (const std::exception& e) {
-            Log("[HTTP] Failed to parse lyrics JSON: %s\n", e.what());
-        } catch (...) {
-            Log("[HTTP] Failed to parse lyrics JSON: unknown error\n");
-        }
-    });
     // HTTP 端口从 config 读取（默认 6523）；异常时退回到 constants.h 中的默认值。
     const int httpPort = (config.Advanced().httpServerPort > 0)
                              ? config.Advanced().httpServerPort
@@ -584,18 +472,22 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
             std::string action = msg.payload["action"].get<std::string>();
             LogDebug("[NATIVE-HOST] Action: %s\n", action.c_str());
 
-            if (action == "enableApiMode") {
-                // content.js 用户授权后触发：写入 config.json 使主进程启动 WebSocket
-                const std::string cfgPath = ApiEnabler::GetConfigPath();
-                const bool ok = cfgPath.empty() ? false : ApiEnabler::WriteApiMode(cfgPath);
-                Log("[NATIVE-HOST] enableApiMode: %s (path=%s)\n",
-                    ok ? "success" : "failed", cfgPath.c_str());
-
-                nlohmann::json response;
-                response["action"] = "enableApiMode";
-                response["result"] = ok ? "ok" : "fail";
-                response["path"] = cfgPath;
-                app.nativeHost->SendPayloadEvent(response);
+            if (action == "setApiEndpoint") {
+                // MoeKoeMusic 1.7.2+：插件通过 getApiModeUrl() 取到端点后下发，
+                const std::string wsUrl = msg.payload.value("ws", std::string());
+                if (wsUrl.empty()) {
+                    Log("[NATIVE-HOST] setApiEndpoint: empty ws url, ignored\n");
+                    return;
+                }
+                Log("[NATIVE-HOST] setApiEndpoint: %s\n", wsUrl.c_str());
+                if (app.wsClient) {
+                    // 端点来自宿主配置，路径精确，不再交替尝试根路径
+                    app.wsClient->Connect(wsUrl, /*exactPath=*/true);
+                }
+                const int port = PortFromUrl(wsUrl);
+                if (app.spectrumCapture && port > 0) {
+                    app.spectrumCapture->SetWsPort(port);
+                }
             }
             // 未来可扩展: set-config, get-status 等
         }

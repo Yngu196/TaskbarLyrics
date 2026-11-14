@@ -1515,21 +1515,6 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                     ApplyChanges();
                     InvalidateRect(hwnd_, nullptr, FALSE);
                 }
-            } else if (labelRow->id == "wsPort") {
-                // 弹出输入对话框修改端口
-                std::wstring currentVal = Utf8ToWide(labelRow->textValue);
-                // 使用简单的 InputDialog
-                wchar_t buf[32] = {};
-                wcsncpy_s(buf, currentVal.c_str(), 31);
-                // 创建简单输入对话框
-                if (SimpleInputDialog(hwnd_, L"修改 WebSocket 端口", L"请输入端口号（1-65535）：", buf, 32)) {
-                    int port = _wtoi(buf);
-                    if (port >= 1 && port <= 65535) {
-                        labelRow->textValue = std::to_string(port);
-                        ApplyChanges();
-                        InvalidateRect(hwnd_, nullptr, FALSE);
-                    }
-                }
             }
             return;
         }
@@ -1675,20 +1660,6 @@ void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
             tmp.MutablePosition().offsetY = 0;
             onConfigChanged_(tmp);
         }
-    } else if (btn->id == "resetPort") {
-        if (auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[5].get())) {
-            for (auto& card : advPage->Children()) {
-                for (auto& child : card->Children()) {
-                    if (auto* lr = dynamic_cast<ui::LabelRow*>(child.get())) {
-                        if (lr->id == "wsPort") {
-                            lr->textValue = "6520";
-                        }
-                    }
-                }
-            }
-        }
-        ApplyChanges();
-        InvalidateRect(hwnd_, nullptr, FALSE);
     } else if (btn->id == "exportLog") {
         ExportLogFile();
     } else if (btn->id == "exportDiagnostic") {

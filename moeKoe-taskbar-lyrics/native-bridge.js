@@ -35,6 +35,22 @@ function sendToBackground(message) {
     }
 }
 
+// ── 上报 API 模式端点（MoeKoeMusic 1.7.2+）──
+// 端口与 WS 路径由用户配置决定，不能再写死 6520/6521。
+// getApiModeUrl() 只存在于页面主世界（preload 注入的 electronAPI），
+// 因此由本桥接页取值后转交 background 与 EXE。
+async function pushApiEndpoint() {
+    let endpoint = null;
+    try {
+        if (typeof window.electronAPI.getApiModeUrl === 'function') {
+            endpoint = await window.electronAPI.getApiModeUrl();
+        }
+    } catch (e) {
+        console.warn('[NativeBridge] getApiModeUrl 失败:', e && e.message);
+    }
+    sendToBackground({ type: 'api-endpoint', endpoint: endpoint || null });
+}
+
 // ── 接收 background 的请求，转发给 Main Process（写入 EXE stdin）──
 async function handleBackgroundMessage(message) {
     if (!message || !message.type) {
@@ -42,6 +58,11 @@ async function handleBackgroundMessage(message) {
     }
 
     switch (message.type) {
+        case 'api-endpoint:get': {
+            await pushApiEndpoint();
+            break;
+        }
+
         case 'native-host:status': {
             try {
                 const result = await window.electronAPI.nativeHost.getStatus(HOST_ID);
@@ -132,6 +153,9 @@ function connectBackgroundPort() {
     }, 30000);
 
     console.log('[NativeBridge] 已连接到 background');
+
+    // 每次重连都重新上报一次端点：Service Worker 重启后可能丢失内存状态
+    pushApiEndpoint();
 }
 
 connectBackgroundPort();

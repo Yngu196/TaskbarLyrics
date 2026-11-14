@@ -27,6 +27,9 @@ public:
     // 设置运行时频谱参数（dB 映射区间、内部频段数）
     void SetParams(float dbCeil, float dbFloor, int numBands);
 
+    // 更新 MoeKoeMusic API 端口（1.7.2+ 由宿主下发的端点决定）
+    void SetWsPort(int wsPort);
+
     // 返回归一化 [0,1] 的各频段幅度
     std::vector<float> GetSpectrum(int numBands = 32);
 
