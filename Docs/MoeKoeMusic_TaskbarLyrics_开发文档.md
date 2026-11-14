@@ -1,9 +1,9 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
-> **对应代码版本：** v1.0.9（`CMakeLists.txt` 的 `project(VERSION)`、`constants.h::PLUGIN_VERSION`、插件 `manifest.json`、`vcpkg.json` 与 README 发布徽章一致；`Docs\项目状态文档.md` 头部仍写 v1.0.7，见 7.2）
-> **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** GPL-3.0 | **最后校对：** 2026-11-12
+> **对应代码版本：** v1.0.9 |
+> **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** GPL-3.0 | **最后校对：** 2026-11-14
 
-> 本文说明**设计取舍、模块边界与协议契约**；面向使用者和开发者的可执行命令以仓库根目录 [README](../README.md) 为准。两者不一致时，以代码与 README 为准，并请顺手修正本文。
+> 本文说明**设计取舍、模块边界与协议契约**；面向使用者和开发者的可执行命令以仓库根目录 [README](../README.md) 为准。两者不一致时，以代码与 README 为准。
 
 ***
 
@@ -12,8 +12,6 @@
 ### 1.1 背景
 
 MoeKoeMusic 是 Electron + Vue 3 开源音乐播放器，**缺少任务栏歌词显示功能**。本项目为独立 EXE 插件，以浮动窗口覆盖任务栏方式显示歌词。
-
-> **方案变更：** 原规划 `SetParent` 嵌入任务栏子窗口 → 实际采用独立浮动窗口 + `WS_EX_TOPMOST`（与 TranslucentTB 等成熟项目一致）。
 
 ### 1.2 设计原则
 
@@ -85,7 +83,7 @@ MoeKoeMusic-TaskbarLyrics/
 ├── vcpkg.json                 # 依赖清单唯一来源；构建不使用 manifest 模式（见 5.1）
 ├── TaskbarLyrics-config.json  # 示例配置
 ├── .vcpkgroot                 # bootstrap 写下的 vcpkg 根路径（git 忽略，不入库）
-└── README.md / Docs/ / icons/ / resources/ / public/ / Samples/
+└── README.md / Docs/ / icons/ / public/ / Samples/
 ```
 
 ***
@@ -159,7 +157,7 @@ MoeKoeMusic-TaskbarLyrics/
 
 | 分类  | 常量                           | 值              | 用途                |
 | --- | ---------------------------- | -------------- | ----------------- |
-| 版本  | PLUGIN\_VERSION              | 1.0.8          | 与 `CMakeLists.txt` 的 project VERSION 同步 |
+| 版本  | PLUGIN\_VERSION              | 1.0.9          | 与 `CMakeLists.txt` 的 project VERSION 同步 |
 | 端口  | WEBSOCKET\_LISTEN\_PORT      | 6520           | WS 歌词数据（运行时可被 config 覆盖） |
 | 端口  | HTTP\_SERVER\_PORT           | 6523           | Extension 通信（运行时可被 config 覆盖） |
 | 鉴权  | LOCAL\_AUTH\_HEADER\_NAME    | X-MoeKoe-Token | HTTP 鉴权头；Token 由 `Config::GetAuthToken()` 从注册表读取（首次生成 UUID） |
@@ -314,12 +312,10 @@ struct RenderState {
 
 - **触发条件：** 歌词宽度 > 可用区域宽度
 - **状态机：** Idle → Delay(2s) → ScrollLeft → PauseRight(1s) → ScrollRight → PauseLeft(1s) → ...
-- **三种模式：**
 
 | 模式     | 行为         |
 | ------ | ---------- |
 | bounce | 左右往返（推荐）   |
-| loop   | 旧版本配置值，读取后自动回退为 bounce |
 | off    | 关闭滚动，直接截断  |
 
 - **超长加速：** 宽度 > 2×可用宽度时最高 3 倍速
@@ -814,12 +810,10 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 | 功能 | 难度 | 优先级 | 状态 |
 | --- | --- | --- | --- |
-| ARM64 实机验证 | 中 | ⭐⭐⭐ | 🔜 构建链路已闭环，真实 ARM64 Windows 冒烟测试仍待反馈；**不宣称正式支持** |
+| ARM64 实机验证 | 中 | ⭐⭐⭐ | 🔜 构建链路已闭环，真实 ARM64 Windows 测试仍待反馈 |
 | 宿主重载竞态 | — | ⭐⭐⭐ | ✅ 插件侧已加等待接管（3.18）；宿主 `restartExtensions()` 未 await 需上游修复 |
 | 构建契约 | — | ⭐⭐ | ✅ bootstrap + `.vcpkgroot` + CI 统一入口，CRT 不入库 |
 | 绑定模式进程监控 | 低 | ⭐⭐ | ⚠️ 代码仍在，但当前 `main.cpp` 未接入（3.15）；退出由 Native Host 驱动 |
-| 进程生命周期联动优化 | 中 | ⭐⭐ | 🔜 待评估 |
-| 支持其他播放器 | 高 | ⭐ | ❌ 新立项 |
 | 颜色提取到常量 | 低 | ⭐ | 🔜 低优先级 |
 
 ***
@@ -841,24 +835,3 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | cpp-httplib | <https://github.com/yhirose/cpp-httplib> |
 | Catch2 | <https://github.com/catchorg/Catch2> |
 | nlohmann/json | <https://github.com/nlohmann/json> |
-
-### 7.2 版本与文档同步清单
-
-改动下列任一处时，同步检查其余位置，避免再次出现本文本次修订前那种「文档停在 v1.0.7、构建写 manifest 模式」的分叉：
-
-| 项目 | 事实来源 | 需要同步的位置 |
-| --- | --- | --- |
-| 版本号 | `CMakeLists.txt` 的 `project(VERSION)` | `constants.h::PLUGIN_VERSION`、插件 `manifest.json`、`vcpkg.json` 的 `version`、README 发布徽章与 tag、`Docs\版本更新日志.md` |
-| CMake 下限 | `CMakePresets.json` 的 schema `version` | `cmake_minimum_required`、README 环境表、本文 5.1、`check_build_env.ps1` 阈值 |
-| 依赖包名 | `vcpkg.json` 的 `dependencies` | README、本文 5.1；`bootstrap.ps1` / `check_build_env.ps1` 经 `vcpkg_contract.ps1` 读取，**不再各自声明** |
-| 必需文件清单 | `scripts\vcpkg_contract.ps1` | `CMakeLists.txt` 的 `find_*` / POST_BUILD（消费侧，不是声明）、本文 5.1 |
-| 测试目标 | `CMakeLists.txt` 的 `add_test` | README「测试覆盖」、本文 5.4（仅本地能力；CI 不运行） |
-| CRT 行为 | `copy_vc_runtime.ps1` | `CMakeLists.txt` POST_BUILD、`build.yml` / `release.yml`、README、本文 5.5 |
-| 部署路径 | 插件 `manifest.json` / 宿主扩展目录 | README「安装与使用」、本文 5.6 |
-
-> **当前已知不一致（2026-11-14 复核）**：
-> 1. 代码版本字段（`CMakeLists.txt` / `constants.h` / `manifest.json` / `vcpkg.json`）、README 徽章与 `Docs\版本更新日志.md` 的 `v1.0.9` 条目已一致；
-> 2. `Docs\项目状态文档.md` 头部仍写 `v1.0.7`，属历史状态文档未同步，不影响构建与发布；
-> 3. `release.yml` 按 tag 从 `Docs\版本更新日志.md` 提取 Release notes，发版前需确认 tag 与最新条目一致。
->
-> 本节只记录状态，不擅自改动版本字段或发布标记。

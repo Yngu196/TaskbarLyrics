@@ -490,22 +490,23 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
 )
 
 # 资源
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/resources/icon.ico)
-    target_sources(${PROJECT_NAME} PRIVATE resources/icon.ico)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/icons/icon.ico)
+    target_sources(${PROJECT_NAME} PRIVATE icons/icon.ico)
 endif()
 
 # 安装规则
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
-install(DIRECTORY resources/ DESTINATION share/MoeKoeTaskbarLyrics OPTIONAL)
+install(DIRECTORY icons/ DESTINATION share/MoeKoeTaskbarLyrics OPTIONAL)
 
 # 后构建事件:复制资源到输出目录
+# 运行时布局保持 <exeDir>/resources/（tray_icon.cpp 按该路径加载 icon.ico），源文件取自仓库 icons/
 if(MSVC)
-    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+    if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/icons)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
-                ${CMAKE_CURRENT_SOURCE_DIR}/resources
+                ${CMAKE_CURRENT_SOURCE_DIR}/icons
                 $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
-            COMMENT "Copying resources to output directory")
+            COMMENT "Copying icons to output resources directory")
     endif()
 
     # 复制运行时 DLL 到输出目录

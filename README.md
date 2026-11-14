@@ -80,7 +80,7 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 
 1. 安装 MoeKoeMusic **1.6.6 或更高版本**。
 2. 在 MoeKoeMusic 设置 → 系统中开启 **API 模式**。
-3. 修改 API 模式后需要重启 MoeKoeMusic（建议重启 1–2 次）才会生效。
+3. 修改 API 模式后需要重启 MoeKoeMusic 才会生效。
 
 ### 方式一：插件市场安装（推荐）
 
@@ -198,16 +198,10 @@ cd TaskbarLyrics
 本地与 CI 的补齐方式不同：
 
 - **本地构建**：`CMakeLists.txt` 的 POST_BUILD 步骤从本机 Visual Studio 的
-  `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 复制。该目录不存在时只发 WARNING，
-  可手动运行 `scripts\copy_vc_runtime.ps1` 补齐（参数见下）。
+  `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 复制。该目录不存在时只发 WARNING，可手动运行 `scripts\copy_vc_runtime.ps1` 补齐（参数见下）。
 - **CI**：`build.yml` / `release.yml` 调用同一个脚本，按两级来源补齐：
   1. 本机 VS Redist（`vswhere` 定位，不依赖 `VCToolsRedistDir` 等机器级环境变量）；
-  2. 本机没有对应架构的 retail CRT 时（典型是 x64 runner 上编 ARM64），自动下载
-     微软官方 `vc_redist.<arch>.exe`，从 Burn bundle 内嵌 CAB 中提取。用 Windows 自带的
-     `expand.exe`，不引入 7-Zip / WiX 等额外工具。
-
-CI 脚本逐文件校验 PE 架构，仅在缺失或架构不符时覆盖；两级来源都拿不到就明确失败，
-不会静默产出缺 CRT 的包。
+  2. 本机没有对应架构的 retail CRT 时（典型是 x64 runner 上编 ARM64），自动下载微软官方 `vc_redist.<arch>.exe`，从 Burn bundle 内嵌 CAB 中提取。
 
 常用参数：`-Arch x64|arm64`、`-Destination <输出目录>`（必填）、`-VerifyOnly`（只检查、不下载不写入）、
 `-RedistPackage <path>`（离线包）、`-OfficialOnly`（跳过本机 VS，强制统一用官方包版本）。
@@ -249,9 +243,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 **例外**：Catch2 从 GitHub / gitee 都拉取失败且没有本地源码时，`CMakeLists.txt` 会 `set(BUILD_TESTING OFF ... FORCE)` 把缓存改回 `OFF` 并跳过测试。离线启用可用 `-DCATCH2_SOURCE_DIR=<path>` 指向本地 Catch2 v3.7.1 源码，或把源码放到 `third_party\catch2\`。
 
-**CI 不跑单元测试**：`build.yml` 与 `release.yml` 都不开启 `BUILD_TESTING`（默认 `OFF`），只构建主程序，不下载 Catch2、不编译测试二进制、不执行 `ctest`。测试是本地显式开启的能力——改动 `HttpLifecycle` 的线程生命周期或 `SingleInstance` 的接管逻辑后，请在本机按上面的命令跑一次 `ctest`；**CI 绿不代表这两处回归已验证**。
-
-当前测试覆盖歌词解析、KRC 解析、频谱数学映射、HTTP 服务生命周期与单实例启动/接管（含跨进程接管）。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 
 ## 界面预览
 
@@ -266,7 +257,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 ## 相关文档
 
 - [开发文档](Docs/MoeKoeMusic_TaskbarLyrics_开发文档.md)
-- [项目状态文档](Docs/项目状态文档.md)
 - [版本更新日志](Docs/版本更新日志.md)
 - [常见问题自查](Docs/常见问题自查.md)
 - [计划书](Docs/计划书.md)
