@@ -58,26 +58,22 @@
         {
             "name": "x64-Debug",
             "configurePreset": "x64-Debug",
-            "configuration": "Debug",
-            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+            "configuration": "Debug"
         },
         {
             "name": "x64-Release",
             "configurePreset": "x64-Release",
-            "configuration": "Release",
-            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+            "configuration": "Release"
         },
         {
             "name": "ARM64-Debug",
             "configurePreset": "ARM64-Debug",
-            "configuration": "Debug",
-            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+            "configuration": "Debug"
         },
         {
             "name": "ARM64-Release",
             "configurePreset": "ARM64-Release",
-            "configuration": "Release",
-            "nativeToolOptions": ["/p:PlatformToolsetVersion=14.44.35207"]
+            "configuration": "Release"
         }
     ]
 }

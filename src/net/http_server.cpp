@@ -40,15 +40,18 @@ HttpServer::~HttpServer() {
 }
 
 bool HttpServer::Start(int port) {
-    std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
+    std::unique_lock<std::mutex> lifecycleLock(lifecycleMutex_);
 
     // serverThread_ 在 ServerLoop 返回后仍然是 joinable；先回收已经结束的
     // 线程，避免下一次赋值给 joinable std::thread 触发 std::terminate。
-    // 启动阶段 running_ 可能仍为 false，但线程已经存在，此时视为已启动，
-    // 由调用方稍后通过 Stop() 统一回收。
-    if (serverThread_.joinable()) {
-        if (running_.load()) return true;
-        serverThread_.join();
+    // join 必须放在锁外：ServerLoop 收尾阶段如果需要 lifecycleMutex_，
+    // 持锁等待它退出就是锁序反转死锁。
+    while (serverThread_.joinable()) {
+        if (running_.load()) return true;  // 仍在监听，重复 Start 幂等成功
+        std::thread finished = std::move(serverThread_);
+        lifecycleLock.unlock();
+        finished.join();
+        lifecycleLock.lock();
     }
 
     // 拒绝在 fallback token 下启动 HTTP 服务：
@@ -59,7 +62,6 @@ bool HttpServer::Start(int port) {
     }
 
     stopRequested_.store(false);
-    port_ = port;
     // Mark the lifecycle active before launching the worker.  This makes a
     // second Start() during the tiny startup window idempotent instead of
     // trying to join a thread that is still entering listen().
@@ -69,8 +71,7 @@ bool HttpServer::Start(int port) {
 }
 
 void HttpServer::Stop() {
-    int port = 0;
-    std::function<void()> stopCallback;
+    std::thread worker;
     {
         std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
         // running_ 只在 ServerLoop 开始监听后才置 true；如果 Stop 紧跟在
@@ -80,32 +81,17 @@ void HttpServer::Stop() {
             return;
         }
         stopRequested_.store(true);
-        port = port_;
-        stopCallback = stopCallback_;
+        // 把线程所有权移出临界区后再 join，绝不在持锁状态下等待工作线程。
+        worker = std::move(serverThread_);
     }
 
-    if (stopCallback) stopCallback();
-
-    // Poke the listening socket to wake up accept()
-    SOCKET tmp = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (tmp != INVALID_SOCKET) {
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(port));
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        connect(tmp, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-        closesocket(tmp);
-    }
-
-    {
-        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
-        if (serverThread_.joinable()) {
-        // listen() 已由 stopRequested_ + svr.stop() 唤醒；必须 join，
-        // 否则 ServerLoop 仍会访问已析构的 HttpServer 成员。
-            serverThread_.join();
-        }
-        running_.store(false);
-    }
+    // 停止由 ServerLoop 内的 stopper 线程负责：它看到 stopRequested_ 后会
+    // 反复调用 svr.stop() 直到 listen() 返回，因此这里只需等待 worker 结束。
+    // 不再从主线程跨线程持有指向 ServerLoop 栈上 httplib::Server 的回调，
+    // 也不再用 connect() 去「戳」端口——前者有悬垂引用风险，后者可能误连
+    // 到同端口的其他进程或在受限网络栈上阻塞。
+    worker.join();
+    running_.store(false);
 }
 
 void HttpServer::SetPendingSeek(double position, double duration) {
@@ -119,11 +105,8 @@ void HttpServer::SetPendingSeek(double position, double duration) {
 void HttpServer::ServerLoop(int port) {
     httplib::Server svr;
 
-    {
-        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
-        stopCallback_ = [&svr]() { svr.stop(); };
-        if (stopRequested_.load()) svr.stop();
-    }
+    // 这里刻意不获取 lifecycleMutex_：Stop()/Start() 可能正持有它等待本线程
+    // 结束，工作线程在启动或收尾阶段去拿同一把锁就会形成锁序反转死锁。
 
     // 限制请求体大小，防御异常大 payload（本机场景正常歌词数据远小于此）
     svr.set_payload_max_length(4 * 1024 * 1024); // 4 MB
@@ -233,29 +216,27 @@ void HttpServer::ServerLoop(int port) {
     running_.store(true);
     Log("[HTTP] Server starting on port %d (httplib)\n", port);
 
-    // Stopper thread: polls stopRequested_ and calls svr.stop()
+    // Stopper thread: 只要 listen() 还没返回就持续观察停止请求。
+    // stop() 在 listen_internal() 尚未进入时是 no-op（is_running_ == false），
+    // 因此必须反复调用而不是只调一次，否则早期 Stop() 会被丢掉，accept()
+    // 会永远阻塞。退出条件只能是 listenDone，不能是 stopRequested_：
+    // listen() 也可能因端口占用等原因自行返回，此时 stopper 若仍在
+    // "等停止请求" 的循环里，下面的 join() 就会永久挂起。
     std::atomic<bool> listenDone{false};
     std::thread stopper([this, &svr, &listenDone]() {
-        while (!stopRequested_.load()) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-        // stop() can race with listen() startup.  Keep poking until listen
-        // has actually returned, so an early stop request cannot be lost.
         while (!listenDone.load(std::memory_order_acquire)) {
-            svr.stop();
+            if (stopRequested_.load()) svr.stop();
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     });
 
     // Stop() may race with thread startup, before listen() has entered its
     // accept loop.  In that case do not enter listen at all; otherwise the
-    // wake-up connect can be missed and the lifecycle join would block.
+    // stop signal could be lost and the lifecycle join would block.
     if (stopRequested_.load()) {
         listenDone.store(true, std::memory_order_release);
         if (stopper.joinable()) stopper.join();
         running_.store(false);
-        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
-        stopCallback_ = {};
         return;
     }
 
@@ -265,8 +246,6 @@ void HttpServer::ServerLoop(int port) {
         running_.store(false);
         listenDone.store(true, std::memory_order_release);
         if (stopper.joinable()) stopper.join();
-        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
-        stopCallback_ = {};
         return;
     }
 
@@ -274,10 +253,6 @@ void HttpServer::ServerLoop(int port) {
     stopper.join();
     running_.store(false);
     Log("[HTTP] Server stopped\n");
-    {
-        std::lock_guard<std::mutex> lifecycleLock(lifecycleMutex_);
-        stopCallback_ = {};
-    }
 }
 
 } // namespace moekoe

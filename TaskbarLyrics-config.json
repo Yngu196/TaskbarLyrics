@@ -20,13 +20,13 @@
     "card_translation_mode": "off",
     "cover_corner_radius": 21,
     "cover_offset_x": -6,
-    "cover_size": 34,
-    "display_mode": "karaoke",
-    "display_selection_mode": "auto",
+    "cover_size": 33,
+    "display_mode": "card",
+    "display_selection_mode": "manual",
     "enable_cover": true,
     "enable_karaoke": true,
     "enable_marquee": true,
-    "enable_translation": false,
+    "enable_translation": true,
     "font_family": "楷体",
     "font_size": 21,
     "highlight_color": "#E32727",
@@ -36,12 +36,12 @@
     "marquee_mode": "bounce",
     "marquee_pause_ms": 1000,
     "marquee_speed_px_per_sec": 40.0,
-    "normal_color": "#F89797",
+    "normal_color": "#F67F7F",
     "normal_opacity": 0.8500000238418579,
     "settings_theme": "light",
     "single_line_background_mode": "frosted",
     "spectrum_bar_width": 0.0,
-    "spectrum_color": "#B287FF",
+    "spectrum_color": "#EE4444",
     "spectrum_db_ceil": -10.34782600402832,
     "spectrum_db_floor": -62.0,
     "spectrum_mode": "spectrum",
@@ -55,21 +55,21 @@
   "position": {
     "lock_fully": false,
     "lock_position": false,
-    "offset_x": -1269,
+    "offset_x": -1278,
     "offset_y": 0
   },
   "position_profiles": {
     "horizontal": {
       "lock_fully": false,
       "lock_position": false,
-      "offset_x": -1269,
+      "offset_x": -1278,
       "offset_y": 0
     },
     "vertical": {
       "lock_fully": false,
       "lock_position": false,
       "offset_x": 0,
-      "offset_y": 0
+      "offset_y": -328
     }
   },
   "schema_version": 2

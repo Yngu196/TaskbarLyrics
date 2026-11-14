@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.20)
+# CMake 3.21 是下限：CMakePresets.json 使用 schema "version": 3，
+# 该 schema 自 CMake 3.21 起才受支持（3.20 只支持到 version 2）。
+# 保持与 CMakePresets.json / README / check_build_env.ps1 同一数值。
+cmake_minimum_required(VERSION 3.21)
 
 project(MoeKoeTaskbarLyrics
     VERSION 1.0.9
@@ -57,23 +60,45 @@ endif()
 find_package(Threads REQUIRED)
 
 # ---- 手动配置 vcpkg 安装的第三方库（绕过 vcpkg 工具链） ----
+# 统一解析契约（与 build.cmd / bootstrap.ps1 / check_build_env.ps1 同序）：
+#   1. 显式覆盖：VCPKG_INSTALLED_DIR 环境变量或 cmake -DVCPKG_INSTALLED_DIR=<path>
+#   2. .vcpkgroot：bootstrap.ps1 写下的 vcpkg 根，必须优先于机器级环境变量，
+#      否则 bootstrap 装进 A、构建却从环境变量指向的 B 取库。
+#   3. VCPKG_INSTALLATION_ROOT / VCPKG_ROOT（兼容旧环境，逐个尝试完整树）
+#   4. D:/vcpkg、C:/vcpkg（最后兜底）
+# 所有分支解析的都是同一个量：<root>/installed/<VCPKG_TRIPLET>。
 if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
-    # 优先使用环境变量
+    # 1. 显式覆盖：与其余链一样要求目标树完整，避免空目录把 configure 钉死。
     if(DEFINED ENV{VCPKG_INSTALLED_DIR} AND NOT "$ENV{VCPKG_INSTALLED_DIR}" STREQUAL "")
-        set(VCPKG_INSTALLED_DIR "$ENV{VCPKG_INSTALLED_DIR}")
-    elseif(DEFINED ENV{VCPKG_INSTALLATION_ROOT} AND NOT "$ENV{VCPKG_INSTALLATION_ROOT}" STREQUAL "")
-        set(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}")
-        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
-            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
-        endif()
-    elseif(DEFINED ENV{VCPKG_ROOT} AND NOT "$ENV{VCPKG_ROOT}" STREQUAL "")
-        set(_VCPKG_BASE "$ENV{VCPKG_ROOT}")
-        if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
-            set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+        set(_VCPKG_OVERRIDE "$ENV{VCPKG_INSTALLED_DIR}")
+        if(EXISTS "${_VCPKG_OVERRIDE}/include" AND EXISTS "${_VCPKG_OVERRIDE}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_OVERRIDE}")
         endif()
     endif()
 
-    # 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
+    # 2. bootstrap.ps1 写下的 pin：命令行走 build.cmd，IDE 走这里，共用同一份记录。
+    if(NOT DEFINED VCPKG_INSTALLED_DIR AND EXISTS "${CMAKE_SOURCE_DIR}/.vcpkgroot")
+        file(STRINGS "${CMAKE_SOURCE_DIR}/.vcpkgroot" _VCPKG_PINNED_ROOT LIMIT_COUNT 1)
+        string(STRIP "${_VCPKG_PINNED_ROOT}" _VCPKG_PINNED_ROOT)
+        if(EXISTS "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}/lib")
+            set(VCPKG_INSTALLED_DIR "${_VCPKG_PINNED_ROOT}/installed/${VCPKG_TRIPLET}")
+        endif()
+    endif()
+
+    # 3. 兼容旧环境：逐个候选尝试，不能因某个变量已定义但树不完整就跳过后面的候选。
+    if(NOT DEFINED VCPKG_INSTALLED_DIR)
+        foreach(_VCPKG_BASE "$ENV{VCPKG_INSTALLATION_ROOT}" "$ENV{VCPKG_ROOT}")
+            if(_VCPKG_BASE STREQUAL "")
+                continue()
+            endif()
+            if(EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/include" AND EXISTS "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}/lib")
+                set(VCPKG_INSTALLED_DIR "${_VCPKG_BASE}/installed/${VCPKG_TRIPLET}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    # 4. 硬编码路径作为最后 fallback（非标准环境需自行配置环境变量）
     if(NOT DEFINED VCPKG_INSTALLED_DIR)
         foreach(_CANDIDATE
                 "D:/vcpkg/installed/${VCPKG_TRIPLET}"
@@ -291,12 +316,14 @@ set(SOURCES
     src/core/app_context.cpp
     src/core/crash_handler.cpp
     src/core/message_window.cpp
+    src/core/single_instance.cpp
 )
 set(HEADERS
     src/core/app_context.h
     src/core/crash_handler.h
     src/core/message_window.h
     src/core/constants.h
+    src/core/single_instance.h
 )
 
 # config/: 配置管理
@@ -528,13 +555,14 @@ if(MSVC)
                         "Please manually copy msvcp140.dll, vcruntime140.dll, vcruntime140_1.dll to output.")
     else()
         message(STATUS "Copying VC++ CRT DLLs from: ${_CRT_SRC_DIR}")
-        # vcruntime140_1.dll 只服务于 x64 的异常处理，ARM64 运行时不需要；
-        # VS 的 arm64 Redist 目录里那份实际是 AMD64 文件，拷进包会污染架构校验
+        # 原生 ARM64 不链接 vcruntime140_1.dll；VS 的 arm64 Redist 目录里该文件
+        # 实为 x64 二进制，混入会触发 scripts/verify_package.py 架构校验失败。
+        # 与 build.yml / release.yml 的 CRT 复制步骤保持同一规则。
         set(_CRT_DLLS msvcp140.dll vcruntime140.dll)
         if(NOT MSVC_RUNTIME_ARCH STREQUAL "arm64")
             list(APPEND _CRT_DLLS vcruntime140_1.dll)
         endif()
-        foreach(_CRT_DLL ${_CRT_DLLS})
+        foreach(_CRT_DLL IN LISTS _CRT_DLLS)
             if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
                     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -576,7 +604,9 @@ if(TARGET_ARCH STREQUAL "x64")
 endif()
 
 # ──── 单元测试 ────
-option(BUILD_TESTING "Build unit tests" ON)
+# 默认关闭：避免每次 configure 都联网探测 Catch2（双仓库各约 15s）。
+# CI 不传该开关（默认 OFF，只构建主程序）；本地显式开启跑测试见 README。
+option(BUILD_TESTING "Build unit tests" OFF)
 
 if(BUILD_TESTING)
     enable_testing()
@@ -775,6 +805,30 @@ if(BUILD_TESTING AND _catch2_ready)
         Catch2::Catch2 Threads::Threads ws2_32
     )
     add_test(NAME HttpLifecycle COMMAND $<TARGET_FILE:test_http_lifecycle> -s)
+    # 生命周期测试涉及线程 join 与 socket，死锁时会无限挂起。把超时写进测试
+    # 属性而不是只依赖调用方命令行的 --timeout，任何本地 ctest 调用都受保护。
+    set_tests_properties(HttpLifecycle PROPERTIES TIMEOUT 30)
+
+    # 测试目标：单实例获取与宿主重载接管（仅 Win32 内核对象，无 UI/网络依赖）
+    add_executable(test_single_instance
+        tests/test_single_instance.cpp
+        src/core/single_instance.cpp
+    )
+    target_include_directories(test_single_instance PRIVATE src)
+    if(MSVC)
+        target_compile_options(test_single_instance PRIVATE
+            /W4 /permissive- /utf-8 /EHsc
+        )
+        target_compile_definitions(test_single_instance PRIVATE
+            _WIN32_WINNT=0x0A00 WINVER=0x0A00 NOMINMAX UNICODE _UNICODE
+        )
+        set_target_properties(test_single_instance PROPERTIES WIN32_EXECUTABLE OFF)
+    endif()
+    target_link_libraries(test_single_instance PRIVATE
+        Catch2::Catch2 Threads::Threads
+    )
+    add_test(NAME SingleInstance COMMAND $<TARGET_FILE:test_single_instance> -s)
+    set_tests_properties(SingleInstance PROPERTIES TIMEOUT 30)
 
     # 复制 VC++ Redist CRT DLL 到测试可执行文件输出目录
     # 测试 exe 用 /MD 动态链接运行时，需要 msvcp140.dll / vcruntime140.dll /
@@ -782,7 +836,7 @@ if(BUILD_TESTING AND _catch2_ready)
     # 缺失时 Windows 会从 PATH 加载旧版本 msvcp140.dll，导致 std::mutex 等
     # STL 同步原语在运行时崩溃（STATUS_ACCESS_VIOLATION）。
     if(MSVC AND EXISTS "${_CRT_SRC_DIR}")
-        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser test_spectrum_math test_http_lifecycle)
+        foreach(_TEST_TARGET test_lyrics_parser test_krc_parser test_spectrum_math test_http_lifecycle test_single_instance)
             foreach(_CRT_DLL msvcp140.dll vcruntime140.dll vcruntime140_1.dll)
                 if(EXISTS "${_CRT_SRC_DIR}/${_CRT_DLL}")
                     add_custom_command(TARGET ${_TEST_TARGET} POST_BUILD

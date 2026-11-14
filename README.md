@@ -22,7 +22,7 @@
 - [功能特性](#功能特性)
 - [兼容性说明](#兼容性说明)
 - [安装与使用](#安装与使用)
-- [常见问题](#常见问题)
+- [常见问题排查](#常见问题排查)
 - [构建与测试](#构建与测试)
 - [界面预览](#界面预览)
 - [相关文档](#相关文档)
@@ -117,75 +117,141 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 | Windows SDK | 10.0.20348+ |
 | Visual Studio | 2022 (v143) |
 | MSVC 工具集 | 14.44+（构建 ARM64 需安装 ARM64 工具链） |
-| CMake | 3.20+ |
-| vcpkg | latest |
+| CMake | 3.21+ |
+| vcpkg | 由 `scripts\bootstrap.ps1` 自动准备，可用 `-VcpkgCommit` 锁定版本 |
+
+> CMake 最低 3.21 的原因：`CMakePresets.json` 使用 schema `version: 3`，该版本自 CMake 3.21 起才受支持（3.20 只支持到 version 2）。`cmake_minimum_required`、本表格、开发文档与 `scripts\check_build_env.ps1` 的自检阈值都保持同一数值。
 
 ### 使用 Visual Studio
 
 1. 安装 Visual Studio 2022，勾选「使用 C++ 的桌面开发」、Windows SDK 与 CMake 工具。
-2. 用 Visual Studio 打开项目根目录的 `CMakeLists.txt`，等待 CMake 配置完成。
-3. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」。
-4. 选择「生成 → 生成全部」，或右键 `MoeKoeTaskbarLyrics` 目标并选择「生成」。
-5. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，避免输出文件被占用。
-6. 测试目标可在「测试资源管理器」中运行。
+2. **按目标架构分别准备依赖**：vcpkg 依赖按 triplet 安装，`x64-windows` 与 `arm64-windows` 互不通用。要构建哪一组 preset，就先执行对应的 bootstrap：
+
+   ```powershell
+   .\scripts\bootstrap.ps1 -Arch x64      # x64-Release / x64-Debug
+   .\scripts\bootstrap.ps1 -Arch arm64    # ARM64-Release / ARM64-Debug
+   ```
+
+   两个架构共用同一个 vcpkg 根目录（写入 `.vcpkgroot`），但依赖分别落在 `installed\x64-windows` / `installed\arm64-windows`。只跑过 `-Arch x64` 就切到 ARM64 配置，CMake 会因找不到对应 triplet 直接报错。
+3. 用 Visual Studio 打开项目根目录的 `CMakeLists.txt`，等待 CMake 配置完成。
+4. 在顶部配置栏选择 `x64-Release`、`x64-Debug`、`ARM64-Release` 或 `ARM64-Debug`，不要选择「无配置」；切换到另一架构前先确认第 2 步已为它准备过依赖。
+5. 选择「生成 → 生成全部」，或右键 `MoeKoeTaskbarLyrics` 目标并选择「生成」。
+6. 调试前关闭旧的 `MoeKoeTaskbarLyrics.exe` 进程，避免输出文件被占用。
+7. 测试目标可在「测试资源管理器」中运行。
 
 如果「配置任务 / CMake 设置」不可用，关闭解决方案后重新打开 `CMakeLists.txt`；仍未恢复时删除对应的 `out/build/<preset>` 缓存并重新配置。
 
-### 命令行一键构建（推荐）
+### 从克隆到构建（推荐）
 
 ```powershell
-# x64 Release
+git clone --recurse-submodules https://github.com/Yngu196/TaskbarLyrics.git
+cd TaskbarLyrics
+
+# 第一步：准备依赖（自动复用已有 vcpkg；找不到才 clone 到 %LOCALAPPDATA%）
+# 克隆时漏了 --recurse-submodules 也没关系，bootstrap 会自动补 submodule
+.\scripts\bootstrap.ps1 -Arch x64 -Build
+
+# 之后每次构建只需这一条，无需任何用户级环境变量
 .\build.cmd release x64
 
-# ARM64 Release（需安装 VS2022 ARM64 工具链与 arm64-windows 依赖）
-.\build.cmd release arm64
+# ARM64（需 VS2022 ARM64 工具链）
+.\scripts\bootstrap.ps1 -Arch arm64 -Build
 
-# 全量构建发布包：x64 → ARM64 → 架构校验 → 打包
+# 全量发布包：x64 → ARM64 → 架构校验 → 打包
+# （先分别 bootstrap 两个架构，再执行）；另需 Python 3
 .\build.cmd release all
 
 # 清理
 .\build.cmd clean x64
 ```
 
-构建脚本会显式传入对应 triplet 的 `VCPKG_INSTALLED_DIR`：
+`bootstrap.ps1` 会把选定的 vcpkg 根目录写入 `.vcpkgroot`（已被 git 忽略）。
+`build.cmd`、`CMakeLists.txt` 与 `check_build_env.ps1` 都**优先**读取这个 pin，
+因此命令行、Visual Studio IDE 与只读自检都解析到 bootstrap 刚装好的同一套依赖树；
+机器级的 `VCPKG_ROOT` / `VCPKG_INSTALLATION_ROOT` 只在 pin 不存在时才生效。解析顺序：
 
-- x64 → `<vcpkg>\installed\x64-windows`
-- ARM64 → `<vcpkg>\installed\arm64-windows`
+1. 显式覆盖：`VCPKG_INSTALLED_DIR` 环境变量或 `cmake -DVCPKG_INSTALLED_DIR=<path>`（CI 与临时切换依赖树用；不要设成用户级常量）
+2. `.vcpkgroot`（bootstrap 写下的 pin）
+3. `VCPKG_INSTALLATION_ROOT` / `VCPKG_ROOT` 环境变量（兼容旧环境）
+4. `D:\vcpkg` / `C:\vcpkg`（最后兜底）
 
-这样可以确保第三方库与目标架构一致，避免跨 triplet fallback。
+**冲突会直接失败**：`bootstrap.ps1` 在安装前检查 `VCPKG_INSTALLED_DIR`——若它反推出的 vcpkg 根与本次选定根不同，或末级目录不是目标 triplet，脚本报错退出，避免「装到 A、构建却从 B 取库」。自检脚本也会列出被忽略的其他完整依赖树。想临时切换依赖树，请用 `-VcpkgRoot` 或把覆盖变量指向同一根。
+
+第三方库始终按目标 triplet（`x64-windows` / `arm64-windows`）严格校验，禁止跨架构混用。
+需要复现特定依赖树时加 `-VcpkgCommit <sha>`（只对全新 clone 生效，不会擅自切换已有的 vcpkg 树）。
+构建前可跑只读自检：`.\scripts\check_build_env.ps1 -Arch x64`。
+
+### 依赖清单的唯一来源
+
+依赖名只在 `vcpkg.json` 的 `dependencies` 里声明（当前 5 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`）。
+`bootstrap.ps1` 与 `check_build_env.ps1` 都通过 `scripts\vcpkg_contract.ps1` 读取它；该模块还持有**唯一一份**
+「CMake 实际会用的 12 个文件」清单，安装后校验与只读自检共用。所以**增删依赖只需改 `vcpkg.json` 一处**；
+只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1`（文件路径无法从端口名推导）。
+
+`bootstrap.ps1` 安装时带 `--classic`：脚本工作目录里有 `vcpkg.json`，去掉该参数 vcpkg 会切到 manifest 模式、
+把包装进 `vcpkg_installed\`，而项目的 `find_library` 不读那个目录。**仓库里有 `vcpkg.json` 不代表启用了 manifest 模式。**
+将来若真要切 manifest 模式，需先从依赖里移除 `ixwebsocket`——CMake 已用 `add_subdirectory` 定义了同名 target。
+
+### VC++ 运行时 DLL 不入库
+
+`msvcp140.dll` / `vcruntime140.dll`（x64 另含 `vcruntime140_1.dll`）**不随仓库分发**，
+本地与 CI 的补齐方式不同：
+
+- **本地构建**：`CMakeLists.txt` 的 POST_BUILD 步骤从本机 Visual Studio 的
+  `VC\Redist\MSVC\<版本>\<架构>\Microsoft.VC143.CRT` 复制。该目录不存在时只发 WARNING，
+  可手动运行 `scripts\copy_vc_runtime.ps1` 补齐（参数见下）。
+- **CI**：`build.yml` / `release.yml` 调用同一个脚本，按两级来源补齐：
+  1. 本机 VS Redist（`vswhere` 定位，不依赖 `VCToolsRedistDir` 等机器级环境变量）；
+  2. 本机没有对应架构的 retail CRT 时（典型是 x64 runner 上编 ARM64），自动下载
+     微软官方 `vc_redist.<arch>.exe`，从 Burn bundle 内嵌 CAB 中提取。用 Windows 自带的
+     `expand.exe`，不引入 7-Zip / WiX 等额外工具。
+
+CI 脚本逐文件校验 PE 架构，仅在缺失或架构不符时覆盖；两级来源都拿不到就明确失败，
+不会静默产出缺 CRT 的包。
+
+常用参数：`-Arch x64|arm64`、`-Destination <输出目录>`（必填）、`-VerifyOnly`（只检查、不下载不写入）、
+`-RedistPackage <path>`（离线包）、`-OfficialOnly`（跳过本机 VS，强制统一用官方包版本）。
+官方 permalink 总指向最新 v14 可再发行包，与 v143～v145 工具集二进制兼容，但 CRT 小版本不锁定。
 
 ### 手动构建
 
 ```powershell
-# 安装依赖（ixwebsocket / nlohmann-json / zlib / mbedtls / kissfft）
-vcpkg install --triplet x64-windows
-vcpkg install --triplet arm64-windows
-
-# x64
-cmake --preset x64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\x64-windows"
+# 依赖仍由 bootstrap.ps1 准备，只是构建改用 CMake preset
+.\scripts\bootstrap.ps1 -Arch x64
+cmake --preset x64-Release
 cmake --build --preset x64-Release
 
-# ARM64
-cmake --preset ARM64-Release -DVCPKG_INSTALLED_DIR="D:\vcpkg\installed\arm64-windows"
+.\scripts\bootstrap.ps1 -Arch arm64
+cmake --preset ARM64-Release
 cmake --build --preset ARM64-Release
 ```
 
-> ixwebsocket 预编译库使用 MSVC 14.44 编译，项目需使用相同版本工具集。`CMakePresets.json` 已配置 `/p:PlatformToolsetVersion=14.44.35207`。
+> 默认不强制 MSVC 工具集版本，由 Visual Studio 自行选择。若 vcpkg 静态库与当前工具集出现链接不兼容，
+> 可显式指定：`$env:MKK_TOOLSET_VERSION='14.44.35207'; .\build.cmd release x64`。
 
 ### 测试、校验与打包
 
 ```powershell
-# 自动化测试
+# 测试默认关闭（避免每次 configure 联网探测 Catch2），首次需显式开启
+cmake --preset x64-Release -DBUILD_TESTING=ON
+cmake --build --preset x64-Release
 ctest --test-dir out\build\x64-Release -C Release --output-on-failure
 
 # 架构校验：逐文件检查根目录 / Launcher、x64、arm64 的 PE Machine 字段
 python scripts\verify_package.py moeKoe-taskbar-lyrics\
 
 # 打包：根目录同时包含 x64/ 与 arm64/ 即为双架构混合包
+# 输出名可自定义；build.cmd release all 默认产出 moeKoe-taskbar-lyrics.zip
 python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-x64-arm64.zip
 ```
 
-当前测试覆盖歌词解析、KRC 解析、频谱数学映射与 HTTP 服务生命周期。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
+`BUILD_TESTING` 默认 `OFF`；已有 `out\build\<preset>` 缓存会保留原值，所以开启一次后后续 `.\build.cmd release x64` 仍会连带构建测试。
+
+**例外**：Catch2 从 GitHub / gitee 都拉取失败且没有本地源码时，`CMakeLists.txt` 会 `set(BUILD_TESTING OFF ... FORCE)` 把缓存改回 `OFF` 并跳过测试。离线启用可用 `-DCATCH2_SOURCE_DIR=<path>` 指向本地 Catch2 v3.7.1 源码，或把源码放到 `third_party\catch2\`。
+
+**CI 不跑单元测试**：`build.yml` 与 `release.yml` 都不开启 `BUILD_TESTING`（默认 `OFF`），只构建主程序，不下载 Catch2、不编译测试二进制、不执行 `ctest`。测试是本地显式开启的能力——改动 `HttpLifecycle` 的线程生命周期或 `SingleInstance` 的接管逻辑后，请在本机按上面的命令跑一次 `ctest`；**CI 绿不代表这两处回归已验证**。
+
+当前测试覆盖歌词解析、KRC 解析、频谱数学映射、HTTP 服务生命周期与单实例启动/接管（含跨进程接管）。WASAPI、Direct2D 设备丢失与 Explorer 重启属于真实 Windows 环境集成测试范围。
 
 ## 界面预览
 
@@ -193,7 +259,7 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 | :---: | :---: | :---: |
 | ![双行歌词模式](Samples/sample1.gif "双行歌词模式") | ![单行歌词模式](Samples/sample2.gif "单行歌词模式") | ![双行歌词模式（歌词双语切换）](Samples/sample3.gif "双行歌词模式（歌词双语切换）") |
 
-| 设置页面 | 歌词窗口菜单 |托盘菜单 |
+| 设置页面 | 歌词窗口菜单 | 托盘菜单 |
 | :---: | :---: | :---: |
 | ![设置页面](Samples/sample4.png "设置页面") | ![菜单](Samples/sample6.png "菜单") | ![菜单](Samples/sample7.png "菜单") |
 
@@ -203,7 +269,6 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 - [项目状态文档](Docs/项目状态文档.md)
 - [版本更新日志](Docs/版本更新日志.md)
 - [常见问题自查](Docs/常见问题自查.md)
-- [高 DPI 测试矩阵](Docs/高DPI测试矩阵.md)
 - [计划书](Docs/计划书.md)
 
 ## 许可证
