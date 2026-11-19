@@ -3,9 +3,17 @@
 //
 // 职责:
 //   - 任务栏尺寸/位置/DPI/AutoHide 检测
-//   - UIA 子窗口枚举（GetChildRectsByUIA）
+//   - UIA 子窗口枚举（后台工作线程 + 快照缓存）
 //   - SetWinEventHook 监听任务栏变化
 //   - TaskbarInfo 结构体
+//
+// 线程模型（重要）：
+//   UIA 是无超时的跨进程 COM 调用，若在 UI 线程直接发起，可能与其他进程
+//   （如设置应用 immersivecontrolpanel）形成双向等待死锁（WER MoAppHangXProc）。
+//   因此所有 UIA 调用只在后台工作线程执行：
+//     - UI 线程通过 RequestUiaRefresh 非阻塞请求枚举（内部节流）
+//     - UI 线程通过 LoadFreshUiaSnapshot 读取快照（无锁等待，拿不到就降级）
+//     - UI 线程兜底路径使用 EnumChildWindows（不发送跨进程消息，安全）
 //
 // 拆分自 taskbar_window.h/cpp (A1)
 #pragma once
@@ -14,7 +22,11 @@
 #include <UIAutomation.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <memory>
+#include <mutex>
+#include <thread>
 
 namespace moekoe {
 
@@ -25,6 +37,33 @@ struct TaskbarInfo {
     TaskbarPosition position{TaskbarPosition::UNKNOWN};
     UINT            dpi{96};
     bool            autoHide{false};
+};
+
+// UIA 后台快照：由工作线程发布，UI 线程只读副本
+struct UiaSnapshot {
+    RECT taskList{}, tray{}, rebar{};
+    bool hasTaskList{false}, hasTray{false}, hasRebar{false};
+
+    // 稳定性二次采样（请求带 stability 标志时由工作线程完成）：
+    // 与第一次采样相隔约 2ms，用于检测任务栏动画期间的布局抖动
+    RECT tbCheck{};       bool tbCheckValid{false};
+    RECT taskListCheck{}; bool taskListCheckValid{false};
+
+    ULONGLONG tickMs{0};   // 快照完成时刻（GetTickCount64）
+    bool valid{false};     // 本次枚举是否成功
+};
+
+// 工作线程共享状态：UI 线程与工作线程都只通过该结构交互，
+// 线程函数仅捕获 shared_ptr 副本，分离后依然安全（不触碰所属对象）
+struct UiaWorkerState {
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool stop{false};
+    bool pending{false};
+    HWND hwnd{nullptr};
+    int  tbWidth{0};
+    bool stability{false};
+    UiaSnapshot snap;
 };
 
 class TaskbarGeometry {
@@ -43,26 +82,25 @@ public:
     TaskbarInfo Detect(HWND hTaskbar);
     TaskbarInfo GetInfo() const { return info_; }
 
-    // UIA 初始化/清理
-    void InitUIA();
-    void CleanupUIA();
-    IUIAutomation* GetUIA() const { return uia_; }
-
-    // 使用 UIA 枚举任务栏子窗口，获取关键区域的屏幕矩形。
-    // hTaskbar 指定目标任务栏（主 Shell_TrayWnd 或副屏 Shell_SecondaryTrayWnd），
-    // 避免多显示器下固定查找主任务栏导致副屏定位错位。
-    bool GetChildRectsByUIA(HWND hTaskbar,
-                            RECT& taskListRect, bool& foundTaskList,
-                            RECT& trayRect,    bool& foundTray,
-                            RECT& rebarRect,   bool& foundRebar,
-                            int   tbWidth);
-
-    // UIA 节流缓存：返回 true 表示应重新枚举
-    bool IsUiaCacheExpired(int intervalMs = 200);
-
-    // 更新/读取 UIA 缓存
-    void CacheUiaResults(RECT taskList, bool hasTL, RECT tray, bool hasTray, RECT rebar, bool hasRebar);
-    void LoadUiaCache(RECT& taskList, bool& hasTL, RECT& tray, bool& hasTray, RECT& rebar, bool& hasRebar);
+    // ── 后台 UIA 工作线程接口（UI 线程调用，全部非阻塞） ──
+    // 非阻塞请求一次后台 UIA 枚举；intervalMs 内的重复请求被节流忽略。
+    // stability=true 时工作线程附带 2ms 间隔的二次采样（帧锁定用）。
+    void RequestUiaRefresh(HWND hTaskbar, int tbWidth, bool stability,
+                           int intervalMs = 200);
+    // 读取 maxAgeMs 内的快照副本；无快照/过期返回 false（调用方应走枚举兜底）
+    bool LoadFreshUiaSnapshot(UiaSnapshot& out, int maxAgeMs);
+    // EnumChildWindows 枚举兜底（GetClassNameW/GetWindowRect 不发送跨进程消息，
+    // UI 线程可安全调用；Win11 任务栏为虚拟化子窗口时可能查不到关键区域）
+    bool GetChildRectsByEnum(HWND hTaskbar,
+                             RECT& taskListRect, bool& foundTaskList,
+                             RECT& trayRect,    bool& foundTray,
+                             RECT& rebarRect,   bool& foundRebar,
+                             int   tbWidth);
+    // 仅查找任务列表子窗口（帧锁定二次采样的枚举兜底用）
+    bool EnumFindTaskList(HWND hTaskbar, int tbWidth, RECT& out);
+    // 停止工作线程。工作线程可能正阻塞在无超时的 UIA 调用上，
+    // 因此不等待 join：分离线程，状态由 shared_ptr 保活（线程不触碰 this）
+    void ShutdownUiaWorker();
 
     // 自动隐藏状态
     bool IsAutoHide() const { return info_.autoHide; }
@@ -75,24 +113,13 @@ public:
                info_.position == TaskbarPosition::RIGHT;
     }
 
-    // 静态事件钩子引用（实际定义在 taskbar_window.h/cpp 中，此处为兼容引用）
-    // InstallTaskbarHook/RemoveTaskbarHook 委托给 TaskbarWindow 的实现
-
 private:
     TaskbarInfo info_{};
     bool        taskbarVisible_{true};
 
-    IUIAutomation* uia_{nullptr};
-
-    // UIA 缓存
-    std::chrono::steady_clock::time_point lastUiaRefreshTime_{};
-    RECT  cachedTaskListRect_{};
-    RECT  cachedTrayRect_{};
-    RECT  cachedRebarRect_{};
-    bool  cachedTaskListValid_{false};
-    bool  cachedTrayValid_{false};
-    bool  cachedRebarValid_{false};
-    bool  cachedUiaValid_{false};
+    std::shared_ptr<UiaWorkerState> state_{};
+    std::thread   worker_{};
+    ULONGLONG     lastRequestTick_{0};   // 请求节流（仅 UI 线程访问）
 };
 
 } // namespace moekoe

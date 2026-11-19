@@ -200,8 +200,8 @@ bool ShellCompanion::Initialize(HWND hTaskbar, HWND lyricsWnd) {
 
     hTaskbar_ = hTaskbar;
 
-    // 初始化 UIA
-    geometry_.InitUIA();
+    // UIA 由后台工作线程自建（COM + IUIAutomation 均在工作线程上），
+    // UI 线程不再直接初始化或调用 UIA
 
     // 检测任务栏几何信息
     info_ = geometry_.Detect(hTaskbar_);
@@ -221,7 +221,7 @@ bool ShellCompanion::Initialize(HWND hTaskbar, HWND lyricsWnd) {
 void ShellCompanion::Shutdown() {
     s_instance_ = nullptr;
     RemoveHooks();
-    geometry_.CleanupUIA();
+    geometry_.ShutdownUiaWorker();
 }
 
 // ═════════════════════════════════════════
@@ -365,79 +365,57 @@ void ShellCompanion::PositionLyricsInTaskbar(
     const int tbWidth  = tbRect.right  - tbRect.left;
     const int tbHeight = tbRect.bottom - tbRect.top;
 
-    // ── P2 节流：UIA 枚举委托 geometry_ ──
-    // 兼容模式 NoUIA：延长节流到 1000ms，使用 EnumChildWindows 代替 UIA
+    // ── P2 节流：UIA 枚举委托后台工作线程 ──
+    // UIA（ElementFromHandle/FindAll/BoundingRectangle）是无超时的跨进程 COM，
+    // 若在 UI 线程直接发起，会与设置应用等前台 XAML 窗口形成双向等待死锁
+    // （WER MoAppHangXProc：本程序 ↔ immersivecontrolpanel，任务栏自动隐藏
+    // 切换时卡死）。因此 UI 线程只做两件安全的事：
+    //   1) 非阻塞请求后台枚举（内部 200ms 节流）
+    //   2) 读取工作线程发布的快照
+    // 快照缺失/过期时降级到 EnumChildWindows（不发送跨进程消息，UI 线程安全）
     RECT taskListRect = {};
     bool foundTaskList = false;
     RECT trayRect = {};
     bool foundTray = false;
     RECT rebarRect = {};
     bool foundRebar = false;
+    RECT tbCheck{};           bool tbCheckValid = false;
+    RECT taskListCheck{};     bool taskListCheckValid = false;
 
-    const int uiaInterval = HasCompatFlag(CompatNoUIA) ? 1000 : 200;
-    const bool uiaExpired = geometry_.IsUiaCacheExpired(uiaInterval);
-    if (uiaExpired) {
-        if (HasCompatFlag(CompatNoUIA)) {
-            // 兼容模式：强制使用 EnumChildWindows（跳过 UIA）
-            // 临时置空 UIA 指针，GetChildRectsByUIA 会自动降级到 EnumChildWindows
-            IUIAutomation* savedUia = geometry_.GetUIA();
-            geometry_.CleanupUIA();
-            geometry_.GetChildRectsByUIA(hTaskbar_, taskListRect, foundTaskList,
-                                         trayRect, foundTray,
-                                         rebarRect, foundRebar, tbWidth);
-            // 恢复 UIA（下次非兼容模式时可用）
-            if (savedUia) geometry_.InitUIA();
-        } else {
-            geometry_.GetChildRectsByUIA(hTaskbar_, taskListRect, foundTaskList,
-                                         trayRect, foundTray,
-                                         rebarRect, foundRebar, tbWidth);
-        }
-        geometry_.CacheUiaResults(taskListRect, foundTaskList,
-                                  trayRect, foundTray,
-                                  rebarRect, foundRebar);
+    if (HasCompatFlag(CompatNoUIA)) {
+        // 兼容模式：不使用 UIA，UI 线程直接 EnumChildWindows
+        geometry_.GetChildRectsByEnum(hTaskbar_, taskListRect, foundTaskList,
+                                      trayRect, foundTray,
+                                      rebarRect, foundRebar, tbWidth);
     } else {
-        geometry_.LoadUiaCache(taskListRect, foundTaskList,
-                               trayRect, foundTray,
-                               rebarRect, foundRebar);
+        geometry_.RequestUiaRefresh(hTaskbar_, tbWidth,
+                                    !HasCompatFlag(CompatNoFrameLock));
+        UiaSnapshot snap;
+        if (geometry_.LoadFreshUiaSnapshot(snap, 1000)) {
+            taskListRect = snap.taskList; foundTaskList = snap.hasTaskList;
+            trayRect    = snap.tray;      foundTray    = snap.hasTray;
+            rebarRect   = snap.rebar;     foundRebar   = snap.hasRebar;
+            tbCheck = snap.tbCheck;             tbCheckValid = snap.tbCheckValid;
+            taskListCheck = snap.taskListCheck; taskListCheckValid = snap.taskListCheckValid;
+        } else {
+            // 启动初期 / UIA 不可用 / 快照过期：UI 线程 EnumChildWindows 兜底
+            geometry_.GetChildRectsByEnum(hTaskbar_, taskListRect, foundTaskList,
+                                          trayRect, foundTray,
+                                          rebarRect, foundRebar, tbWidth);
+        }
     }
 
     // ── 帧锁定（扩展）：双采样检测任务栏本体 + 任务列表子窗口的稳定性 ──
     // 兼容模式 NoFrameLock：跳过双采样（修改后的 Shell 容易误判为不稳定）
-    if (uiaExpired && !HasCompatFlag(CompatNoFrameLock)) {
-        RECT tbCheck{};
-        ::Sleep(2);
-        ::GetWindowRect(hTaskbar_, &tbCheck);
-
-        RECT taskListCheck{};
-        bool taskListCheckValid = false;
-        if (foundTaskList) {
-            // 二次 UIA 查询
-            bool fTL2, fTR2, fRB2;
-            RECT tl2, tr2, rb2;
-            geometry_.GetChildRectsByUIA(hTaskbar_, tl2, fTL2, tr2, fTR2, rb2, fRB2, tbWidth);
-            if (fTL2) { taskListCheck = tl2; taskListCheckValid = true; }
-            else if (foundTaskList) {
-                // UIA 失败降级：用 EnumChildWindows 做二次采样
-                HWND hChild2 = ::GetWindow(hTaskbar_, GW_CHILD);
-                while (hChild2) {
-                    if (::IsWindowVisible(hChild2)) {
-                        wchar_t cname[256] = {};
-                        ::GetClassNameW(hChild2, cname, 255);
-                        bool match = (wcscmp(cname, L"MSTaskListWClass") == 0);
-                        if (!match && wcscmp(cname,
-                                L"Windows.UI.Composition.DesktopWindowContentBridge") == 0) {
-                            RECT cr{};
-                            ::GetWindowRect(hChild2, &cr);
-                            if ((cr.right - cr.left) < tbWidth - 10) match = true;
-                        }
-                        if (match) {
-                            ::GetWindowRect(hChild2, &taskListCheck);
-                            taskListCheckValid = true;
-                            break;
-                        }
-                    }
-                    hChild2 = ::GetWindow(hChild2, GW_HWNDNEXT);
-                }
+    if (!HasCompatFlag(CompatNoFrameLock)) {
+        if (!tbCheckValid) {
+            // 枚举兜底路径：UI 线程自做二次采样
+            //（GetWindowRect/EnumChildWindows 不发送跨进程消息，可安全执行）
+            ::Sleep(2);
+            tbCheckValid = ::GetWindowRect(hTaskbar_, &tbCheck) != 0;
+            if (foundTaskList) {
+                taskListCheckValid = geometry_.EnumFindTaskList(hTaskbar_, tbWidth,
+                                                                taskListCheck);
             }
         }
 
@@ -467,7 +445,7 @@ void ShellCompanion::PositionLyricsInTaskbar(
                 stableTaskListValid_ = true;
             }
         }
-    } else if (uiaExpired && HasCompatFlag(CompatNoFrameLock)) {
+    } else {
         // 兼容模式：跳过双采样，直接信任当前测量值
         stableTaskbarRect_ = tbRect;
     }
