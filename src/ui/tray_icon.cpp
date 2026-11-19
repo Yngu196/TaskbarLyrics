@@ -38,12 +38,12 @@ TrayIcon::~TrayIcon() {
 HICON TrayIcon::LoadAppIcon(bool* fromFile) {
     if (fromFile) *fromFile = false;
 
-    // 1) 尝试 EXE 所在目录的 resources/icon.ico
+    // 1) 尝试 EXE 所在目录的 icons/icon.ico
     wchar_t exeDir[MAX_PATH] = {0};
     ::GetModuleFileNameW(nullptr, exeDir, MAX_PATH);
     wchar_t* slash = wcsrchr(exeDir, L'\\');
     if (slash) *slash = L'\0';
-    std::wstring iconPath = std::wstring(exeDir) + L"\\resources\\icon.ico";
+    std::wstring iconPath = std::wstring(exeDir) + L"\\icons\\icon.ico";
 
     HICON hIcon = static_cast<HICON>(::LoadImageW(
         nullptr, iconPath.c_str(), IMAGE_ICON,

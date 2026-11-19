@@ -64,7 +64,7 @@ MoeKoeMusic-TaskbarLyrics/
 │   ├── popup.* / content.js / audio-bridge.js
 │   ├── native-bridge.html/js  #   background ↔ Electron preload ↔ main 的中转
 │   ├── MoeKoeTaskbarLyrics.exe # 根目录 x64 Launcher（构建产物）
-│   └── x64/  arm64/  icons/  resources/   # 各架构主程序 + 运行时 DLL（构建产物）
+│   └── x64/  arm64/  icons/               # 各架构主程序 + 运行时 DLL + 运行时图标（构建产物）
 ├── scripts/
 │   ├── bootstrap.ps1          # 干净克隆 → 依赖就位（vcpkg classic + submodule）
 │   ├── vcpkg_contract.ps1     # 依赖契约：读 vcpkg.json 的包名 + 唯一一份 12 文件清单

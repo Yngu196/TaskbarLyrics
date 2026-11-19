@@ -499,14 +499,14 @@ install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION bin)
 install(DIRECTORY icons/ DESTINATION share/MoeKoeTaskbarLyrics OPTIONAL)
 
 # 后构建事件:复制资源到输出目录
-# 运行时布局保持 <exeDir>/resources/（tray_icon.cpp 按该路径加载 icon.ico），源文件取自仓库 icons/
+# 运行时布局保持 <exeDir>/icons/（tray_icon.cpp 按该路径加载 icon.ico），源文件取自仓库 icons/
 if(MSVC)
     if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/icons)
         add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_directory
                 ${CMAKE_CURRENT_SOURCE_DIR}/icons
-                $<TARGET_FILE_DIR:${PROJECT_NAME}>/resources
-            COMMENT "Copying icons to output resources directory")
+                $<TARGET_FILE_DIR:${PROJECT_NAME}>/icons
+            COMMENT "Copying icons to output icons directory")
     endif()
 
     # 复制运行时 DLL 到输出目录

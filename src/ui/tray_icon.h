@@ -81,7 +81,7 @@ public:
     // 消息循环: 处理托盘回调(由主循环调用)
     void OnTrayMessage(HWND hwnd, WPARAM wParam, LPARAM lParam);
 
-    // 加载图标(优先从 resources/icon.ico)
+    // 加载图标(优先从 icons/icon.ico)
     // fromFile 非空时输出图标来源：true=私有图标(LR_LOADFROMFILE，需 DestroyIcon)，
     // false=共享图标(LoadIconW，不可销毁)
     HICON LoadAppIcon(bool* fromFile = nullptr);
