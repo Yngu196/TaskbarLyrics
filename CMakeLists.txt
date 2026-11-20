@@ -297,11 +297,11 @@ set_target_properties(nlohmann_json::nlohmann_json PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${NLOHMANN_JSON_INCLUDE_DIR}")
 message(STATUS "Found nlohmann_json: ${NLOHMANN_JSON_INCLUDE_DIR}")
 
-# 7. cpp-httplib（header-only，用于替代手写 HTTP 解析）
+# 7. cpp-httplib（header-only，vcpkg port 提供，避免 vendored 单头文件进入本仓库）
 find_path(HTTPLIB_INCLUDE_DIR httplib.h
-    PATHS "${CMAKE_SOURCE_DIR}/third_party/httplib" NO_DEFAULT_PATH)
+    PATHS "${VCPKG_INSTALLED_DIR}/include" NO_DEFAULT_PATH)
 if(NOT HTTPLIB_INCLUDE_DIR)
-    message(FATAL_ERROR "httplib not found in third_party/httplib")
+    message(FATAL_ERROR "httplib not found in vcpkg installed directory (run: vcpkg install cpp-httplib[core])")
 endif()
 add_library(httplib::httplib INTERFACE IMPORTED)
 set_target_properties(httplib::httplib PROPERTIES
