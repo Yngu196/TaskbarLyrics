@@ -346,6 +346,33 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     c2->SetVisible(!isCard);
     AddChild(std::move(c2));
 
+    // Card: 预设主题（快速应用高亮/普通颜色组合，与上方「颜色」卡联动）
+    auto c4 = MakeCard("预设主题");
+    c4->id = "themePresets";
+    {
+        auto tp = std::make_unique<ThemePresets>();
+        tp->id = "themePresets";
+        tp->presets = {
+            {HexToColorF("#4CC2FF"), HexToColorF("#FFFFFF"), "默认"},
+            {HexToColorF("#EC4141"), HexToColorF("#FFFFFF"), "网易云红"},
+            {HexToColorF("#31C27C"), HexToColorF("#FFFFFF"), "QQ音乐绿"},
+            {HexToColorF("#FF9800"), HexToColorF("#FFFFFF"), "暖橙"},
+            {HexToColorF("#E040FB"), HexToColorF("#E0E0E0"), "紫罗兰"},
+            {HexToColorF("#00E676"), HexToColorF("#B0BEC5"), "薄荷"},
+        };
+        // 检查当前是否匹配某个预设
+        for (int i = 0; i < static_cast<int>(tp->presets.size()); ++i) {
+            if (ColorFToHex(tp->presets[i].hlColor) == a.highlightColor &&
+                ColorFToHex(tp->presets[i].nlColor) == a.normalColor) {
+                tp->selectedIndex = i;
+                break;
+            }
+        }
+        c4->AddChild(std::move(tp));
+    }
+    c4->SetVisible(!isCard);
+    AddChild(std::move(c4));
+
     // Card: 长歌词滚动
     auto c3 = MakeCard("长歌词滚动");
     c3->id = "marqueeCard";
@@ -398,7 +425,7 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     UpdateMarqueeVisibility(a.enableMarquee, a.marqueeMode);
 
     // Card: 歌词位置（仅单行）
-    auto cLyricPos = MakeCard("歌词位置");
+    auto cLyricPos = MakeCard("歌词位置（单行）");
     cLyricPos->id = "karaokeOffset";
     {
         auto s = std::make_unique<Slider>();
@@ -425,33 +452,6 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     }
     cSingleBg->SetVisible(!isCard);
     AddChild(std::move(cSingleBg));
-
-    // Card: 预设主题
-    auto c4 = MakeCard("预设主题");
-    c4->id = "themePresets";
-    {
-        auto tp = std::make_unique<ThemePresets>();
-        tp->id = "themePresets";
-        tp->presets = {
-            {HexToColorF("#4CC2FF"), HexToColorF("#FFFFFF"), "默认"},
-            {HexToColorF("#EC4141"), HexToColorF("#FFFFFF"), "网易云红"},
-            {HexToColorF("#31C27C"), HexToColorF("#FFFFFF"), "QQ音乐绿"},
-            {HexToColorF("#FF9800"), HexToColorF("#FFFFFF"), "暖橙"},
-            {HexToColorF("#E040FB"), HexToColorF("#E0E0E0"), "紫罗兰"},
-            {HexToColorF("#00E676"), HexToColorF("#B0BEC5"), "薄荷"},
-        };
-        // 检查当前是否匹配某个预设
-        for (int i = 0; i < static_cast<int>(tp->presets.size()); ++i) {
-            if (ColorFToHex(tp->presets[i].hlColor) == a.highlightColor &&
-                ColorFToHex(tp->presets[i].nlColor) == a.normalColor) {
-                tp->selectedIndex = i;
-                break;
-            }
-        }
-        c4->AddChild(std::move(tp));
-    }
-    c4->SetVisible(!isCard);
-    AddChild(std::move(c4));
 
     // ── 双行歌词区域 ──
 
@@ -530,7 +530,7 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
     AddChild(std::move(c7));
 
     // Card: 歌词位置（仅双行）
-    auto cCardOffset = MakeCard("歌词位置");
+    auto cCardOffset = MakeCard("歌词位置（双行）");
     cCardOffset->id = "cardLineOffset";
     {
         auto s = std::make_unique<Slider>();
@@ -877,7 +877,7 @@ void WindowPage::UpdateVisibility(const std::string& selectionMode) {
 }
 
 // ═══════════════════════════════════════
-// 页面 4：行为
+// 页面 5：行为
 // ═══════════════════════════════════════
 
 void BehaviorPage::BuildContent(const moekoe::Config& cfg) {
@@ -897,11 +897,20 @@ void BehaviorPage::BuildContent(const moekoe::Config& cfg) {
     // Card: 窗口行为
     auto c2 = MakeCard("窗口行为");
     {
-        auto t = std::make_unique<Toggle>();
-        t->id = "enableFullscreenHide";
-        t->label = "全屏时自动隐藏";
-        t->value = adv.enableFullscreenHide;
-        c2->AddChild(std::move(t));
+        // 二选一（单个配置位 alwaysShowLyrics：false=绑定 / true=置顶）
+        auto cb = std::make_unique<ComboBox>();
+        cb->id = "displayBinding";
+        cb->label = "歌词显示模式";
+        cb->items = {"与任务栏绑定", "始终置顶"};
+        cb->selectedIndex = adv.alwaysShowLyrics ? 1 : 0;
+        c2->AddChild(std::move(cb));
+    }
+    {
+        auto hint = std::make_unique<TextBlock>();
+        hint->id = "displayBindingHint";
+        hint->text = "与任务栏绑定：全屏或任务栏自动隐藏时歌词跟随隐藏；始终置顶：歌词保持最后可见位置继续显示";
+        hint->style = TextBlock::Style::Caption;
+        c2->AddChild(std::move(hint));
     }
     AddChild(std::move(c2));
 }
@@ -911,15 +920,16 @@ void BehaviorPage::CollectChanges(moekoe::Config& cfg) {
     for (auto& card : children_) {
         for (auto& child : card->Children()) {
             if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "autoStart")           cfg.SetAutoStart(t->value);
-                else if (t->id == "enableFullscreenHide") adv.enableFullscreenHide = t->value;
+                if (t->id == "autoStart") cfg.SetAutoStart(t->value);
+            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                if (cb->id == "displayBinding") adv.alwaysShowLyrics = (cb->selectedIndex == 1);
             }
         }
     }
 }
 
 // ═══════════════════════════════════════
-// 页面 5：高级
+// 页面 6：高级
 // ═══════════════════════════════════════
 
 void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
@@ -1025,7 +1035,7 @@ void AdvancedPage::CollectChanges(moekoe::Config& cfg) {
 }
 
 // ═══════════════════════════════════════
-// 页面 6：关于
+// 页面 7：关于
 // ═══════════════════════════════════════
 
 void AboutPage::BuildContent(const moekoe::Config& cfg) {

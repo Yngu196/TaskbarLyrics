@@ -28,6 +28,9 @@ RECT            ShellCompanion::s_frozenTaskbarRect_{};
 RECT            ShellCompanion::s_lastGoodTaskbarRect_{};
 bool            ShellCompanion::s_lockedByStartMenuFg_        = false;
 
+// 自动隐藏判定：任务栏在屏幕内的可见部分小于该值视为已隐藏（px）
+constexpr int kAutoHideVisibleMinPx = 10;
+
 // ═════════════════════════════════════════
 // WinEvent 回调
 // ═════════════════════════════════════════
@@ -288,7 +291,16 @@ void ShellCompanion::CheckResize(HWND lyricsWnd) {
 
     RECT tb{};
     ::GetWindowRect(hTaskbar_, &tb);
-    if (!::EqualRect(&tb, &lastTaskbarRect_)) {
+
+    // 始终置顶：任务栏滑出屏幕时用最后可见矩形参与比较，
+    // 避免隐藏期间每帧重复触发重定位
+    RECT tbEff = tb;
+    if (taskbarAutoHide_ && alwaysShowLyrics_ && !ComputeTaskbarVisible(tb) &&
+        lastVisibleTbRect_.right > lastVisibleTbRect_.left) {
+        tbEff = lastVisibleTbRect_;
+    }
+
+    if (!::EqualRect(&tbEff, &lastTaskbarRect_)) {
         LogDebug("[SHELL-COMPANION] CheckResize: rect changed "
                  "old=(%d,%d,%d,%d) new=(%d,%d,%d,%d) → posting WM_DELAYED_REPOSITION\n",
                  lastTaskbarRect_.left, lastTaskbarRect_.top,
@@ -299,9 +311,7 @@ void ShellCompanion::CheckResize(HWND lyricsWnd) {
         RequestReposition(lyricsWnd);
     } else if (taskbarAutoHide_) {
         // 自动隐藏模式：即使矩形未变，任务栏可能已滑出/滑入
-        const int tbH = tb.bottom - tb.top;
-        constexpr int kAutoHideThreshold = 10;
-        const bool tbIsVisible = (tbH >= kAutoHideThreshold);
+        const bool tbIsVisible = ComputeTaskbarVisible(tb);
         if (tbIsVisible != taskbarVisible_) {
             // 通知外部进行重定位（通过回调或直接触发）
             if (onReposition_) onReposition_();
@@ -316,6 +326,48 @@ void ShellCompanion::CheckResize(HWND lyricsWnd) {
 void ShellCompanion::DetectTaskbarInfo() {
     info_ = geometry_.Detect(hTaskbar_);
     taskbarAutoHide_ = info_.autoHide;
+}
+
+// ── 自动隐藏可见性检测（Win11 滑出式） ──
+
+bool ShellCompanion::GetTaskbarMonitorRect(RECT& rcMonitor) const {
+    if (!hTaskbar_) return false;
+    HMONITOR hMon = ::MonitorFromWindow(hTaskbar_, MONITOR_DEFAULTTONEAREST);
+    if (!hMon) return false;
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (!::GetMonitorInfoW(hMon, &mi)) return false;
+    rcMonitor = mi.rcMonitor;
+    return true;
+}
+
+bool ShellCompanion::ComputeTaskbarVisible(const RECT& tb) const {
+    RECT mon{};
+    if (!GetTaskbarMonitorRect(mon)) {
+        // 无法获取显示器信息：退回旧的“尺寸阈值”判断（Win10 行为）
+        const int size = (info_.position == TaskbarPosition::LEFT ||
+                          info_.position == TaskbarPosition::RIGHT)
+                             ? (tb.right - tb.left) : (tb.bottom - tb.top);
+        return size >= kAutoHideVisibleMinPx;
+    }
+    int visible = 0;
+    switch (info_.position) {
+    case TaskbarPosition::TOP:    visible = tb.bottom - mon.top;    break;
+    case TaskbarPosition::LEFT:   visible = tb.right - mon.left;    break;
+    case TaskbarPosition::RIGHT:  visible = mon.right - tb.left;    break;
+    case TaskbarPosition::BOTTOM:
+    default:                      visible = mon.bottom - tb.top;    break;
+    }
+    return visible >= kAutoHideVisibleMinPx;
+}
+
+bool ShellCompanion::TaskbarFullyOnScreen(const RECT& tb) const {
+    RECT mon{};
+    if (!GetTaskbarMonitorRect(mon)) return true;  // 无法判断时保守记录
+    return tb.left  >= mon.left  - 2 &&
+           tb.top   >= mon.top   - 2 &&
+           tb.right <= mon.right + 2 &&
+           tb.bottom <= mon.bottom + 2;
 }
 
 void ShellCompanion::PositionLyricsInTaskbar(
@@ -346,18 +398,25 @@ void ShellCompanion::PositionLyricsInTaskbar(
     if (taskbarAutoHide_) {
         RECT tbCurrent{};
         ::GetWindowRect(hTaskbar_, &tbCurrent);
-        const int tbSize = (info_.position == TaskbarPosition::LEFT ||
-                            info_.position == TaskbarPosition::RIGHT)
-                               ? (tbCurrent.right - tbCurrent.left)
-                               : (tbCurrent.bottom - tbCurrent.top);
-        constexpr int kAutoHideThreshold = 10;
-        taskbarVisible_ = (tbSize >= kAutoHideThreshold);
+        // Win11 自动隐藏任务栏滑出屏幕时窗口尺寸不变（仅位置移出），
+        // 高度阈值检测失效 → 按“屏幕内可见部分”判断
+        taskbarVisible_ = ComputeTaskbarVisible(tbCurrent);
     } else {
         taskbarVisible_ = true;
     }
 
     RECT tbRect{};
     ::GetWindowRect(hTaskbar_, &tbRect);
+
+    // ── 始终置顶：任务栏滑出屏幕时保持歌词在最后可见位置 ──
+    // 任务栏完整在屏幕内时记录矩形（滑动过程中间帧不记录，避免记录到
+    // 半滑出状态）；已滑出且开启置顶时，用最后可见矩形替代当前矩形
+    if (TaskbarFullyOnScreen(tbRect)) {
+        lastVisibleTbRect_ = tbRect;
+    } else if (taskbarAutoHide_ && !taskbarVisible_ && alwaysShowLyrics_ &&
+               lastVisibleTbRect_.right > lastVisibleTbRect_.left) {
+        tbRect = lastVisibleTbRect_;
+    }
 
     lastTaskbarRect_ = tbRect;
     // 同步稳定 rect 到静态缓存，供 ShellMenuWinEventProc 冻结快照使用

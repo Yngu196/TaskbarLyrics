@@ -85,6 +85,10 @@ public:
     // APPBAR 自动隐藏状态查询（供主循环判断是否应跳过渲染）
     bool IsAutoHideHidden() const { return companion_.IsAutoHideHidden(); }
 
+    // 始终置顶（供主循环同步配置到定位层）
+    void SetAlwaysShowLyrics(bool v) { companion_.SetAlwaysShowLyrics(v); }
+    bool AlwaysShowLyrics() const { return companion_.IsAlwaysShowLyrics(); }
+
     // 全屏检测隐藏状态查询（供主循环判断是否应跳过渲染）
     bool IsFullscreenHidden() const { return companion_.IsFullscreenHidden(); }
     void SetFullscreenHidden(bool hidden) { companion_.SetFullscreenHidden(hidden, hwnd_); }

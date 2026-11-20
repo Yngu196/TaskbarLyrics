@@ -41,6 +41,10 @@ public:
     TaskbarInfo GetTaskbarInfo() const { return info_; }
     bool IsFullscreenHidden() const { return embedder_.IsFullscreenHidden(); }
     bool IsAutoHideHidden()  const { return taskbarAutoHide_ && !taskbarVisible_; }
+
+    // 始终置顶：任务栏自动隐藏/滑出屏幕时，歌词窗口保持在最后可见位置继续显示
+    void SetAlwaysShowLyrics(bool v) { alwaysShowLyrics_ = v; }
+    bool IsAlwaysShowLyrics() const { return alwaysShowLyrics_; }
     bool IsVerticalTaskbar() const {
         return info_.position == TaskbarPosition::LEFT ||
                info_.position == TaskbarPosition::RIGHT;
@@ -106,6 +110,16 @@ private:
     // ── 内部方法 ──
     void DetectTaskbarInfo();
 
+    // ── 自动隐藏可见性检测（Win11 滑出式） ──
+    // Win11 自动隐藏任务栏滑出屏幕时窗口尺寸不变（仅位置移出屏幕），
+    // 高度阈值检测失效，必须按“屏幕内可见部分”判断。
+    // 返回任务栏所在显示器的矩形；失败返回 false
+    bool GetTaskbarMonitorRect(RECT& rcMonitor) const;
+    // 任务栏在屏幕内的可见部分是否 ≥ kAutoHideVisibleMinPx
+    bool ComputeTaskbarVisible(const RECT& tbCurrent) const;
+    // 任务栏矩形是否完整位于屏幕内（用于记录“最后可见位置”）
+    bool TaskbarFullyOnScreen(const RECT& tbRect) const;
+
     // ── WinEvent 钩子基础设施 ──
     void InstallHooks(HWND lyricsWnd);
     void RemoveHooks();
@@ -127,6 +141,10 @@ private:
     TaskbarInfo info_{};
     bool        taskbarAutoHide_{false};
     bool        taskbarVisible_{false};
+
+    // 始终置顶状态与最后可见位置（任务栏滑出屏幕时替代当前矩形）
+    bool        alwaysShowLyrics_{false};
+    RECT        lastVisibleTbRect_{};   // 任务栏最后一次可见时的矩形
     RECT        lastTaskbarRect_{0, 0, 0, 0};
 
     // 稳定性跟踪（帧锁定双采样）

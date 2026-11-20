@@ -225,6 +225,24 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         }
         break;
     }
+    case ID_MENU_ALWAYS_TOP: {
+        const bool newState = !app.config->Advanced().alwaysShowLyrics;
+        app.config->MutableAdvanced().alwaysShowLyrics = newState;
+        app.config->Save();
+        if (app.taskbarWindow) {
+            app.taskbarWindow->SetAlwaysShowLyrics(newState);
+            if (newState && app.taskbarWindow->IsFullscreenHidden()) {
+                // 清除开关关闭期间残留的全屏隐藏状态
+                app.taskbarWindow->SetFullscreenHidden(false);
+                app.taskbarWindow->InvalidatePositionCache();
+                app.taskbarWindow->Reposition();
+            }
+        }
+        if (app.tray) {
+            app.tray->SetMenuCheckedAlwaysTop(newState);
+        }
+        break;
+    }
     case ID_MENU_EXIT: {
         // 不能在此调用 PostQuitMessage(0)：当前处在 TrackPopupMenuEx 的
         // 模态消息循环中，WM_QUIT 会被其内部 GetMessage 吞掉，导致回到

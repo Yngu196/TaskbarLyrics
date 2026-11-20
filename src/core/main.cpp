@@ -250,6 +250,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
     taskbarWindow.SetFullyLocked(config.Position().lockFully);
     tray.SetMenuCheckedLockPos(config.Position().lockPosition);
     tray.SetMenuCheckedLockFull(config.Position().lockFully);
+    tray.SetMenuCheckedAlwaysTop(config.Advanced().alwaysShowLyrics);
 
     // 拖动结束时保存位置偏移到配置
     taskbarWindow.OnDragEnd([&]() {

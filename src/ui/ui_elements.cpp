@@ -871,6 +871,16 @@ void LabelRow::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
                       valBrush.Get());
     }
 
+    // 可点击暗示：值右侧的「›」小箭头（只读行不显示），提示点击可修改
+    if (!readOnly) {
+        auto chevronBrush = MakeBrush(rt, ctx.TextSecondary());
+        const float cx = x_ + w_ - 9, cy = y_ + h_ / 2;
+        rt->DrawLine(D2D1::Point2F(cx - 2.5f, cy - 4), D2D1::Point2F(cx + 0.5f, cy),
+                     chevronBrush.Get(), 1.5f);
+        rt->DrawLine(D2D1::Point2F(cx + 0.5f, cy), D2D1::Point2F(cx - 2.5f, cy + 4),
+                     chevronBrush.Get(), 1.5f);
+    }
+
     // 悬停高亮（非只读时）
     if (hovered && !readOnly) {
         auto hoverBrush = MakeBrush(rt, D2D1::ColorF(1, 1, 1, 0.04f));

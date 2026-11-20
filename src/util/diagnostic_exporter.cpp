@@ -138,7 +138,7 @@ std::string BuildConfigSnapshot(const Config& config) {
     ss << "  httpServerPort: " << config.Advanced().httpServerPort << "\n";
     ss << "  refreshRateHz: " << config.Advanced().refreshRateHz << "\n";
     ss << "  debugLog: " << (config.Advanced().debugLog ? "true" : "false") << "\n";
-    ss << "  enableFullscreenHide: " << (config.Advanced().enableFullscreenHide ? "true" : "false") << "\n";
+    ss << "  alwaysShowLyrics: " << (config.Advanced().alwaysShowLyrics ? "true" : "false") << "\n";
 
     ss << "\n=== Position ===\n";
     ss << "  offsetX: " << config.Position().offsetX << "\n";

@@ -115,7 +115,10 @@ struct AdvancedConfig {
     int  httpServerPort{6523};
     int  refreshRateHz{constants::DEFAULT_REFRESH_RATE_HZ};
     bool debugLog{false};
-    bool enableFullscreenHide{true};  // 全屏时自动隐藏歌词
+    // 歌词显示模式（二选一）：
+    //   false = 与任务栏绑定（默认）：全屏 / 任务栏自动隐藏时歌词跟随隐藏
+    //   true  = 始终置顶：全屏 / 任务栏自动隐藏时歌词仍显示（保持最后可见位置）
+    bool alwaysShowLyrics{false};
 };
 
 // 歌词窗口位置偏移（用户可拖动调整）

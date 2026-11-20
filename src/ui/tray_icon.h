@@ -34,6 +34,7 @@ enum TrayMenuId : UINT {
     ID_MENU_CARD_TRANS_MODE   = ID_TRAY_MENU_BASE + 12,  // 卡片翻译模式：原/译 或 原-译
     ID_MENU_EXPORT_LOG        = ID_TRAY_MENU_BASE + 14,  // 导出日志文件
     ID_MENU_EXPORT_DIAGNOSTIC = ID_TRAY_MENU_BASE + 15,  // 导出诊断信息
+    ID_MENU_ALWAYS_TOP        = ID_TRAY_MENU_BASE + 16,  // 始终置顶
 };
 
 class TrayIcon {
@@ -63,6 +64,7 @@ public:
     void SetMenuCheckedAutoStart(bool checked);
     void SetMenuCheckedLockPos(bool checked);
     void SetMenuCheckedLockFull(bool checked);
+    void SetMenuCheckedAlwaysTop(bool checked);
     void SetMenuLabelEnable(const std::wstring& label);
 
     // 显示气泡通知（用于自启状态变更等反馈）
@@ -102,6 +104,7 @@ private:
     bool checkedAutoStart_{true};
     bool checkedLockPos_{false};
     bool checkedLockFull_{false};
+    bool checkedAlwaysTop_{false};
     bool boundMode_{false};
     std::string displayMode_{"karaoke"};
     std::string cardTranslationMode_{"dual"};

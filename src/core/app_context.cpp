@@ -70,17 +70,23 @@ void HandleFrameTick(AppContext& app) {
         // 1. 检测任务栏尺寸变化（含 APPBAR 自动隐藏鼠标进出检测）
         if (app.taskbarWindow) app.taskbarWindow->CheckResize();
 
+        // 1.5 始终置顶开关同步到定位层（任务栏自动隐藏/全屏时仍显示歌词）
+        const bool alwaysShow = app.config && app.config->Advanced().alwaysShowLyrics;
+        if (app.taskbarWindow) app.taskbarWindow->SetAlwaysShowLyrics(alwaysShow);
+
         // 2. APPBAR 自动隐藏：窗口已隐藏时跳过渲染（避免 UpdateLayeredWindow 隐式显示导致闪烁）
-        if (app.taskbarWindow && app.taskbarWindow->IsAutoHideHidden()) {
+        //    始终置顶模式下不跳过：歌词窗口保持在最后可见位置继续渲染
+        if (app.taskbarWindow && app.taskbarWindow->IsAutoHideHidden() && !alwaysShow) {
             if (app.mediaCard) app.mediaCard->Hide();
             return;
         }
 
         // 2.5. 全屏检测防抖：由 FullscreenDetector 独立处理
-        if (app.taskbarWindow && app.config && app.config->Advanced().enableFullscreenHide) {
+        //    始终置顶模式下不启用隐藏
+        if (app.taskbarWindow && app.config && !alwaysShow) {
             bool shouldHide = false;
             if (app.taskbarWindow->Fullscreen().Update(
-                    app.config->Advanced().enableFullscreenHide,
+                    !alwaysShow,
                     app.config->Advanced().debugLog,
                     shouldHide)) {
                 app.taskbarWindow->SetFullscreenHidden(shouldHide);
@@ -98,8 +104,15 @@ void HandleFrameTick(AppContext& app) {
             }
         }
 
+        // 2.55 始终置顶刚开启：清除开关关闭期间残留的全屏隐藏状态
+        if (alwaysShow && app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden()) {
+            app.taskbarWindow->SetFullscreenHidden(false);
+            app.taskbarWindow->InvalidatePositionCache();
+            app.taskbarWindow->Reposition();
+        }
+
         // 2.6. 全屏隐藏时跳过渲染（与 APPBAR 同理）
-        if (app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden()) {
+        if (app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden() && !alwaysShow) {
             if (app.mediaCard) app.mediaCard->Hide();
             return;
         }
@@ -271,11 +284,13 @@ void HandleFrameTick(AppContext& app) {
 // 悬停/拖动重绘请求处理（WM_RENDER_UPDATE）
 void HandleRenderUpdate(AppContext& app) {
     try {
-        // APPBAR 自动隐藏时跳过悬停重绘
-        if (app.taskbarWindow && app.taskbarWindow->IsAutoHideHidden()) return;
+        // APPBAR 自动隐藏时跳过悬停重绘（始终置顶模式除外）
+        if (app.taskbarWindow && !app.taskbarWindow->AlwaysShowLyrics() &&
+            app.taskbarWindow->IsAutoHideHidden()) return;
 
-        // 全屏隐藏时跳过悬停重绘
-        if (app.taskbarWindow && app.taskbarWindow->IsFullscreenHidden()) return;
+        // 全屏隐藏时跳过悬停重绘（始终置顶模式除外）
+        if (app.taskbarWindow && !app.taskbarWindow->AlwaysShowLyrics() &&
+            app.taskbarWindow->IsFullscreenHidden()) return;
 
         if (app.parser && app.renderer && app.taskbarWindow) {
             auto state = app.parser->GetCurrentRenderState();

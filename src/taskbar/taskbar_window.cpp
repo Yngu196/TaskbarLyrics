@@ -391,6 +391,10 @@ void TaskbarWindow::ShowLyricsContextMenu() {
     UINT lockFullFlags = MF_STRING | (fullyLocked_ ? MF_CHECKED : MF_UNCHECKED);
     ::AppendMenuW(hMenu, lockFullFlags, ID_MENU_LOCK_FULL, L"完全锁定");
 
+    // 始终置顶（状态每帧由主循环同步到 companion_）
+    UINT alwaysTopFlags = MF_STRING | (companion_.IsAlwaysShowLyrics() ? MF_CHECKED : MF_UNCHECKED);
+    ::AppendMenuW(hMenu, alwaysTopFlags, ID_MENU_ALWAYS_TOP, L"始终置顶");
+
     ::AppendMenuW(hMenu, MF_SEPARATOR, 0, nullptr);
 
     ::AppendMenuW(hMenu, MF_STRING, ID_MENU_EXIT, L"退出");
