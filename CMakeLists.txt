@@ -417,6 +417,7 @@ list(APPEND SOURCES
     src/ui/tray_commands.cpp
     src/ui/config_dialog.cpp
     src/ui/color_picker.cpp
+    src/ui/font_picker.cpp
     src/ui/ui_element.cpp
     src/ui/ui_elements.cpp
     src/ui/nav_view.cpp
@@ -425,6 +426,7 @@ list(APPEND SOURCES
 list(APPEND HEADERS
     src/ui/d2d_settings_window.h
     src/ui/color_picker.h
+    src/ui/font_picker.h
     src/ui/color_utils.h
     src/ui/ui_element.h
     src/ui/ui_elements.h

@@ -782,6 +782,23 @@ void D2DSettingsWindow::UpdateActiveColorRow(const D2D1_COLOR_F& color, const st
     }
 }
 
+void D2DSettingsWindow::UpdateActiveFontRow(const std::wstring& family) {
+    if (fontPickerTargetId_.empty()) return;
+    // 在当前页面查找目标 LabelRow 并写回（字体行只存在于外观页）
+    if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
+        for (auto& card : pages_[currentPage_]->Children()) {
+            for (auto& child : card->Children()) {
+                if (auto* row = dynamic_cast<ui::LabelRow*>(child.get())) {
+                    if (row->id == fontPickerTargetId_) {
+                        row->textValue = WideToLocalUtf8(family);
+                    }
+                }
+            }
+        }
+    }
+    fontPickerTargetId_.clear();
+}
+
 // ═══════════════════════════════
 // 导出功能
 // ═══════════════════════════════
@@ -988,6 +1005,22 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
                 return 0;
             }
 
+            // 字体选择器优先处理（弹窗在最上层）
+            if (self->fontPicker_.IsActive()) {
+                std::wstring newFamily;
+                auto result = self->fontPicker_.HandleMouseDown(lx, ly, &newFamily);
+                if (result == FontPickerPopup::ActionResult::Confirmed) {
+                    // 将选中字体写回目标 LabelRow 控件
+                    self->UpdateActiveFontRow(newFamily);
+                    self->fontPicker_.Deactivate(hwnd);
+                    self->ApplyChanges();
+                } else if (result == FontPickerPopup::ActionResult::Cancelled) {
+                    self->fontPicker_.Deactivate(hwnd);
+                }
+                ::InvalidateRect(hwnd, nullptr, FALSE);
+                return 0;
+            }
+
             // 标题栏关闭按钮（使用逻辑坐标判定）
             if (PtInRect(&self->closeBtnRect_, {lx, ly})) {
                 ::PostMessageW(hwnd, D2DSettingsWindow::kMsgClose, 0, 0);
@@ -1030,8 +1063,13 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             int lx = static_cast<int>(x / self->dpiScale_);
             int ly = static_cast<int>(y / self->dpiScale_);
 
-            // 颜色选择器拖动
-            if (self->colorPicker_.IsActive()) {
+            // 字体选择器悬停（优先于页面控件；仅状态变化时重绘，避免滚动卡顿）
+            if (self->fontPicker_.IsActive()) {
+                if (self->fontPicker_.HandleMouseMove(lx, ly)) {
+                    ::InvalidateRect(hwnd, nullptr, FALSE);
+                }
+                // 不继续分发到页面控件
+            } else if (self->colorPicker_.IsActive()) {
                 bool lb = (wParam & MK_LBUTTON) != 0;
                 self->colorPicker_.HandleMouseMove(lx, ly, lb);
                 ::InvalidateRect(hwnd, nullptr, FALSE);
@@ -1043,8 +1081,34 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
         return 0;
     }
     case WM_MOUSEWHEEL: {
-        if (self) self->OnMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        if (self) {
+            if (self->fontPicker_.IsActive()) {
+                self->fontPicker_.HandleWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+            } else {
+                self->OnMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+            }
+        }
         return 0;
+    }
+
+    // 字体选择器的键盘输入：搜索过滤 / ↑↓ 选择 / 回车确认 / Esc 取消
+    case WM_KEYDOWN:
+    case WM_CHAR: {
+        if (self && self->fontPicker_.IsActive()) {
+            const auto r = self->fontPicker_.HandleKey(msg, wParam);
+            if (r == FontPickerPopup::KeyResult::Confirm && self->fontPicker_.GetSelected(nullptr)) {
+                std::wstring family;
+                self->fontPicker_.GetSelected(&family);
+                self->UpdateActiveFontRow(family);
+                self->fontPicker_.Deactivate(hwnd);
+                self->ApplyChanges();
+            } else if (r == FontPickerPopup::KeyResult::Cancel) {
+                self->fontPicker_.Deactivate(hwnd);
+            }
+            ::InvalidateRect(hwnd, nullptr, FALSE);
+            return 0;
+        }
+        break;  // 弹窗未打开时走默认处理
     }
 
     case WM_TIMER: {
@@ -1322,6 +1386,12 @@ void D2DSettingsWindow::DrawV2() {
                           0);
     }
 
+    // 绘制字体选择器弹窗（最上层）
+    if (fontPicker_.IsActive()) {
+        fontPicker_.Draw(renderTarget_.Get(), theme_,
+                         textSecondaryBrush_.Get(), kTitleBarHeight);
+    }
+
     HRESULT hr = renderTarget_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
         ShutdownD2D();
@@ -1501,20 +1571,11 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
         auto* labelRow = dynamic_cast<ui::LabelRow*>(hit);
         if (labelRow && !labelRow->readOnly) {
             if (labelRow->id == "fontFamily" || labelRow->id == "cardFontFamily") {
-                LOGFONTW lf = {};
-                lf.lfCharSet = DEFAULT_CHARSET;
-                std::wstring wFont = Utf8ToWide(labelRow->textValue);
-                wcsncpy_s(lf.lfFaceName, wFont.c_str(), LF_FACESIZE - 1);
-                CHOOSEFONTW cf = {};
-                cf.lStructSize = sizeof(cf);
-                cf.hwndOwner = hwnd_;
-                cf.lpLogFont = &lf;
-                cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT;
-                if (::ChooseFontW(&cf)) {
-                    labelRow->textValue = WideToLocalUtf8(std::wstring(lf.lfFaceName));
-                    ApplyChanges();
-                    InvalidateRect(hwnd_, nullptr, FALSE);
-                }
+                // 自绘字体选择器（与设置界面风格一致；系统 ChooseFont 的样式/大小不生效，故弃用）
+                fontPickerTargetId_ = labelRow->id;
+                fontPicker_.Activate(hwnd_, Utf8ToWide(labelRow->textValue),
+                                     kTitleBarHeight, dpiScale_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
             }
             return;
         }

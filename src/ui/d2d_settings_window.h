@@ -9,6 +9,7 @@
 #pragma once
 
 #include "ui/color_picker.h"
+#include "ui/font_picker.h"
 #include "ui/nav_view.h"
 #include "ui/settings_page.h"
 #include "config/config.h"
@@ -82,6 +83,9 @@ private:
 
     // 颜色选择器确认后，将颜色写回当前激活的 ColorRow 控件
     void UpdateActiveColorRow(const D2D1_COLOR_F& color, const std::string& hex);
+
+    // 字体选择器确认后，将字体族写回目标 LabelRow 控件
+    void UpdateActiveFontRow(const std::wstring& family);
 
     // 导出日志文件（IFileSaveDialog）
     void ExportLogFile();
@@ -167,6 +171,10 @@ private:
 
     // 颜色选择器弹窗
     ColorPickerPopup colorPicker_;
+
+    // 字体选择器弹窗（自绘，替代 ChooseFontW；仅字体族生效）
+    FontPickerPopup fontPicker_;
+    std::string fontPickerTargetId_;  // 打开弹窗的 LabelRow id（fontFamily / cardFontFamily）
 
     // DPI 缩放
     UINT  dpi_{96};
