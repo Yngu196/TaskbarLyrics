@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // message_window.cpp - 隐式消息窗口实现
 //
 // 从 main.cpp 提取：

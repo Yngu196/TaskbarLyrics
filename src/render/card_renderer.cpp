@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // card_renderer.cpp - 卡片模式渲染（专辑封面 + 双行歌词布局）
 #include "render/renderer.h"
 #include "render/renderer_utils.h"

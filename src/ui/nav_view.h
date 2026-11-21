@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // nav_view.h - 左侧导航面板
 //
 // 职责:

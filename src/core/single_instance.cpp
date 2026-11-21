@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // single_instance.cpp - 单实例保护与宿主重载时的实例接管
 #include "core/single_instance.h"
 

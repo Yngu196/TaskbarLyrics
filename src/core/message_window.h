@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // message_window.h - 隐式消息窗口（接收托盘消息 + 帧定时器）
 //
 #pragma once

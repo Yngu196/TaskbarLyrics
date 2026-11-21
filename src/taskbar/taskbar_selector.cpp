@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // taskbar_selector.cpp - 多任务栏选择器实现
 //
 // 实现要点:

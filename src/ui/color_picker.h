@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // color_picker.h - D2D 颜色选择器弹窗
 //
 // 独立的颜色选择器 UI 组件，封装色板（Hue×Sat 网格）+ 亮度条 +

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // settings_draw_utils.h - D2D 绘制原语辅助函数（提取自 d2d_settings_window.cpp）
 //
 // 提供圆角矩形填充/描边、单行文本绘制等底层 D2D 绘制原语。

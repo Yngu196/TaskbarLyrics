@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // color_picker.cpp - D2D 颜色选择器弹窗实现
 
 #include "ui/color_picker.h"

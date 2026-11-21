@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // font_picker.cpp - 设置界面内置字体选择器实现
 #include "ui/font_picker.h"
 

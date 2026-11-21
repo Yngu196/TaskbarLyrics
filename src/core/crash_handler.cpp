@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // crash_handler.cpp - 全局未处理异常过滤器实现
 //
 // 从 main.cpp 提取，在进程崩溃时输出异常代码、故障模块、调用栈到日志。

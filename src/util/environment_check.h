@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // environment_check.h - Windows 版本检测与运行环境校验
 //
 // 职责:

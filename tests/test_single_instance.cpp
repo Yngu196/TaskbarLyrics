@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // 单实例获取 / 宿主重载接管逻辑测试。
 //
 // 使用带 PID + 序号的专属互斥体名，避免与正在运行的真实插件互相干扰。

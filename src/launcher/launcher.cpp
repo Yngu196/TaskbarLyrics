@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // launcher.cpp - 双架构（x64 / ARM64）架构感知启动器
 //
 // MoeKoeMusic 通过 native host 启动插件根目录的 MoeKoeTaskbarLyrics.exe。

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // diagnostic_exporter.cpp - 兼容性诊断信息收集与导出实现
 #include "util/diagnostic_exporter.h"
 

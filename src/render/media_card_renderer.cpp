@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // media_card_renderer.cpp - 媒体卡片（点击任务栏歌词窗口弹出的歌曲卡片）渲染
 //
 // 布局参考 Windows 11 媒体控制卡片（浅色主题）：

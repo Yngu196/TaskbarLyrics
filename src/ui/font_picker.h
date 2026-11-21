@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // font_picker.h - 设置界面内置字体选择器（D2D 自绘模态浮层）
 //
 // 替代 Win32 ChooseFontW 对话框：系统对话框只有"字体族"生效，

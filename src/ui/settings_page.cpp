@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // settings_page.cpp - 设置页面实现
 #include "ui/settings_page.h"
 #include "ui/color_utils.h"

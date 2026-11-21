@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // lyric_renderer.cpp - 卡拉OK歌词渲染（逐字着色、翻译、频谱、悬停控件）
 #include "render/renderer.h"
 #include "core/constants.h"

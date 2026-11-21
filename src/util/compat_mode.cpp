@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // compat_mode.cpp - 兼容模式检测实现
 #include "util/compat_mode.h"
 #include "util/environment_check.h"

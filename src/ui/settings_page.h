@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // settings_page.h - 设置页面基类 + 6 个页面
 //
 // 职责:

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // media_card_layout.h - 媒体卡片（点击任务栏歌词弹出的歌曲卡片）共享布局
 //
 // 渲染器与命中测试窗口共用同一套几何计算，避免两处坐标公式各改一半

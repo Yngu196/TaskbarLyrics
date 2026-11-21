@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // media_card_window.cpp - 歌曲卡片弹窗实现
 #include "taskbar/media_card_window.h"
 

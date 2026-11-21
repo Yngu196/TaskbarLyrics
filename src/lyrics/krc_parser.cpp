@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // krc_parser.cpp - KuGou KRC 歌词格式解析器实现
 //
 // 从 websocket_client.cpp 提取，逻辑保持一致。

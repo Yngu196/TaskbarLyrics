@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // crash_handler.h - 全局未处理异常过滤器（崩溃调用栈输出）
 //
 #pragma once

@@ -9,9 +9,10 @@
     <img src="https://img.shields.io/badge/release-v1.0.9-blue" alt="release" />
   </a>
   <a href="https://github.com/Yngu196/TaskbarLyrics?tab=License-1-ov-file">
-    <img src="https://img.shields.io/badge/license-GPL--3.0-orange" alt="license" />
+    <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
   </a>
   <img src="https://img.shields.io/badge/platform-Windows-0078D4" alt="platform" />
+  <img src="https://img.shields.io/badge/language-C%2B%2B%2017-blueviolet" alt="language" />
 </p>
 
 <p align="center">把歌词放进 Windows 任务栏：单行 / 双行歌词、专辑封面、播放控制、歌词翻译与纯音乐频谱。</p>
@@ -26,6 +27,7 @@
 - [构建与测试](#构建与测试)
 - [界面预览](#界面预览)
 - [相关文档](#相关文档)
+- [第三方库](#第三方库)
 - [许可证](#许可证)
 
 ## 项目简介
@@ -261,6 +263,21 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 - [常见问题自查](Docs/常见问题自查.md)
 - [计划书](Docs/计划书.md)
 
+## 第三方库
+
+本仓库使用了以下第三方库，感谢原作者的贡献：
+
+| 库 | 用途 | 许可证 | 引入方式 |
+| --- | --- | --- | --- |
+| [IXWebSocket](https://github.com/machinezone/IXWebSocket) | 与主控程序的 WebSocket 连接 | BSD-3-Clause | third_party 源码编译 |
+| [cpp-httplib](https://github.com/yhirose/cpp-httplib) | 诊断接口的 HTTP 服务 | MIT | vcpkg |
+| [moodycamel::concurrentqueue](https://github.com/cameron314/concurrentqueue) | 跨线程无锁消息队列 | BSD-3 / Boost 双许可 | third_party 单头 |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON 解析与序列化 | MIT | vcpkg |
+| [zlib](https://www.zlib.net/) | WebSocket 消息 gzip 解压 | Zlib | vcpkg |
+| [Mbed TLS](https://www.trustedfirmware.org/projects/mbed-tls/) | WebSocket TLS 加密 | Apache-2.0 | vcpkg |
+| [kissfft](https://github.com/mborgerding/kissfft) | 音频波形/频谱计算 | BSD-3-Clause | vcpkg |
+| [Catch2](https://github.com/catchorg/Catch2) | 单元测试框架（仅测试） | BSL-1 | CMake FetchContent |
+
 ## 许可证
 
-[GPL-3.0](LICENSE)
+[Apache-2.0](LICENSE)

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // test_lyrics_parser.cpp - 歌词解析核心逻辑单元测试
 //
 // 覆盖：

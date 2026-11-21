@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // ui_elements.h - 具体控件声明
 //
 // 7 个设置页需要的控件:

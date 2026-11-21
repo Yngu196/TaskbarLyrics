@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // tray_commands.cpp - 托盘/歌词窗口菜单命令处理实现
 //
 // 从 main.cpp 提取，包含 ID_MENU_* 命令的完整分支逻辑。

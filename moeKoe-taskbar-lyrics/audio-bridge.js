@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // audio-bridge.js - 页面主世界（MAIN world）音频桥
 //
 // MoeKoeMusic 的音乐播放器由 `new Audio()` 创建（AudioController.js），

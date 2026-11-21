@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // test_krc_parser.cpp - KRC 歌词解析器单元测试
 //
 // 覆盖：

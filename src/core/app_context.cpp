@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // app_context.cpp - 应用上下文辅助函数实现
 //
 // 从 main.cpp 提取：

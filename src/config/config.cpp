@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // config.cpp - 配置管理实现
 #include "config/config.h"
 #include "core/constants.h"

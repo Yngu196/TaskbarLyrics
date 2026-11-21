@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // media_card_window.h - 点击任务栏歌词窗口后弹出的歌曲卡片窗口
 //
 // 独立的分层弹窗（owned by Shell_TrayWnd），内部持有第二个 TaskbarRenderer。

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // ui_elements.cpp - 具体控件实现（Fluent Design 暗色主题 + Linear 紫色风格）
 #include "ui/ui_elements.h"
 #include "ui/color_utils.h"

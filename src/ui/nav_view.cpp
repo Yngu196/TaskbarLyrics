@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // nav_view.cpp - 左侧导航面板实现（暗色 Fluent Design）
 #include "ui/nav_view.h"
 #include "ui/color_utils.h"

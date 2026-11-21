@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // spectrum_capture.cpp - WASAPI loopback FFT 频谱捕获实现
 //
 // 采集策略（按优先级）：

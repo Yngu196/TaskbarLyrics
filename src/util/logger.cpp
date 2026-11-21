@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // logger.cpp - 统一日志系统实现
 #include "util/logger.h"
 

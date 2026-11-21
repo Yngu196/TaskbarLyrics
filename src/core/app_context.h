@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // app_context.h - 全局应用上下文与应用辅助函数
 //
 // 从 main.cpp 提取，承载跨模块共享的应用状态与帧渲染逻辑。

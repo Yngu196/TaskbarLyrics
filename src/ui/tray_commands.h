@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // tray_commands.h - 托盘/歌词窗口菜单命令处理
 //
 #pragma once

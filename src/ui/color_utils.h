@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // color_utils.h - D2D 颜色工具函数（提取自 d2d_settings_window.cpp）
 //
 // 提供 Hex ↔ D2D1_COLOR_F 互转、HSL ↔ RGB 互转、颜色插值等工具函数。

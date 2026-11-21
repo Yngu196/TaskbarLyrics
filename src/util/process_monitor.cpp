@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // process_monitor.cpp - 进程监控模块实现
 #include "util/process_monitor.h"
 #include "core/constants.h"

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // main.cpp - MoeKoeMusic 任务栏歌词插件入口
 //
 // 仅包含 WinMain（5 阶段生命周期编排）。

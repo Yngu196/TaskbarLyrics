@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // d2d_settings_window.cpp - Direct2D 原生自绘设置界面实现（Settings 2.0）
 #include "ui/d2d_settings_window.h"
 #include "ui/color_utils.h"

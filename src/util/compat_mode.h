@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // compat_mode.h - 兼容模式定义
 //
 // 职责:

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0
+// SPDX-License-Identifier: Apache-2.0
 // single_instance.h - 单实例保护与宿主重载时的实例接管
 //
 // 背景：MoeKoeMusic 的 nativeHostManager 在重载插件时，会先给旧 EXE 发
