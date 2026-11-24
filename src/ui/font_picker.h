@@ -19,6 +19,9 @@
 
 namespace moekoe {
 
+// 释放字体选择器的共享 DWrite 工厂与字体族格式缓存（关闭设置窗口时调用）
+void ReleaseFontPickerCaches();
+
 class FontPickerPopup {
 public:
     enum class ActionResult { None, Confirmed, Cancelled };

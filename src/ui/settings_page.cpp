@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// settings_page.cpp - 设置页面实现
+// settings_page.cpp - 设置页面实现（Win11 设置风格：分组标题 + 分组卡片内多行 + 行间分隔线）
 #include "ui/settings_page.h"
 #include "ui/color_utils.h"
 #include "core/constants.h"
@@ -25,7 +25,7 @@ float SettingsPage::MeasureHeight(float availWidth) {
     for (auto& child : children_) {
         if (child->IsVisible()) {
             h += child->MeasureHeight(availWidth - 40);  // 内容区左右各 20 边距
-            h += 12;  // 卡片间距
+            h += 12;  // 分组间距
         }
     }
     return h;
@@ -59,11 +59,8 @@ void SettingsPage::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         rt->CreateSolidColorBrush(c, b.GetAddressOf());
         return b;
     };
-    static auto getFactory = []() {
-        static Microsoft::WRL::ComPtr<IDWriteFactory> f;
-        if (!f) ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                                       reinterpret_cast<IUnknown**>(f.GetAddressOf()));
-        return f;
+    static auto getFactory = []() -> Microsoft::WRL::ComPtr<IDWriteFactory>& {
+        return moekoe::ui::GetSharedDWriteFactory();
     };
 
     // 页面标题（Segoe UI Variable 28px SemiBold #E0E0E0）
@@ -100,16 +97,62 @@ void SettingsPage::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
                       subBrush.Get());
     }
 
-    // 子元素（Card 等），传递 DrawContext
+    // 子元素（分组标题 / 分组卡片），传递 DrawContext
     for (auto& child : children_) {
         if (child->IsVisible()) child->Draw(rt, ctx);
     }
 }
 
 // ═══════════════════════════════════════
-// 辅助：创建标准 Card
+// 辅助：分组标题 + 分组卡片 + 设置行
 // ═══════════════════════════════════════
 
+// 分组标题：纯文字（无蓝竖条），参考 Win11 设置的组头
+static TextBlock* AddSection(SettingsPage& p, const std::string& title,
+                             const std::string& id = "") {
+    auto t = std::make_unique<TextBlock>();
+    t->text = title;
+    t->style = TextBlock::Style::SectionHeader;
+    t->id = id;
+    TextBlock* raw = t.get();
+    p.AddChild(std::move(t));
+    return raw;
+}
+
+// 分组卡片：一张圆角卡片容纳多行设置行（行间分隔线由 Card 自动绘制）
+static Card* AddGroup(SettingsPage& p, const std::string& id = "") {
+    auto card = std::make_unique<Card>();
+    card->title = "";
+    card->cornerRadius = 12;
+    card->padding = {0, 0, 0, 0};
+    card->gap = 0;
+    card->id = id;
+    Card* raw = card.get();
+    p.AddChild(std::move(card));
+    return raw;
+}
+
+// 分组内设置行：左「图标+标题+说明」右控件；返回行指针便于设置可见性
+static SettingRow* AddGroupRow(Card& g, const std::string& title, const std::string& desc,
+                               const wchar_t* icon, std::unique_ptr<UIElement> ctrl) {
+    auto row = std::make_unique<SettingRow>();
+    row->title = title;
+    row->description = desc;
+    if (icon && *icon) row->icon = icon;
+    row->grouped = true;
+    if (ctrl) row->AddChild(std::move(ctrl));
+    SettingRow* raw = row.get();
+    g.AddChild(std::move(row));
+    return raw;
+}
+
+// 仅在可见性由控件联动控制时使用：把可见性同步到行与控件两级
+static void SetRowVisible(UIElement* ctrl, bool v) {
+    if (ctrl) ctrl->SetVisible(v);
+    if (ctrl && ctrl->Parent()) ctrl->Parent()->SetVisible(v);
+}
+
+// 辅助：创建整宽内容 Card（用于 ThemePresets / 关于页）
 static std::unique_ptr<Card> MakeCard(const std::string& title) {
     auto card = std::make_unique<Card>();
     card->title = title;
@@ -127,39 +170,28 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
     const auto& a = cfg.Appearance();
     bool isCard = (a.displayMode == "card");
 
-    // Card: 显示内容
-    auto c1 = MakeCard("显示内容");
+    AddSection(*this, "显示内容");
     {
+        Card* g = AddGroup(*this);
         auto dm = std::make_unique<ComboBox>();
         dm->id = "displayMode";
-        dm->label = "显示模式";
         dm->items = {"单行歌词", "双行歌词"};
         dm->selectedIndex = isCard ? 1 : 0;
-        c1->AddChild(std::move(dm));
-    }
-    {
-        auto hint = std::make_unique<TextBlock>();
-        hint->id = "verticalTaskbarModeHint";
-        hint->text = "左侧或右侧任务栏将自动使用单行歌词；双行歌词仅适用于顶部和底部任务栏";
-        hint->style = TextBlock::Style::Caption;
-        c1->AddChild(std::move(hint));
-    }
-    {
+        AddGroupRow(*g, "显示模式",
+                    "左侧或右侧任务栏将自动使用单行歌词；双行歌词仅适用于顶部和底部任务栏",
+                    L"\uE8A1", std::move(dm));
         auto t = std::make_unique<Toggle>();
         t->id = "karaoke";
-        t->label = "逐字高亮";
         t->value = a.enableKaraoke;
-        t->SetVisible(!isCard);
-        c1->AddChild(std::move(t));
+        auto* row = AddGroupRow(*g, "逐字高亮", "卡拉OK 逐字填充效果", L"\uE734", std::move(t));
+        row->SetVisible(!isCard);
     }
-    AddChild(std::move(c1));
 
-    // Card: 翻译模式
-    auto c2 = MakeCard("翻译模式");
+    AddSection(*this, "翻译模式");
     {
+        Card* g = AddGroup(*this);
         auto dm = std::make_unique<ComboBox>();
         dm->id = "translationMode";
-        dm->label = "翻译模式";
         if (isCard) {
             // 卡片模式：仅原文、仅翻译、原文+翻译
             dm->items = {"仅原文", "仅翻译", "原文+翻译"};
@@ -170,29 +202,30 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
             dm->items = {"仅原文", "仅翻译"};
             dm->selectedIndex = (a.translationMode == "replace") ? 1 : 0;
         }
-        c2->AddChild(std::move(dm));
+        AddGroupRow(*g, "翻译模式", "", L"\uE713", std::move(dm));
     }
-    AddChild(std::move(c2));
 }
 
 void LyricsPage::CollectChanges(moekoe::Config& cfg) {
     auto& ap = cfg.MutableAppearance();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "displayMode") {
-                    ap.displayMode = (cb->selectedIndex == 1) ? "card" : "karaoke";
-                } else if (cb->id == "translationMode") {
-                    bool isCard = (ap.displayMode == "card");
-                    if (isCard) {
-                        ap.cardTranslationMode = (cb->selectedIndex == 1) ? "replace" :
-                                                 (cb->selectedIndex == 2) ? "dual" : "off";
-                    } else {
-                        ap.translationMode = (cb->selectedIndex == 1) ? "replace" : "off";
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "displayMode") {
+                        ap.displayMode = (cb->selectedIndex == 1) ? "card" : "karaoke";
+                    } else if (cb->id == "translationMode") {
+                        bool isCard = (ap.displayMode == "card");
+                        if (isCard) {
+                            ap.cardTranslationMode = (cb->selectedIndex == 1) ? "replace" :
+                                                     (cb->selectedIndex == 2) ? "dual" : "off";
+                        } else {
+                            ap.translationMode = (cb->selectedIndex == 1) ? "replace" : "off";
+                        }
                     }
+                } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "karaoke") ap.enableKaraoke = t->value;
                 }
-            } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "karaoke") ap.enableKaraoke = t->value;
             }
         }
     }
@@ -202,24 +235,26 @@ void LyricsPage::UpdateForDisplayMode(const std::string& displayMode, const moek
     bool isCard = (displayMode == "card");
     const auto& a = cfg.Appearance();
 
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            // 更新"卡拉OK效果"可见性
-            if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "karaoke") {
-                    t->SetVisible(!isCard);
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                // 更新"逐字高亮"可见性（行同步隐藏）
+                if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "karaoke") {
+                        SetRowVisible(t, !isCard);
+                    }
                 }
-            }
-            // 更新翻译模式选项
-            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "translationMode") {
-                    if (isCard) {
-                        cb->items = {"仅原文", "仅翻译", "原文+翻译"};
-                        cb->selectedIndex = (a.cardTranslationMode == "replace") ? 1 :
-                                           (a.cardTranslationMode == "dual")   ? 2 : 0;
-                    } else {
-                        cb->items = {"仅原文", "仅翻译"};
-                        cb->selectedIndex = (a.translationMode == "replace") ? 1 : 0;
+                // 更新翻译模式选项
+                if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "translationMode") {
+                        if (isCard) {
+                            cb->items = {"仅原文", "仅翻译", "原文+翻译"};
+                            cb->selectedIndex = (a.cardTranslationMode == "replace") ? 1 :
+                                               (a.cardTranslationMode == "dual")   ? 2 : 0;
+                        } else {
+                            cb->items = {"仅原文", "仅翻译"};
+                            cb->selectedIndex = (a.translationMode == "replace") ? 1 : 0;
+                        }
                     }
                 }
             }
@@ -237,119 +272,87 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
 
     // ── 通用选项（两种模式都可见）──
 
-    // Card: 封面
-    auto c0 = MakeCard("封面");
-    c0->id = "coverCard";
+    AddSection(*this, "封面");
     {
+        Card* g = AddGroup(*this);
         auto t = std::make_unique<Toggle>();
         t->id = "enableCover";
-        t->label = "显示专辑封面";
         t->value = a.enableCover;
-        c0->AddChild(std::move(t));
-    }
-    {
+        AddGroupRow(*g, "显示专辑封面", "", L"\uE790", std::move(t));
         auto s = std::make_unique<Slider>();
         s->id = "coverSize";
-        s->label = "封面尺寸";
         s->minValue = 16; s->maxValue = 80;
         s->value = static_cast<float>(a.coverSize);
         s->suffix = " dp";
-        c0->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "封面尺寸", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "coverOffsetX";
-        s->label = "左右偏移";
         s->minValue = -50; s->maxValue = 50;
         s->value = static_cast<float>(a.coverOffsetX);
         s->suffix = " dp";
-        c0->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "左右偏移", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "coverCornerRadius";
-        s->label = "封面圆角";
         s->minValue = 0; s->maxValue = 100;
         s->value = static_cast<float>(a.coverCornerRadius);
         s->suffix = "%";
-        c0->AddChild(std::move(s));
+        AddGroupRow(*g, "封面圆角", "", L"\uE70F", std::move(s));
     }
-    AddChild(std::move(c0));
 
-    // Card: 主题颜色
-    auto cTheme = MakeCard("主题颜色");
-    cTheme->id = "themeColorCard";
+    AddSection(*this, "主题颜色");
     {
+        Card* g = AddGroup(*this);
         auto dm = std::make_unique<ComboBox>();
         dm->id = "settingsTheme";
-        dm->label = "设置界面主题";
-        dm->items = {"蓝（默认）", "深色", "浅色", "白色"};
-        dm->selectedIndex = (a.settingsTheme == "dark")  ? 1 :
-                            (a.settingsTheme == "light") ? 2 :
-                            (a.settingsTheme == "white") ? 3 : 0;
-        cTheme->AddChild(std::move(dm));
+        dm->items = {"浅色", "深色"};
+        dm->selectedIndex = (a.settingsTheme == "light") ? 0 : 1;
+        AddGroupRow(*g, "设置界面主题", "", L"\uE790", std::move(dm));
     }
-    AddChild(std::move(cTheme));
 
-    // ── 单行歌词区域 ──
+    // ── 单行歌词区域（仅卡拉OK模式可见）──
 
-    // Card: 字体
-    auto c1 = MakeCard("字体");
-    c1->id = "karaokeFont";
+    AddSection(*this, "字体", "karaokeFontH");
     {
+        Card* g = AddGroup(*this, "karaokeFont");
+        g->SetVisible(!isCard);
         auto s = std::make_unique<Slider>();
         s->id = "fontSize";
-        s->label = "字号";
         s->minValue = 10; s->maxValue = 28;
         s->value = static_cast<float>(a.fontSize);
-        s->suffix = "";
-        c1->AddChild(std::move(s));
-    }
-    {
+        AddGroupRow(*g, "字号", "", L"\uE70F", std::move(s));
         auto lr = std::make_unique<LabelRow>();
         lr->id = "fontFamily";
-        lr->label = "字体";
         lr->textValue = a.fontFamily;
-        c1->AddChild(std::move(lr));
+        AddGroupRow(*g, "字体", "", L"\uE70F", std::move(lr));
     }
-    c1->SetVisible(!isCard);
-    AddChild(std::move(c1));
 
-    // Card: 颜色
-    auto c2 = MakeCard("颜色");
-    c2->id = "karaokeColor";
+    AddSection(*this, "颜色", "karaokeColorH");
     {
+        Card* g = AddGroup(*this, "karaokeColor");
+        g->SetVisible(!isCard);
         auto cr = std::make_unique<ColorRow>();
         cr->id = "normalColor";
-        cr->label = "普通歌词颜色";
         cr->textValue = a.normalColor;
         cr->colorValue = HexToColorF(a.normalColor);
-        c2->AddChild(std::move(cr));
-    }
-    {
-        auto cr = std::make_unique<ColorRow>();
+        AddGroupRow(*g, "普通歌词颜色", "", L"\uE790", std::move(cr));
+        cr = std::make_unique<ColorRow>();
         cr->id = "highlightColor";
-        cr->label = "高亮歌词颜色";
         cr->textValue = a.highlightColor;
         cr->colorValue = HexToColorF(a.highlightColor);
-        c2->AddChild(std::move(cr));
-    }
-    {
+        AddGroupRow(*g, "高亮歌词颜色", "", L"\uE790", std::move(cr));
         auto s = std::make_unique<Slider>();
         s->id = "opacity";
-        s->label = "不透明度";
         s->minValue = 20; s->maxValue = 100;
         s->value = static_cast<float>(a.normalOpacity * 100.0);
         s->suffix = "%";
-        c2->AddChild(std::move(s));
+        AddGroupRow(*g, "不透明度", "", L"\uE70F", std::move(s));
     }
-    c2->SetVisible(!isCard);
-    AddChild(std::move(c2));
 
-    // Card: 预设主题（快速应用高亮/普通颜色组合，与上方「颜色」卡联动）
-    auto c4 = MakeCard("预设主题");
-    c4->id = "themePresets";
+    AddSection(*this, "预设主题", "themePresetsH");
     {
+        // 整宽色板（与上方「颜色」行联动）
+        auto card = MakeCard("");
+        card->id = "themePresets";
         auto tp = std::make_unique<ThemePresets>();
         tp->id = "themePresets";
         tp->presets = {
@@ -368,282 +371,243 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
                 break;
             }
         }
-        c4->AddChild(std::move(tp));
+        card->AddChild(std::move(tp));
+        card->SetVisible(!isCard);
+        AddChild(std::move(card));
     }
-    c4->SetVisible(!isCard);
-    AddChild(std::move(c4));
 
-    // Card: 长歌词滚动
-    auto c3 = MakeCard("长歌词滚动");
-    c3->id = "marqueeCard";
+    AddSection(*this, "长歌词滚动", "marqueeH");
     {
+        Card* g = AddGroup(*this, "marqueeCard");
+        g->SetVisible(!isCard);
         auto t = std::make_unique<Toggle>();
         t->id = "marquee";
-        t->label = "启用长歌词滚动效果";
         t->value = a.enableMarquee;
-        c3->AddChild(std::move(t));
-    }
-    {
+        AddGroupRow(*g, "启用长歌词滚动效果", "", L"\uE72C", std::move(t));
         auto dm = std::make_unique<ComboBox>();
         dm->id = "marqueeMode";
-        dm->label = "滚动模式";
         dm->items = {"往返滚动（推荐）", "关闭（截断显示）"};
         dm->selectedIndex = (a.marqueeMode == "off") ? 1 : 0;
-        c3->AddChild(std::move(dm));
-    }
-    {
+        AddGroupRow(*g, "滚动模式", "", L"\uE72C", std::move(dm));
         auto s = std::make_unique<Slider>();
         s->id = "marqueeDelay";
-        s->label = "开始延迟";
         s->minValue = 0; s->maxValue = 5000;
         s->value = static_cast<float>(a.marqueeDelayMs);
         s->suffix = " ms";
-        c3->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "开始延迟", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "marqueePause";
-        s->label = "端点暂停";
         s->minValue = 0; s->maxValue = 3000;
         s->value = static_cast<float>(a.marqueePauseMs);
         s->suffix = " ms";
-        c3->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "端点暂停", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "marqueeSpeed";
-        s->label = "滚动速度";
         s->minValue = 10; s->maxValue = 200;
         s->value = a.marqueeSpeedPxPerSec;
         s->suffix = " px/s";
-        c3->AddChild(std::move(s));
+        AddGroupRow(*g, "滚动速度", "", L"\uE70F", std::move(s));
     }
-    c3->SetVisible(!isCard);
-    AddChild(std::move(c3));
 
-    // 开关关闭或选择“关闭（截断显示）”时，隐藏无效的滚动参数。
+    // 开关关闭或选择"关闭（截断显示）"时，隐藏无效的滚动参数行。
     UpdateMarqueeVisibility(a.enableMarquee, a.marqueeMode);
 
-    // Card: 歌词位置（仅单行）
-    auto cLyricPos = MakeCard("歌词位置（单行）");
-    cLyricPos->id = "karaokeOffset";
+    AddSection(*this, "歌词位置", "karaokeOffsetH");
     {
+        Card* g = AddGroup(*this, "karaokeOffset");
+        g->SetVisible(!isCard);
         auto s = std::make_unique<Slider>();
         s->id = "lyricOffsetY";
-        s->label = "上下偏移";
         s->minValue = -100; s->maxValue = 100;
         s->value = static_cast<float>(a.lyricOffsetY);
         s->suffix = " px";
-        cLyricPos->AddChild(std::move(s));
+        AddGroupRow(*g, "上下偏移", "", L"\uE70F", std::move(s));
     }
-    cLyricPos->SetVisible(!isCard);
-    AddChild(std::move(cLyricPos));
 
-    // Card: 单行背景（仅单行模式可见）
-    auto cSingleBg = MakeCard("单行背景");
-    cSingleBg->id = "singleLineBg";
+    AddSection(*this, "单行背景", "singleLineBgH");
     {
+        Card* g = AddGroup(*this, "singleLineBg");
+        g->SetVisible(!isCard);
         auto dm = std::make_unique<ComboBox>();
         dm->id = "singleLineBackgroundMode";
-        dm->label = "单行背景";
         dm->items = {"半透明毛玻璃", "纯透明"};
         dm->selectedIndex = (a.singleLineBackgroundMode == "transparent") ? 1 : 0;
-        cSingleBg->AddChild(std::move(dm));
+        AddGroupRow(*g, "背景样式", "", L"\uE73F", std::move(dm));
     }
-    cSingleBg->SetVisible(!isCard);
-    AddChild(std::move(cSingleBg));
 
-    // ── 双行歌词区域 ──
+    // ── 双行歌词区域（仅卡片模式可见）──
 
-    // Card: 卡片字体
-    auto c5 = MakeCard("卡片字体");
-    c5->id = "cardFont";
+    AddSection(*this, "卡片字体", "cardFontH");
     {
+        Card* g = AddGroup(*this, "cardFont");
+        g->SetVisible(isCard);
         auto s = std::make_unique<Slider>();
         s->id = "cardFontSizeCurrent";
-        s->label = "当前行字号";
         s->minValue = 10; s->maxValue = 20;
         s->value = static_cast<float>(a.cardFontSizeCurrent);
-        s->suffix = "";
-        c5->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "当前行字号", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "cardFontSizeNext";
-        s->label = "下一行字号";
         s->minValue = 8; s->maxValue = 18;
         s->value = static_cast<float>(a.cardFontSizeNext);
-        s->suffix = "";
-        c5->AddChild(std::move(s));
-    }
-    {
+        AddGroupRow(*g, "下一行字号", "", L"\uE70F", std::move(s));
         auto lr = std::make_unique<LabelRow>();
         lr->id = "cardFontFamily";
-        lr->label = "字体";
         lr->textValue = a.cardFontFamily.empty() ? "(与主模式相同)" : a.cardFontFamily;
-        c5->AddChild(std::move(lr));
+        AddGroupRow(*g, "字体", "", L"\uE70F", std::move(lr));
     }
-    c5->SetVisible(isCard);
-    AddChild(std::move(c5));
 
-    // Card: 双行颜色
-    auto c6 = MakeCard("双行颜色");
-    c6->id = "cardColor";
+    AddSection(*this, "卡片颜色", "cardColorH");
     {
+        Card* g = AddGroup(*this, "cardColor");
+        g->SetVisible(isCard);
         auto cr = std::make_unique<ColorRow>();
         cr->id = "cardCurrentColor";
-        cr->label = "当前行颜色";
         cr->textValue = a.cardCurrentColor;
         cr->colorValue = HexToColorF(a.cardCurrentColor);
-        c6->AddChild(std::move(cr));
-    }
-    {
-        auto cr = std::make_unique<ColorRow>();
+        AddGroupRow(*g, "当前行颜色", "", L"\uE790", std::move(cr));
+        cr = std::make_unique<ColorRow>();
         cr->id = "cardNextColor";
-        cr->label = "下一行颜色";
         cr->textValue = a.cardNextColor;
         cr->colorValue = HexToColorF(a.cardNextColor);
-        c6->AddChild(std::move(cr));
+        AddGroupRow(*g, "下一行颜色", "", L"\uE790", std::move(cr));
     }
-    c6->SetVisible(isCard);
-    AddChild(std::move(c6));
 
-    // Card: 双行背景
-    auto c7 = MakeCard("双行背景");
-    c7->id = "cardBg";
+    AddSection(*this, "卡片背景", "cardBgH");
     {
+        Card* g = AddGroup(*this, "cardBg");
+        g->SetVisible(isCard);
         auto dm = std::make_unique<ComboBox>();
         dm->id = "cardBackgroundMode";
-        dm->label = "双行背景";
         dm->items = {"半透明毛玻璃", "纯透明"};
         dm->selectedIndex = (a.cardBackgroundMode == "transparent") ? 1 : 0;
-        c7->AddChild(std::move(dm));
-    }
-    {
+        AddGroupRow(*g, "背景样式", "", L"\uE73F", std::move(dm));
         auto t = std::make_unique<Toggle>();
         t->id = "cardDynamicWidth";
-        t->label = "歌词显示扩展";
         t->value = a.cardDynamicWidth;
-        c7->AddChild(std::move(t));
+        AddGroupRow(*g, "歌词显示扩展", "", L"\uE73E", std::move(t));
     }
-    c7->SetVisible(isCard);
-    AddChild(std::move(c7));
 
-    // Card: 歌词位置（仅双行）
-    auto cCardOffset = MakeCard("歌词位置（双行）");
-    cCardOffset->id = "cardLineOffset";
+    AddSection(*this, "歌词位置", "cardLineOffsetH");
     {
+        Card* g = AddGroup(*this, "cardLineOffset");
+        g->SetVisible(isCard);
         auto s = std::make_unique<Slider>();
         s->id = "cardLine1OffsetY";
-        s->label = "首行歌词偏移";
         s->minValue = -100; s->maxValue = 100;
         s->value = static_cast<float>(a.cardLine1OffsetY);
         s->suffix = " px";
-        cCardOffset->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "首行歌词偏移", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "cardLine2OffsetY";
-        s->label = "第二行偏移";
         s->minValue = -100; s->maxValue = 100;
         s->value = static_cast<float>(a.cardLine2OffsetY);
         s->suffix = " px";
-        cCardOffset->AddChild(std::move(s));
+        AddGroupRow(*g, "第二行偏移", "", L"\uE70F", std::move(s));
     }
-    cCardOffset->SetVisible(isCard);
-    AddChild(std::move(cCardOffset));
 
-    // Card: 恢复默认
-    auto cReset = MakeCard("默认设置");
+    // ── 恢复默认 ──
+    AddSection(*this, "默认设置");
     {
+        Card* g = AddGroup(*this);
         auto btn = std::make_unique<Button>();
         btn->id = "resetAppearancePage";
-        btn->text = "恢复本页默认设置";
+        btn->text = "重置";
         btn->isDanger = true;
-        cReset->AddChild(std::move(btn));
+        AddGroupRow(*g, "恢复本页默认设置", "仅重置外观参数，保留显示模式", L"\uE72C", std::move(btn));
     }
-    AddChild(std::move(cReset));
+
+    // 构建完成时按当前显示模式统一同步组头/分组的可见性（含初次构建）
+    UpdateVisibility(a.displayMode);
 }
 
 void AppearancePage::UpdateVisibility(const std::string& displayMode) {
     bool isCard = (displayMode == "card");
+    // 单行（卡拉OK）模式专属：分组标题 H 后缀 + 分组卡片
+    static const char* kKaraokeIds[] = {
+        "karaokeFontH", "karaokeColorH", "themePresetsH", "marqueeH",
+        "karaokeOffsetH", "singleLineBgH",
+        "karaokeFont", "karaokeColor", "themePresets",
+        "marqueeCard", "karaokeOffset", "singleLineBg"};
+    // 双行（卡片）模式专属
+    static const char* kCardIds[] = {
+        "cardFontH", "cardColorH", "cardBgH", "cardLineOffsetH",
+        "cardFont", "cardColor", "cardBg", "cardLineOffset"};
     for (auto& child : children_) {
-        const std::string& cid = child->id;
-        if (cid == "karaokeFont" || cid == "karaokeColor" ||
-            cid == "marqueeCard" || cid == "themePresets" ||
-            cid == "karaokeOffset" || cid == "singleLineBg") {
-            child->SetVisible(!isCard);
-        } else if (cid == "cardFont" || cid == "cardColor" || cid == "cardBg" ||
-                   cid == "cardLineOffset") {
-            child->SetVisible(isCard);
+        for (const char* kid : kKaraokeIds) {
+            if (child->id == kid) { child->SetVisible(!isCard); break; }
         }
-        // coverCard 和 themeColorCard 始终可见，无需切换
+        for (const char* kid : kCardIds) {
+            if (child->id == kid) { child->SetVisible(isCard); break; }
+        }
+        // 封面 / 主题颜色分组始终可见
     }
 }
 
 void AppearancePage::UpdateMarqueeVisibility(bool enabled, const std::string& marqueeMode) {
     // 滚动模式下拉始终保留，便于用户在关闭后快速重新选择往返滚动；
-    // 只有实际启用往返滚动时，延迟/停顿/速度参数才有意义。
+    // 只有实际启用往返滚动时，延迟/停顿/速度参数行才有意义。
     const bool showParameters = enabled && marqueeMode != "off";
-    for (auto& card : children_) {
-        if (card->id != "marqueeCard") continue;
-        for (auto& child : card->Children()) {
-            if (child->id == "marqueeDelay" || child->id == "marqueePause" ||
-                child->id == "marqueeSpeed") {
-                child->SetVisible(showParameters);
+    for (auto& group : children_) {
+        if (group->id != "marqueeCard") continue;
+        for (auto& row : group->Children()) {
+            for (auto& c : row->Children()) {
+                if (c->id == "marqueeDelay" || c->id == "marqueePause" ||
+                    c->id == "marqueeSpeed") {
+                    SetRowVisible(c.get(), showParameters);
+                }
             }
         }
-        break;
     }
 }
 
 void AppearancePage::CollectChanges(moekoe::Config& cfg) {
     auto& ap = cfg.MutableAppearance();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* s = dynamic_cast<Slider*>(child.get())) {
-                if (s->id == "fontSize")           ap.fontSize = static_cast<int>(s->value);
-                else if (s->id == "opacity")       ap.normalOpacity = s->value / 100.f;
-                else if (s->id == "marqueeDelay")  ap.marqueeDelayMs = static_cast<int>(s->value);
-                else if (s->id == "marqueePause")  ap.marqueePauseMs = static_cast<int>(s->value);
-                else if (s->id == "marqueeSpeed")  ap.marqueeSpeedPxPerSec = s->value;
-                else if (s->id == "cardFontSizeCurrent") ap.cardFontSizeCurrent = static_cast<int>(s->value);
-                else if (s->id == "cardFontSizeNext")    ap.cardFontSizeNext = static_cast<int>(s->value);
-                else if (s->id == "coverSize")            ap.coverSize = static_cast<int>(s->value);
-                else if (s->id == "coverOffsetX")       ap.coverOffsetX = static_cast<int>(s->value);
-                else if (s->id == "coverCornerRadius")  ap.coverCornerRadius = static_cast<int>(s->value);
-                else if (s->id == "lyricOffsetY")       ap.lyricOffsetY = static_cast<int>(s->value);
-                else if (s->id == "cardLine1OffsetY")   ap.cardLine1OffsetY = static_cast<int>(s->value);
-                else if (s->id == "cardLine2OffsetY")   ap.cardLine2OffsetY = static_cast<int>(s->value);
-            } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "karaoke")            ap.enableKaraoke = t->value;
-                else if (t->id == "translation")   ap.enableTranslation = t->value;
-                else if (t->id == "marquee")       ap.enableMarquee = t->value;
-                else if (t->id == "cardDynamicWidth") ap.cardDynamicWidth = t->value;
-                else if (t->id == "enableCover")   ap.enableCover = t->value;
-            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "marqueeMode")
-                    ap.marqueeMode = (cb->selectedIndex == 1) ? "off" : "bounce";
-                else if (cb->id == "cardBackgroundMode")
-                    ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
-                else if (cb->id == "singleLineBackgroundMode")
-                    ap.singleLineBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
-                else if (cb->id == "settingsTheme")
-                    ap.settingsTheme = (cb->selectedIndex == 1) ? "dark" :
-                                       (cb->selectedIndex == 2) ? "light" :
-                                       (cb->selectedIndex == 3) ? "white" : "blue";
-            } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
-                if (cr->id == "normalColor")       ap.normalColor = cr->textValue;
-                else if (cr->id == "highlightColor") ap.highlightColor = cr->textValue;
-                else if (cr->id == "cardCurrentColor") ap.cardCurrentColor = cr->textValue;
-                else if (cr->id == "cardNextColor")    ap.cardNextColor = cr->textValue;
-            } else if (auto* lr = dynamic_cast<LabelRow*>(child.get())) {
-                if (lr->id == "fontFamily")        ap.fontFamily = lr->textValue;
-                else if (lr->id == "cardFontFamily") ap.cardFontFamily = lr->textValue;
-            } else if (auto* tp = dynamic_cast<ThemePresets*>(child.get())) {
-                if (tp->selectedIndex >= 0 && tp->selectedIndex < static_cast<int>(tp->presets.size())) {
-                    ap.highlightColor = ColorFToHex(tp->presets[tp->selectedIndex].hlColor);
-                    ap.normalColor = ColorFToHex(tp->presets[tp->selectedIndex].nlColor);
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                    if (s->id == "fontSize")           ap.fontSize = static_cast<int>(s->value);
+                    else if (s->id == "opacity")       ap.normalOpacity = s->value / 100.f;
+                    else if (s->id == "marqueeDelay")  ap.marqueeDelayMs = static_cast<int>(s->value);
+                    else if (s->id == "marqueePause")  ap.marqueePauseMs = static_cast<int>(s->value);
+                    else if (s->id == "marqueeSpeed")  ap.marqueeSpeedPxPerSec = s->value;
+                    else if (s->id == "cardFontSizeCurrent") ap.cardFontSizeCurrent = static_cast<int>(s->value);
+                    else if (s->id == "cardFontSizeNext")    ap.cardFontSizeNext = static_cast<int>(s->value);
+                    else if (s->id == "coverSize")            ap.coverSize = static_cast<int>(s->value);
+                    else if (s->id == "coverOffsetX")       ap.coverOffsetX = static_cast<int>(s->value);
+                    else if (s->id == "coverCornerRadius")  ap.coverCornerRadius = static_cast<int>(s->value);
+                    else if (s->id == "lyricOffsetY")       ap.lyricOffsetY = static_cast<int>(s->value);
+                    else if (s->id == "cardLine1OffsetY")   ap.cardLine1OffsetY = static_cast<int>(s->value);
+                    else if (s->id == "cardLine2OffsetY")   ap.cardLine2OffsetY = static_cast<int>(s->value);
+                } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "karaoke")            ap.enableKaraoke = t->value;
+                    else if (t->id == "translation")   ap.enableTranslation = t->value;
+                    else if (t->id == "marquee")       ap.enableMarquee = t->value;
+                    else if (t->id == "cardDynamicWidth") ap.cardDynamicWidth = t->value;
+                    else if (t->id == "enableCover")   ap.enableCover = t->value;
+                } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "marqueeMode")
+                        ap.marqueeMode = (cb->selectedIndex == 1) ? "off" : "bounce";
+                    else if (cb->id == "cardBackgroundMode")
+                        ap.cardBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
+                    else if (cb->id == "singleLineBackgroundMode")
+                        ap.singleLineBackgroundMode = (cb->selectedIndex == 1) ? "transparent" : "frosted";
+                    else if (cb->id == "settingsTheme")
+                        ap.settingsTheme = (cb->selectedIndex == 0) ? "light" : "dark";
+                } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
+                    if (cr->id == "normalColor")       ap.normalColor = cr->textValue;
+                    else if (cr->id == "highlightColor") ap.highlightColor = cr->textValue;
+                    else if (cr->id == "cardCurrentColor") ap.cardCurrentColor = cr->textValue;
+                    else if (cr->id == "cardNextColor")    ap.cardNextColor = cr->textValue;
+                } else if (auto* lr = dynamic_cast<LabelRow*>(child.get())) {
+                    if (lr->id == "fontFamily")        ap.fontFamily = lr->textValue;
+                    else if (lr->id == "cardFontFamily") ap.cardFontFamily = lr->textValue;
+                } else if (auto* tp = dynamic_cast<ThemePresets*>(child.get())) {
+                    if (tp->selectedIndex >= 0 && tp->selectedIndex < static_cast<int>(tp->presets.size())) {
+                        ap.highlightColor = ColorFToHex(tp->presets[tp->selectedIndex].hlColor);
+                        ap.normalColor = ColorFToHex(tp->presets[tp->selectedIndex].nlColor);
+                    }
                 }
             }
         }
@@ -657,114 +621,92 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
 void SpectrumPage::BuildContent(const moekoe::Config& cfg) {
     const auto& a = cfg.Appearance();
 
-    // Card: 纯音乐显示
-    auto c1 = MakeCard("纯音乐显示");
+    AddSection(*this, "纯音乐显示");
     {
+        Card* g = AddGroup(*this);
         auto cb = std::make_unique<ComboBox>();
         cb->id = "spectrumMode";
-        cb->label = "纯音乐时显示";
         cb->items = {"动态频谱条", "\"纯音乐，请欣赏\"文字"};
         cb->selectedIndex = (a.spectrumMode == "text") ? 1 : 0;
-        c1->AddChild(std::move(cb));
+        AddGroupRow(*g, "纯音乐时显示",
+                    "频谱仅在纯音乐（无歌词）时显示，有歌词时不受影响",
+                    L"\uE950", std::move(cb));
     }
-    {
-        auto hint = std::make_unique<TextBlock>();
-        hint->text = "频谱仅在纯音乐（无歌词）时显示，有歌词时不受影响";
-        hint->style = TextBlock::Style::Caption;
-        c1->AddChild(std::move(hint));
-    }
-    AddChild(std::move(c1));
 
-    // Card: 频谱外观
-    auto c2 = MakeCard("频谱外观");
+    AddSection(*this, "频谱外观");
     {
+        Card* g = AddGroup(*this);
         auto cr = std::make_unique<ColorRow>();
         cr->id = "spectrumColor";
-        cr->label = "频谱条颜色";
         cr->textValue = a.spectrumColor;
         cr->colorValue = HexToColorF(a.spectrumColor);
-        c2->AddChild(std::move(cr));
-    }
-    {
+        AddGroupRow(*g, "频谱条颜色", "", L"\uE790", std::move(cr));
         auto s = std::make_unique<Slider>();
         s->id = "spectrumOpacity";
-        s->label = "柱透明度";
         s->minValue = 10; s->maxValue = 100;
         s->value = a.spectrumOpacity * 100.0f;
         s->suffix = "%";
-        c2->AddChild(std::move(s));
+        AddGroupRow(*g, "柱透明度", "", L"\uE70F", std::move(s));
     }
-    AddChild(std::move(c2));
 
-    // Card: 频谱参数
-    auto c3 = MakeCard("频谱参数");
+    AddSection(*this, "频谱参数");
     {
+        Card* g = AddGroup(*this);
         auto s = std::make_unique<Slider>();
         s->id = "spectrumDbCeil";
-        s->label = "柱上限";
         s->minValue = -40; s->maxValue = 0;
         s->value = a.spectrumDbCeil;
         s->suffix = " dB";
-        c3->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "柱上限", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "spectrumDbFloor";
-        s->label = "柱下限";
         s->minValue = -90; s->maxValue = -20;
         s->value = a.spectrumDbFloor;
         s->suffix = " dB";
-        c3->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "柱下限", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "spectrumNumBands";
-        s->label = "柱数";
         s->minValue = 8; s->maxValue = 64;
         s->value = static_cast<float>(a.spectrumNumBands);
         s->suffix = " 根";
-        c3->AddChild(std::move(s));
-    }
-    {
-        auto s = std::make_unique<Slider>();
+        AddGroupRow(*g, "柱数", "", L"\uE70F", std::move(s));
+        s = std::make_unique<Slider>();
         s->id = "spectrumBarWidth";
-        s->label = "柱宽";
         s->minValue = 0; s->maxValue = 12;
         s->value = a.spectrumBarWidth;
         s->suffix = " dp";
-        c3->AddChild(std::move(s));
+        AddGroupRow(*g, "柱宽", "", L"\uE70F", std::move(s));
+        auto btn = std::make_unique<Button>();
+        btn->id = "resetSpectrum";
+        btn->text = "重置";
+        AddGroupRow(*g, "恢复默认频谱参数", "", L"\uE72C", std::move(btn));
     }
     {
         auto hint = std::make_unique<TextBlock>();
         hint->text = "上限越高柱子越容易到顶，下限越低安静段也能显示，柱宽 0 为自动";
         hint->style = TextBlock::Style::Caption;
-        c3->AddChild(std::move(hint));
+        AddChild(std::move(hint));
     }
-    {
-        auto btn = std::make_unique<Button>();
-        btn->id = "resetSpectrum";
-        btn->text = "重置所有频谱参数";
-        c3->AddChild(std::move(btn));
-    }
-    AddChild(std::move(c3));
 }
 
 void SpectrumPage::CollectChanges(moekoe::Config& cfg) {
     auto& ap = cfg.MutableAppearance();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "spectrumMode")
-                    ap.spectrumMode = (cb->selectedIndex == 1) ? "text" : "spectrum";
-            } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
-                if (cr->id == "spectrumColor")
-                    ap.spectrumColor = cr->textValue;
-            } else if (auto* s = dynamic_cast<Slider*>(child.get())) {
-                if (s->id == "spectrumOpacity")      ap.spectrumOpacity = s->value / 100.0f;
-                else if (s->id == "spectrumDbCeil")  ap.spectrumDbCeil = s->value;
-                else if (s->id == "spectrumDbFloor") ap.spectrumDbFloor = s->value;
-                else if (s->id == "spectrumNumBands") ap.spectrumNumBands = static_cast<int>(s->value);
-                else if (s->id == "spectrumBarWidth") ap.spectrumBarWidth = s->value;
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "spectrumMode")
+                        ap.spectrumMode = (cb->selectedIndex == 1) ? "text" : "spectrum";
+                } else if (auto* cr = dynamic_cast<ColorRow*>(child.get())) {
+                    if (cr->id == "spectrumColor")
+                        ap.spectrumColor = cr->textValue;
+                } else if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                    if (s->id == "spectrumOpacity")      ap.spectrumOpacity = s->value / 100.0f;
+                    else if (s->id == "spectrumDbCeil")  ap.spectrumDbCeil = s->value;
+                    else if (s->id == "spectrumDbFloor") ap.spectrumDbFloor = s->value;
+                    else if (s->id == "spectrumNumBands") ap.spectrumNumBands = static_cast<int>(s->value);
+                    else if (s->id == "spectrumBarWidth") ap.spectrumBarWidth = s->value;
+                }
             }
         }
     }
@@ -775,90 +717,70 @@ void SpectrumPage::CollectChanges(moekoe::Config& cfg) {
 // ═══════════════════════════════════════
 
 void WindowPage::BuildContent(const moekoe::Config& cfg) {
-    // Card: 显示位置（多任务栏选择，仅多显示器时出现）
+    // 显示位置（多任务栏选择，仅多显示器时出现）
     if (TaskbarSelector::MonitorCount() > 1) {
-        auto c0 = MakeCard("显示位置");
-        c0->id = "displayPositionCard";
-        {
-            auto hint = std::make_unique<TextBlock>();
-            hint->id = "displayPosHint";
-            hint->text = "多显示器时选择歌词任务栏的跟随方式";
-            hint->style = TextBlock::Style::Caption;
-            c0->AddChild(std::move(hint));
-        }
+        AddSection(*this, "显示位置", "displayPositionCard");
+        Card* g = AddGroup(*this, "displayPositionCard");
         {
             auto cb = std::make_unique<ComboBox>();
             cb->id = "displaySelectionMode";
-            cb->label = "跟随方式";
             cb->items = {"自动跟随", "手动指定"};
             cb->selectedIndex = (cfg.Appearance().displaySelectionMode == "manual") ? 1 : 0;
-            c0->AddChild(std::move(cb));
+            AddGroupRow(*g, "跟随方式", "多显示器时选择歌词任务栏的跟随方式",
+                        L"\uE73F", std::move(cb));
         }
         {
             auto cb = std::make_unique<ComboBox>();
             cb->id = "displayMonitor";
-            cb->label = "指定显示器";
             cb->items = TaskbarSelector::MonitorLabels();
             if (!cb->items.empty()) {
                 cb->selectedIndex = std::clamp(cfg.Appearance().manualDisplayIndex,
                                                0, static_cast<int>(cb->items.size()) - 1);
             }
             // 仅"手动指定"模式下显示
-            cb->SetVisible(cfg.Appearance().displaySelectionMode == "manual");
-            c0->AddChild(std::move(cb));
+            auto* row = AddGroupRow(*g, "指定显示器", "", L"\uE73F", std::move(cb));
+            row->SetVisible(cfg.Appearance().displaySelectionMode == "manual");
         }
-        AddChild(std::move(c0));
     }
 
-    auto c1 = MakeCard("位置");
+    AddSection(*this, "位置");
     {
-        auto hint = std::make_unique<TextBlock>();
-        hint->id = "posHint";
-        hint->text = "拖动歌词窗口可直接调整位置";
-        hint->style = TextBlock::Style::Caption;
-        c1->AddChild(std::move(hint));
-    }
-    {
+        Card* g = AddGroup(*this);
         auto btn = std::make_unique<Button>();
         btn->id = "resetPos";
         btn->text = "重置位置";
         btn->isDanger = true;
-        c1->AddChild(std::move(btn));
+        AddGroupRow(*g, "歌词窗口位置", "拖动歌词窗口可直接调整位置", L"\uE72C", std::move(btn));
     }
-    AddChild(std::move(c1));
 
-    // Card: 窗口尺寸（手动宽度覆盖，解决任务栏空闲区域检测异常导致窗口过窄的问题）
-    auto c2 = MakeCard("窗口尺寸");
+    // 窗口尺寸（手动宽度覆盖，解决任务栏空闲区域检测异常导致窗口过窄的问题）
+    AddSection(*this, "窗口尺寸");
     {
-        auto hint = std::make_unique<TextBlock>();
-        hint->id = "widthHint";
-        hint->text = "自动检测宽度异常（歌词只显示封面和几个字）时可手动指定，0=自动";
-        hint->style = TextBlock::Style::Caption;
-        c2->AddChild(std::move(hint));
-    }
-    {
+        Card* g = AddGroup(*this);
         auto s = std::make_unique<Slider>();
         s->id = "windowWidthOverride";
-        s->label = "窗口宽度";
         s->minValue = 0; s->maxValue = 600;
         s->value = static_cast<float>(cfg.Appearance().windowWidthOverride);
         s->suffix = " dp";
-        c2->AddChild(std::move(s));
+        AddGroupRow(*g, "窗口宽度",
+                    "自动检测宽度异常（歌词只显示封面和几个字）时可手动指定，0=自动",
+                    L"\uE70F", std::move(s));
     }
-    AddChild(std::move(c2));
 }
 
 void WindowPage::CollectChanges(moekoe::Config& cfg) {
     auto& ap = cfg.MutableAppearance();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* s = dynamic_cast<Slider*>(child.get())) {
-                if (s->id == "windowWidthOverride") ap.windowWidthOverride = static_cast<int>(s->value);
-            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "displaySelectionMode")
-                    ap.displaySelectionMode = (cb->selectedIndex == 1) ? "manual" : "auto";
-                else if (cb->id == "displayMonitor")
-                    ap.manualDisplayIndex = cb->selectedIndex;
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                    if (s->id == "windowWidthOverride") ap.windowWidthOverride = static_cast<int>(s->value);
+                } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "displaySelectionMode")
+                        ap.displaySelectionMode = (cb->selectedIndex == 1) ? "manual" : "auto";
+                    else if (cb->id == "displayMonitor")
+                        ap.manualDisplayIndex = cb->selectedIndex;
+                }
             }
         }
     }
@@ -867,10 +789,14 @@ void WindowPage::CollectChanges(moekoe::Config& cfg) {
 
 void WindowPage::UpdateVisibility(const std::string& selectionMode) {
     const bool isManual = (selectionMode == "manual");
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "displayMonitor") cb->SetVisible(isManual);
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "displayMonitor") {
+                        SetRowVisible(cb, isManual);
+                    }
+                }
             }
         }
     }
@@ -883,46 +809,39 @@ void WindowPage::UpdateVisibility(const std::string& selectionMode) {
 void BehaviorPage::BuildContent(const moekoe::Config& cfg) {
     const auto& adv = cfg.Advanced();
 
-    // Card: 启动
-    auto c1 = MakeCard("启动");
+    AddSection(*this, "启动");
     {
+        Card* g = AddGroup(*this);
         auto t = std::make_unique<Toggle>();
         t->id = "autoStart";
-        t->label = "开机自动启动";
         t->value = cfg.IsAutoStart();
-        c1->AddChild(std::move(t));
+        AddGroupRow(*g, "开机自动启动", "", L"\uE73E", std::move(t));
     }
-    AddChild(std::move(c1));
 
-    // Card: 窗口行为
-    auto c2 = MakeCard("窗口行为");
+    AddSection(*this, "窗口行为");
     {
+        Card* g = AddGroup(*this);
         // 二选一（单个配置位 alwaysShowLyrics：false=绑定 / true=置顶）
         auto cb = std::make_unique<ComboBox>();
         cb->id = "displayBinding";
-        cb->label = "歌词显示模式";
         cb->items = {"与任务栏绑定", "始终置顶"};
         cb->selectedIndex = adv.alwaysShowLyrics ? 1 : 0;
-        c2->AddChild(std::move(cb));
+        AddGroupRow(*g, "歌词显示模式",
+                    "与任务栏绑定：全屏或任务栏自动隐藏时歌词跟随隐藏；始终置顶：歌词保持最后可见位置继续显示",
+                    L"\uE73F", std::move(cb));
     }
-    {
-        auto hint = std::make_unique<TextBlock>();
-        hint->id = "displayBindingHint";
-        hint->text = "与任务栏绑定：全屏或任务栏自动隐藏时歌词跟随隐藏；始终置顶：歌词保持最后可见位置继续显示";
-        hint->style = TextBlock::Style::Caption;
-        c2->AddChild(std::move(hint));
-    }
-    AddChild(std::move(c2));
 }
 
 void BehaviorPage::CollectChanges(moekoe::Config& cfg) {
     auto& adv = cfg.MutableAdvanced();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "autoStart") cfg.SetAutoStart(t->value);
-            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "displayBinding") adv.alwaysShowLyrics = (cb->selectedIndex == 1);
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "autoStart") cfg.SetAutoStart(t->value);
+                } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "displayBinding") adv.alwaysShowLyrics = (cb->selectedIndex == 1);
+                }
             }
         }
     }
@@ -936,83 +855,72 @@ void AdvancedPage::BuildContent(const moekoe::Config& cfg) {
     const auto& adv = cfg.Advanced();
     const auto& app = cfg.Appearance();
 
-    auto c1 = MakeCard("高级设置");
+    AddSection(*this, "高级设置");
     {
+        Card* g = AddGroup(*this);
         auto s = std::make_unique<Slider>();
         s->id = "refreshRate";
-        s->label = "刷新率";
         s->minValue = 15; s->maxValue = 120;
         s->value = static_cast<float>(adv.refreshRateHz);
         s->suffix = " FPS";
-        c1->AddChild(std::move(s));
-    }
-    {
+        AddGroupRow(*g, "刷新率", "", L"\uE72C", std::move(s));
         auto t = std::make_unique<Toggle>();
         t->id = "debugLog";
-        t->label = "调试日志";
         t->value = adv.debugLog;
-        c1->AddChild(std::move(t));
+        AddGroupRow(*g, "调试日志", "", L"\uE946", std::move(t));
     }
-    AddChild(std::move(c1));
 
-    // Card: 双行歌词扩展显示（仅双行模式可见）
-    auto cExpand = MakeCard("双行歌词扩展显示");
-    cExpand->id = "cardExpand";
+    // 双行歌词扩展显示（仅双行模式可见）
+    AddSection(*this, "双行歌词扩展显示", "cardExpandH");
     {
+        Card* g = AddGroup(*this, "cardExpand");
+        g->SetVisible(app.displayMode == "card");
         auto cb = std::make_unique<ComboBox>();
         cb->id = "cardMaxExpandRatio";
-        cb->label = "最大扩展比例";
         cb->items = {"默认（1/3）", "50%", "100%"};
         cb->selectedIndex = app.cardMaxExpandRatio;
-        cExpand->AddChild(std::move(cb));
+        AddGroupRow(*g, "最大扩展比例", "", L"\uE756", std::move(cb));
     }
-    cExpand->SetVisible(app.displayMode == "card");
-    AddChild(std::move(cExpand));
 
-    // Card: 配置管理
-    auto cCfg = MakeCard("配置管理");
+    AddSection(*this, "配置管理");
     {
+        Card* g = AddGroup(*this);
         auto btn = std::make_unique<Button>();
         btn->id = "exportConfig";
-        btn->text = "导出当前配置";
-        cCfg->AddChild(std::move(btn));
-    }
-    {
-        auto btn = std::make_unique<Button>();
+        btn->text = "导出";
+        AddGroupRow(*g, "导出当前配置", "", L"\uE74E", std::move(btn));
+        btn = std::make_unique<Button>();
         btn->id = "importConfig";
-        btn->text = "导入配置";
-        cCfg->AddChild(std::move(btn));
-    }
-    {
-        auto btn = std::make_unique<Button>();
+        btn->text = "导入";
+        AddGroupRow(*g, "导入配置", "", L"\uE74E", std::move(btn));
+        btn = std::make_unique<Button>();
         btn->id = "resetConfig";
-        btn->text = "恢复默认";
+        btn->text = "重置";
         btn->isDanger = true;
-        cCfg->AddChild(std::move(btn));
+        AddGroupRow(*g, "恢复默认", "将所有设置恢复为默认值", L"\uE72C", std::move(btn));
     }
-    AddChild(std::move(cCfg));
 
-    // Card: 导出
-    auto c2 = MakeCard("导出");
+    AddSection(*this, "导出");
     {
+        Card* g = AddGroup(*this);
         auto btn = std::make_unique<Button>();
         btn->id = "exportLog";
-        btn->text = "导出日志";
-        c2->AddChild(std::move(btn));
-    }
-    {
-        auto btn = std::make_unique<Button>();
+        btn->text = "导出";
+        AddGroupRow(*g, "导出日志", "", L"\uE74E", std::move(btn));
+        btn = std::make_unique<Button>();
         btn->id = "exportDiagnostic";
-        btn->text = "导出诊断信息";
-        c2->AddChild(std::move(btn));
+        btn->text = "导出";
+        AddGroupRow(*g, "导出诊断信息", "", L"\uE946", std::move(btn));
     }
-    AddChild(std::move(c2));
+
+    // 构建完成时按当前显示模式同步"双行歌词扩展显示"的可见性（含初次构建）
+    UpdateVisibility(app.displayMode);
 }
 
 void AdvancedPage::UpdateVisibility(const std::string& displayMode) {
     const bool isCard = (displayMode == "card");
     for (auto& child : children_) {
-        if (child->id == "cardExpand") {
+        if (child->id == "cardExpand" || child->id == "cardExpandH") {
             child->SetVisible(isCard);
         }
     }
@@ -1021,14 +929,16 @@ void AdvancedPage::UpdateVisibility(const std::string& displayMode) {
 void AdvancedPage::CollectChanges(moekoe::Config& cfg) {
     auto& adv = cfg.MutableAdvanced();
     auto& app = cfg.MutableAppearance();
-    for (auto& card : children_) {
-        for (auto& child : card->Children()) {
-            if (auto* s = dynamic_cast<Slider*>(child.get())) {
-                if (s->id == "refreshRate") adv.refreshRateHz = static_cast<int>(s->value);
-            } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                if (t->id == "debugLog") adv.debugLog = t->value;
-            } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
-                if (cb->id == "cardMaxExpandRatio") app.cardMaxExpandRatio = cb->selectedIndex;
+    for (auto& group : children_) {
+        for (auto& row : group->Children()) {
+            for (auto& child : row->Children()) {
+                if (auto* s = dynamic_cast<Slider*>(child.get())) {
+                    if (s->id == "refreshRate") adv.refreshRateHz = static_cast<int>(s->value);
+                } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "debugLog") adv.debugLog = t->value;
+                } else if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
+                    if (cb->id == "cardMaxExpandRatio") app.cardMaxExpandRatio = cb->selectedIndex;
+                }
             }
         }
     }
@@ -1060,6 +970,20 @@ void AboutPage::BuildContent(const moekoe::Config& cfg) {
         pluginText->text = "MoeKoeMusic Plugin";
         pluginText->style = TextBlock::Style::Caption;
         c1->AddChild(std::move(pluginText));
+    }
+    {
+        auto licenseText = std::make_unique<TextBlock>();
+        licenseText->id = "about_license";
+        licenseText->text = "许可证: Apache License 2.0";
+        licenseText->style = TextBlock::Style::Body;
+        c1->AddChild(std::move(licenseText));
+    }
+    {
+        auto licenseLink = std::make_unique<TextBlock>();
+        licenseLink->id = "about_license_url";
+        licenseLink->text = "https://www.apache.org/licenses/LICENSE-2.0";
+        licenseLink->style = TextBlock::Style::Caption;
+        c1->AddChild(std::move(licenseLink));
     }
     AddChild(std::move(c1));
 }

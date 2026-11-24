@@ -12,13 +12,21 @@ using moekoe::Utf8ToWide;
 namespace moekoe::ui {
 
 // ── 辅助：获取 DWrite 工厂（共享实例，避免重复创建） ──
-static Microsoft::WRL::ComPtr<IDWriteFactory>& GetDWriteFactory() {
+Microsoft::WRL::ComPtr<IDWriteFactory>& GetSharedDWriteFactory() {
     static Microsoft::WRL::ComPtr<IDWriteFactory> factory;
     if (!factory) {
         ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
                               reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
     }
     return factory;
+}
+
+void ReleaseSharedUIDWriteFactory() {
+    GetSharedDWriteFactory().Reset();
+}
+
+static Microsoft::WRL::ComPtr<IDWriteFactory>& GetDWriteFactory() {
+    return GetSharedDWriteFactory();
 }
 
 // ── 辅助：创建临时画刷 ──
@@ -54,7 +62,7 @@ float TextBlock::MeasureWidth(float availWidth) {
 float TextBlock::MeasureHeight(float availWidth) {
     switch (style) {
     case Style::Title:          return 32;
-    case Style::SectionHeader:  return 28;
+    case Style::SectionHeader:  return 30;
     case Style::Caption:        return 20;
     default:                    return 24;
     }
@@ -78,7 +86,7 @@ void TextBlock::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         color = ctx.Text();
         break;
     case Style::SectionHeader:
-        fontSize = 13;
+        fontSize = 14;
         weight = DWRITE_FONT_WEIGHT_SEMI_BOLD;
         color = ctx.Text();
         break;
@@ -228,20 +236,22 @@ void Toggle::Draw(ID2D1RenderTarget* rt) {
 void Toggle::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标签
-    auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
-    if (fmt) {
-        fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
-        std::wstring wlabel = Utf8ToWide(label);
-        rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 56, y_ + h_),
-                      txtBrush.Get());
+    // 标签（紧凑模式下由 SettingRow 行标题承担）
+    if (!compact) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wlabel = Utf8ToWide(label);
+            rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
+                          fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 56, y_ + h_),
+                          txtBrush.Get());
+        }
     }
 
     // 开关轨道（更大的胶囊形）
     const float trackW = 44, trackH = 24;
-    const float trackX = x_ + w_ - trackW - 6;
+    const float trackX = compact ? x_ : x_ + w_ - trackW - 6;
     const float trackY = y_ + (h_ - trackH) / 2;
     const float radius = trackH / 2;
 
@@ -339,15 +349,17 @@ void Slider::Draw(ID2D1RenderTarget* rt) {
 void Slider::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标签
-    auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
-    if (fmt) {
-        fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
-        std::wstring wlabel = Utf8ToWide(label);
-        rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 80, y_ + 22),
-                      txtBrush.Get());
+    // 标签（紧凑模式下由 SettingRow 行标题承担）
+    if (!compact) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wlabel = Utf8ToWide(label);
+            rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
+                          fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 80, y_ + 22),
+                          txtBrush.Get());
+        }
     }
 
     // 值
@@ -483,6 +495,16 @@ float ComboBox::MeasureHeight(float availWidth) {
     return dropped ? static_cast<float>(40 + items.size() * 32) : 40;
 }
 
+void ComboBox::GetBoxRect(float* boxX, float* boxW) const {
+    if (compact) {
+        *boxX = x_;
+        *boxW = w_;
+    } else {
+        *boxX = x_ + w_ / 2;
+        *boxW = w_ / 2;
+    }
+}
+
 void ComboBox::Draw(ID2D1RenderTarget* rt) {
     Draw(rt, DrawContext{});
 }
@@ -490,39 +512,33 @@ void ComboBox::Draw(ID2D1RenderTarget* rt) {
 void ComboBox::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标签
-    auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
-    if (fmt) {
-        fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
-        std::wstring wlabel = Utf8ToWide(label);
-        rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ / 2, y_ + 40),
-                      txtBrush.Get());
+    // 标签（紧凑模式下由 SettingRow 行标题承担）
+    if (!compact) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wlabel = Utf8ToWide(label);
+            rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
+                          fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ / 2, y_ + 40),
+                          txtBrush.Get());
+        }
     }
 
     // 下拉框
-    const float boxX = x_ + w_ / 2;
-    const float boxW = w_ / 2;
     const float boxH = 30;
     const float boxY = y_ + 5;
+    float boxX, boxW;
+    GetBoxRect(&boxX, &boxW);
 
-    // 采用细描边输入框风格，避免下拉框成为厚重的灰色块。
-    auto surf = ctx.Surface();
-    D2D1_COLOR_F bgColor = hovered
-        ? LerpColor(surf, ctx.accent, 0.07f)
-        : LerpColor(surf, ctx.Border(), 0.24f);
-    auto boxBg = MakeBrush(rt, bgColor);
-    rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + boxH), 6, 6),
+    // Win11 扁平风格：无边框、圆角、悬停柔和过渡
+    // 填充色为表面色的轻微中性加深（hover 时随动画进度平滑加深）
+    const auto surf = ctx.Surface();
+    const float boxR = 6;
+    const float tint = 0.042f + 0.030f * hoverT_;
+    auto boxBg = MakeBrush(rt, LerpColor(surf, ctx.Text(), tint));
+    rt->FillRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + boxH), boxR, boxR),
                               boxBg.Get());
-
-    // 边框
-    D2D1_COLOR_F borderColor = hovered
-        ? D2D1::ColorF(ctx.accent.r, ctx.accent.g, ctx.accent.b, 0.5f)  // 悬停时强调色边框
-        : ctx.Border();
-    auto boxBorder = MakeBrush(rt, borderColor);
-    rt->DrawRoundedRectangle(D2D1::RoundedRect(D2D1::RectF(boxX, boxY, boxX + boxW, boxY + boxH), 6, 6),
-                              boxBorder.Get(), 1);
 
     // 当前选中项
     if (selectedIndex >= 0 && selectedIndex < static_cast<int>(items.size())) {
@@ -548,19 +564,38 @@ void ComboBox::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
 
 UIElement* ComboBox::HitTest(float x, float y) {
     if (!visible_) return nullptr;
+    float boxX, boxW;
+    GetBoxRect(&boxX, &boxW);
     if (dropped) {
         float dropH = static_cast<float>(items.size() * 32);
-        float boxX = x_ + w_ / 2;
         float boxY = y_ + 5;
-        if (x >= boxX && x <= x_ + w_ && y >= boxY && y <= boxY + 30 + dropH)
+        if (x >= boxX && x <= boxX + boxW && y >= boxY && y <= boxY + 30 + dropH)
             return this;
         return nullptr;
     }
-    float boxX = x_ + w_ / 2;
     float boxY = y_ + 5;
-    if (x >= boxX && x <= x_ + w_ && y >= boxY && y <= boxY + 30)
+    if (x >= boxX && x <= boxX + boxW && y >= boxY && y <= boxY + 30)
         return this;
     return nullptr;
+}
+
+bool ComboBox::TickAnimation(float deltaMs) {
+    // 悬停动画：启动/更新（与 Button 一致的柔和过渡）
+    if (hovered && !hoverAnim_.active) {
+        hoverAnim_.Start(hoverT_, 1.0f, 180.0f, EaseOutCubic);
+    } else if (!hovered && !hoverAnim_.active && hoverT_ > 0.001f) {
+        hoverAnim_.Start(hoverT_, 0.0f, 200.0f, EaseOutCubic);
+    }
+
+    if (hoverAnim_.active) {
+        hoverAnim_.Tick(deltaMs);
+        hoverT_ = hoverAnim_.Current();
+        if (hoverAnim_.IsDone()) {
+            hoverT_ = hoverAnim_.to;
+        }
+    }
+
+    return hoverAnim_.active || UIElement::TickAnimation(deltaMs);
 }
 
 // ═══════════════════════════════════════
@@ -614,21 +649,29 @@ void Card::Draw(ID2D1RenderTarget* rt) {
 void Card::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 单层、低透明度投影：保留分层但不在亮色主题形成厚重底边。
-    const float shadowAlpha = ctx.isDarkMode ? 0.16f : 0.07f;
-    auto shadowBrush = MakeBrush(rt, D2D1::ColorF(0, 0, 0, shadowAlpha));
+    // 双层低透明度弥散投影：贴近 Win11 卡片的"轻微悬浮"感
+    const float shadowAlpha1 = ctx.isDarkMode ? 0.10f : 0.030f;
+    const float shadowAlpha2 = ctx.isDarkMode ? 0.06f : 0.018f;
+    auto shadowBrush1 = MakeBrush(rt, D2D1::ColorF(0, 0, 0, shadowAlpha1));
     rt->FillRoundedRectangle(
-        D2D1::RoundedRect(D2D1::RectF(x_ + 1, y_ + 2, x_ + w_ + 1, y_ + h_ + 2), cornerRadius, cornerRadius),
-        shadowBrush.Get());
+        D2D1::RoundedRect(D2D1::RectF(x_, y_ + 1.5f, x_ + w_, y_ + h_ + 1.5f),
+                          cornerRadius + 1, cornerRadius + 1),
+        shadowBrush1.Get());
+    auto shadowBrush2 = MakeBrush(rt, D2D1::ColorF(0, 0, 0, shadowAlpha2));
+    rt->FillRoundedRectangle(
+        D2D1::RoundedRect(D2D1::RectF(x_, y_ + 3, x_ + w_, y_ + h_ + 3),
+                          cornerRadius + 2, cornerRadius + 2),
+        shadowBrush2.Get());
 
-    // 卡片背景（微蓝紫表面色）
-    D2D1_COLOR_F cardBgColor = ctx.Surface();
-    auto cardBg = MakeBrush(rt, cardBgColor);
+    // 卡片背景（纯表面色）
+    auto cardBg = MakeBrush(rt, ctx.Surface());
     D2D1_ROUNDED_RECT rr = {D2D1::RectF(x_, y_, x_ + w_, y_ + h_), cornerRadius, cornerRadius};
     rt->FillRoundedRectangle(rr, cardBg.Get());
 
-    // 卡片边框（使用主题边框色，亮暗模式自适应）
-    auto cardBorder = MakeBrush(rt, ctx.Border());
+    // 边框极大淡化（≈ rgba(0,0,0,0.05)，暗色下用白色低透明度）
+    auto cardBorder = MakeBrush(rt, ctx.isDarkMode
+        ? D2D1::ColorF(1, 1, 1, 0.055f)
+        : D2D1::ColorF(0, 0, 0, 0.05f));
     rt->DrawRoundedRectangle(rr, cardBorder.Get(), 1);
 
     // 标题使用短强调色标记，帮助长表单快速分组。
@@ -660,10 +703,12 @@ void Card::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         float childH = children_[i]->MeasureHeight(innerW);
         if (i > 0) {
             float lineY = curY - gap / 2;
-            // 分隔线使用主题边框色，亮暗模式自适应
-            auto sepBrush = MakeBrush(rt, ctx.Border());
+            // 分隔线极淡（与 Win11 设置一致），从文本起始处对齐
+            auto sepBrush = MakeBrush(rt, ctx.isDarkMode
+                ? D2D1::ColorF(1, 1, 1, 0.07f)
+                : D2D1::ColorF(0, 0, 0, 0.07f));
             rt->DrawLine(
-                D2D1::Point2F(innerX + 8, lineY),
+                D2D1::Point2F(innerX + 16, lineY),
                 D2D1::Point2F(innerX + innerW - 8, lineY),
                 sepBrush.Get(), 1);
         }
@@ -671,6 +716,176 @@ void Card::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     }
 
     // 绘制子元素
+    for (auto& child : children_) {
+        if (child->IsVisible()) child->Draw(rt, ctx);
+    }
+}
+
+// ═══════════════════════════════════════
+// SettingRow — 独立设置行卡片（参考 Windows 11 设置风格）
+// ═══════════════════════════════════════
+
+UIElement* SettingRow::Control() {
+    return children_.empty() ? nullptr : children_[0].get();
+}
+
+float SettingRow::MeasureWidth(float availWidth) {
+    return availWidth;
+}
+
+float SettingRow::MeasureHeight(float availWidth) {
+    // 行内控件高度统一按 40 处理（保持下拉展开时行高稳定，列表由弹窗绘制）
+    const float padV = 12;
+    float textH = 0;
+    if (!title.empty()) textH += 20;
+    if (!description.empty()) {
+        // 估算说明换行行数（ASCII≈6.5px/字符，CJK≈12px/字符），行高随行数增长
+        float textW = 0;
+        std::wstring wdesc = Utf8ToWide(description);
+        for (wchar_t c : wdesc) textW += (c < 0x2000) ? 6.5f : 12.0f;
+        // 与 Draw 的 textRight 一致：右侧按控件类型预留宽度
+        float ctrlW = 200;
+        UIElement* ctrl = Control();
+        if (ctrl && ctrl->IsVisible()) {
+            if (dynamic_cast<Toggle*>(ctrl)) ctrlW = 56;
+            else if (dynamic_cast<ComboBox*>(ctrl)) ctrlW = 200;
+            else if (dynamic_cast<ColorRow*>(ctrl)) ctrlW = 110;
+            else if (dynamic_cast<LabelRow*>(ctrl)) ctrlW = 200;
+            else if (dynamic_cast<Slider*>(ctrl)) ctrlW = 240;
+            else if (dynamic_cast<Button*>(ctrl)) ctrlW = 100;
+        }
+        float iconW = icon.empty() ? 0.0f : 28.0f;
+        float textX = 16 + iconW;
+        float textRight = std::min(availWidth - 150, availWidth - 16 - ctrlW - 12);
+        float avail = std::max(80.0f, textRight - textX);
+        float lines = std::max(1.0f, std::ceil(textW / avail));
+        textH += (title.empty() ? 0 : 2) + 18 * lines;
+    }
+    return std::max(textH, 40.0f) + padV * 2;
+}
+
+void SettingRow::Arrange(float x, float y, float w, float h) {
+    UIElement::Arrange(x, y, w, h);
+
+    UIElement* ctrl = Control();
+    if (!ctrl || !ctrl->IsVisible()) return;
+
+    const float padH = 16;
+    float ctrlW = 0;
+    float ctrlH = 40;
+
+    if (dynamic_cast<Toggle*>(ctrl)) {
+        ctrlW = 56;
+    } else if (dynamic_cast<ComboBox*>(ctrl)) {
+        ctrlW = 200;
+    } else if (dynamic_cast<ColorRow*>(ctrl)) {
+        ctrlW = 110;
+    } else if (dynamic_cast<LabelRow*>(ctrl)) {
+        ctrlW = 200;
+    } else if (dynamic_cast<Button*>(ctrl)) {
+        ctrlW = std::max(90.0f, ctrl->MeasureWidth(0));
+        ctrlH = ctrl->MeasureHeight(0);
+    } else if (dynamic_cast<Slider*>(ctrl)) {
+        // 滑块占图标+标题区右侧的剩余宽度（上限 240，避免挤压左侧说明文字）
+        float reserved = padH + (icon.empty() ? 0 : 28) + 220 + padH;
+        ctrlW = std::clamp(w - reserved, 160.0f, 240.0f);
+    } else {
+        ctrlW = ctrl->MeasureWidth(0);
+    }
+
+    // 控件以紧凑模式绘制（标签由行标题承担）
+    if (auto* t = dynamic_cast<Toggle*>(ctrl)) t->compact = true;
+    else if (auto* c = dynamic_cast<ComboBox*>(ctrl)) c->compact = true;
+    else if (auto* s = dynamic_cast<Slider*>(ctrl)) s->compact = true;
+    else if (auto* cr = dynamic_cast<ColorRow*>(ctrl)) cr->compact = true;
+    else if (auto* lr = dynamic_cast<LabelRow*>(ctrl)) lr->compact = true;
+
+    float ctrlX = x + w - padH - ctrlW;
+    float ctrlY = y + (h - ctrlH) / 2;
+    ctrl->Arrange(ctrlX, ctrlY, ctrlW, ctrlH);
+}
+
+void SettingRow::Draw(ID2D1RenderTarget* rt) {
+    Draw(rt, DrawContext{});
+}
+
+void SettingRow::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
+    if (!visible_) return;
+
+    const float radius = 8;
+    const float padH = 16;
+
+    if (grouped) {
+        // 分组模式：仅悬停时高亮整行（卡片底/边框/分隔线由分组卡片负责）
+        if (hovered) {
+            auto hoverBrush = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.Text(),
+                                                      ctx.isDarkMode ? 0.05f : 0.035f));
+            rt->FillRectangle(D2D1::RectF(x_, y_, x_ + w_, y_ + h_), hoverBrush.Get());
+        }
+    } else {
+        // 卡片背景（悬停微亮，Fluent 中性混色）
+        D2D1_COLOR_F bg = ctx.Surface();
+        if (hovered) bg = LerpColor(bg, ctx.Text(), ctx.isDarkMode ? 0.05f : 0.035f);
+        auto bgBrush = MakeBrush(rt, bg);
+        rt->FillRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x_, y_, x_ + w_, y_ + h_), radius, radius),
+            bgBrush.Get());
+
+        // 卡片边框（极大淡化）
+        auto borderBrush = MakeBrush(rt, ctx.isDarkMode
+            ? D2D1::ColorF(1, 1, 1, 0.055f)
+            : D2D1::ColorF(0, 0, 0, 0.05f));
+        rt->DrawRoundedRectangle(
+            D2D1::RoundedRect(D2D1::RectF(x_, y_, x_ + w_, y_ + h_), radius, radius),
+            borderBrush.Get(), 1);
+    }
+
+    // 文本区右边界（避免压到右侧控件）
+    float textRight = x_ + w_ - 150;
+    UIElement* ctrl = Control();
+    if (ctrl && ctrl->IsVisible()) textRight = std::min(textRight, ctrl->X() - 12);
+
+    // 图标（Segoe MDL2 Assets，整行垂直居中）
+    float textX = x_ + padH;
+    if (!icon.empty()) {
+        if (auto iconFmt = MakeTextFormat(L"Segoe MDL2 Assets", 15)) {
+            iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto iconBrush = MakeBrush(rt, ctx.TextSecondary());
+            rt->DrawTextW(icon.c_str(), static_cast<UINT32>(icon.size()),
+                          iconFmt.Get(), D2D1::RectF(x_ + padH, y_, x_ + padH + 26, y_ + h_),
+                          iconBrush.Get());
+        }
+        textX += 28;
+    }
+
+    // 标题 + 说明（顶部对齐的文本块整体垂直居中）
+    float textH = (!title.empty() ? 20 : 0) +
+                  (!description.empty() ? (title.empty() ? 0 : 2) + 18 : 0);
+    float textY = y_ + (h_ - textH) / 2;
+
+    if (!title.empty()) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 14);
+        if (fmt) {
+            auto txtBrush = MakeBrush(rt, ctx.Text());
+            std::wstring wtitle = Utf8ToWide(title);
+            rt->DrawTextW(wtitle.c_str(), static_cast<UINT32>(wtitle.size()),
+                          fmt.Get(), D2D1::RectF(textX, textY, textRight, textY + 20),
+                          txtBrush.Get());
+        }
+    }
+    if (!description.empty()) {
+        float descY = textY + (title.empty() ? 0 : 22);
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wdesc = Utf8ToWide(description);
+            rt->DrawTextW(wdesc.c_str(), static_cast<UINT32>(wdesc.size()),
+                          fmt.Get(), D2D1::RectF(textX, descY, textRight, descY + 18),
+                          txtBrush.Get());
+        }
+    }
+
+    // 子控件
     for (auto& child : children_) {
         if (child->IsVisible()) child->Draw(rt, ctx);
     }
@@ -695,42 +910,45 @@ void NavItem::Draw(ID2D1RenderTarget* rt) {
 void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 选中/悬停背景（圆角矩形）
-    float insetX = x_ + 8;
-    float insetW = w_ - 16;
+    // 选中/悬停背景（圆角矩形）——左侧留出明显空白，不贴导航边缘
+    float insetX = x_ + 14;
+    float insetW = w_ - 28;
+
+    // Fluent 规范：选中项用中性色高亮（accent 仅保留指示条与图标）
+    const float selMix = ctx.isDarkMode ? 0.09f : 0.06f;
+    const float hoverMix = ctx.isDarkMode ? 0.06f : 0.04f;
 
     if (selected) {
-        // 选中背景带轻微强调色，亮色主题下也能一眼识别当前位置。
-        auto selBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.accent, 0.10f));
+        auto selBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.Text(), selMix));
         rt->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 2, insetX + insetW, y_ + h_ - 2), 6, 6),
             selBg.Get());
 
-        // 左侧紫色指示器（3px圆角条）
+        // 左侧强调色指示器（3px圆角条，内缩在药丸内，左侧露一点背景）
         auto accent = MakeBrush(rt, ctx.accent);
         rt->FillRoundedRectangle(
-            D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 8, insetX + 3, y_ + h_ - 8), 1.5f, 1.5f),
+            D2D1::RoundedRect(D2D1::RectF(insetX + 5, y_ + 8, insetX + 8, y_ + h_ - 8), 1.5f, 1.5f),
             accent.Get());
     } else if (hovered) {
         // 悬停反馈比选中态更弱，避免侧栏抢占内容区注意力。
-        auto hoverBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.accent, 0.05f));
+        auto hoverBg = MakeBrush(rt, LerpColor(ctx.Surface(), ctx.Text(), hoverMix));
         rt->FillRoundedRectangle(
             D2D1::RoundedRect(D2D1::RectF(insetX, y_ + 2, insetX + insetW, y_ + h_ - 2), 6, 6),
             hoverBg.Get());
     }
 
     // 图标（Segoe MDL2 Assets）
-    float textX = x_ + 20;
+    float textX = x_ + 36;
     if (!icon.empty()) {
         auto iconFmt = MakeTextFormat(L"Segoe MDL2 Assets", 15);
         if (iconFmt) {
             iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             auto iconBrush = MakeBrush(rt, selected ? ctx.accent : ctx.TextSecondary());
             rt->DrawTextW(icon.c_str(), static_cast<UINT32>(icon.size()),
-                          iconFmt.Get(), D2D1::RectF(x_ + 16, y_, x_ + 40, y_ + h_),
+                          iconFmt.Get(), D2D1::RectF(x_ + 32, y_, x_ + 56, y_ + h_),
                           iconBrush.Get());
         }
-        textX = x_ + 44;
+        textX = x_ + 60;
     }
 
     // 文本
@@ -738,7 +956,7 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
                               selected ? DWRITE_FONT_WEIGHT_SEMI_BOLD : DWRITE_FONT_WEIGHT_NORMAL);
     if (fmt) {
         fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, selected ? ctx.accent : ctx.TextSecondary());
+        auto txtBrush = MakeBrush(rt, selected ? ctx.Text() : ctx.TextSecondary());
         std::wstring wlabel = Utf8ToWide(label);
         rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
                       fmt.Get(), D2D1::RectF(textX, y_, x_ + w_, y_ + h_),
@@ -770,20 +988,22 @@ void ColorRow::Draw(ID2D1RenderTarget* rt) {
 void ColorRow::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标签
-    auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
-    if (fmt) {
-        fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
-        std::wstring wlabel = Utf8ToWide(label);
-        rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 90, y_ + h_),
-                      txtBrush.Get());
+    // 标签（紧凑模式下由 SettingRow 行标题承担）
+    if (!compact) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wlabel = Utf8ToWide(label);
+            rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
+                          fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ - 90, y_ + h_),
+                          txtBrush.Get());
+        }
     }
 
     // 28×28 圆角色块（更大更明显）
     const float swatchW = 28, swatchH = 28;
-    const float swatchX = x_ + w_ - swatchW - 64;
+    const float swatchX = compact ? x_ : x_ + w_ - swatchW - 64;
     const float swatchY = y_ + (h_ - swatchH) / 2;
 
     // 色块阴影
@@ -848,15 +1068,17 @@ void LabelRow::Draw(ID2D1RenderTarget* rt) {
 void LabelRow::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     if (!visible_) return;
 
-    // 标签
-    auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
-    if (fmt) {
-        fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
-        std::wstring wlabel = Utf8ToWide(label);
-        rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
-                      fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ / 2, y_ + h_),
-                      txtBrush.Get());
+    // 标签（紧凑模式下由 SettingRow 行标题承担）
+    if (!compact) {
+        auto fmt = MakeTextFormat(L"Segoe UI Variable", 12);
+        if (fmt) {
+            fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            auto txtBrush = MakeBrush(rt, ctx.TextSecondary());
+            std::wstring wlabel = Utf8ToWide(label);
+            rt->DrawTextW(wlabel.c_str(), static_cast<UINT32>(wlabel.size()),
+                          fmt.Get(), D2D1::RectF(x_, y_, x_ + w_ / 2, y_ + h_),
+                          txtBrush.Get());
+        }
     }
 
     // 值（右对齐）
@@ -867,7 +1089,7 @@ void LabelRow::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
         auto valBrush = MakeBrush(rt, !readOnly ? ctx.accentLight : ctx.TextSecondary());
         std::wstring wval = Utf8ToWide(textValue);
         rt->DrawTextW(wval.c_str(), static_cast<UINT32>(wval.size()),
-                      valFmt.Get(), D2D1::RectF(x_ + w_ / 2, y_, x_ + w_ - 16, y_ + h_),
+                      valFmt.Get(), D2D1::RectF(compact ? x_ : x_ + w_ / 2, y_, x_ + w_ - 16, y_ + h_),
                       valBrush.Get());
     }
 

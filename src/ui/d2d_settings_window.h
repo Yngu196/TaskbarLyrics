@@ -165,8 +165,8 @@ private:
     int v2ContentHeight_{0};
 
     // 窗口尺寸基准值
-    static constexpr int kWinWidthBase  = 720;
-    static constexpr int kWinHeightBase = 580;
+    static constexpr int kWinWidthBase  = 960;
+    static constexpr int kWinHeightBase = 720;
     static constexpr int kTitleBarHeight = 36;
 
     // 颜色选择器弹窗
@@ -193,6 +193,7 @@ private:
     void UpdateThemeColors();
     void UpdateDrawContext();
     void CreateBgGradientBrush();       // 创建窗口渐变背景画刷
+    void ApplyDwmBorder(bool active);   // DWM 边框颜色跟随深浅色与激活状态
     void StartAnimationTimer();         // 启动动画帧定时器
     void StopAnimationTimer();          // 停止动画帧定时器
 
@@ -207,10 +208,17 @@ private:
     std::unique_ptr<ui::NavView> navView_;
     std::vector<std::unique_ptr<ui::SettingsPage>> pages_;
     int currentPage_{0};
-    int panelOffsetX_{0};  // 最大化时整体居中的左侧偏移量
+    int panelOffsetX_{0};   // 导航栏左缘偏移（固定贴窗口左缘，恒为 0）
+    int contentOffsetX_{0}; // 内容列左缘（导航栏右侧剩余空间内居中）
     ui::UIElement* capturedElement_{nullptr};
     ui::UIElement* hoveredElement_{nullptr};
     ui::ColorRow* activeColorRow_{nullptr};  // 颜色选择器激活时的目标控件
+
+    // 导航栏底部帮助入口与版本号（自绘 RECT，不进控件树；DIP 坐标随 ArrangeUI 更新）
+    RECT footerRects_[2]{};
+    int  hoverFooterIndex_{-1};
+    int  pressedFooterIndex_{-1};
+    int  HitFooter(int x, int y) const;  // 命中返回索引（0=问题反馈 1=关于与更新），否则 -1
 };
 
 } // namespace moekoe

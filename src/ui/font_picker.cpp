@@ -18,29 +18,49 @@ Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> MakeBrush(ID2D1RenderTarget* rt, co
     return b;
 }
 
-// 共享 DWrite 工厂（进程内仅创建一次；此前每创建一个字体格式都新建工厂，
-// 导致滚动到新字体时 UI 线程卡顿，是滑动卡顿的主因）
-Microsoft::WRL::ComPtr<IDWriteFactory> SharedFactory() {
-    static Microsoft::WRL::ComPtr<IDWriteFactory> f = [] {
-        Microsoft::WRL::ComPtr<IDWriteFactory> factory;
+// 共享 DWrite 工厂（进程内惰性创建；设置窗口关闭时可整体释放，
+// 避免字体缓存内存常驻导致内存占用不回落）
+static Microsoft::WRL::ComPtr<IDWriteFactory>& SharedFactoryRef() {
+    static Microsoft::WRL::ComPtr<IDWriteFactory> f;
+    if (!f) {
         ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                              reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
-        return factory;
-    }();
+                              reinterpret_cast<IUnknown**>(f.GetAddressOf()));
+    }
     return f;
 }
+
+Microsoft::WRL::ComPtr<IDWriteFactory> SharedFactory() {
+    return SharedFactoryRef();
+}
+
+// 字体族 TextFormat 缓存（键为字体族名），可整体释放
+static std::map<std::wstring, Microsoft::WRL::ComPtr<IDWriteTextFormat>>& FamilyCache() {
+    static std::map<std::wstring, Microsoft::WRL::ComPtr<IDWriteTextFormat>> cache;
+    return cache;
+}
+
+// 释放字体选择器的共享工厂与格式缓存（关闭设置窗口时调用）
+// 注意：在匿名命名空间之外，保证外部可链接
+} // anonymous namespace
+
+void ReleaseFontPickerCaches() {
+    FamilyCache().clear();
+    SharedFactoryRef().Reset();
+}
+
+namespace {
 
 Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeTextFormat(const wchar_t* family, float size,
                                                          DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL) {
     Microsoft::WRL::ComPtr<IDWriteTextFormat> fmt;
-    SharedFactory()->CreateTextFormat(family, nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
+    SharedFactoryRef()->CreateTextFormat(family, nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
                                       DWRITE_FONT_STRETCH_NORMAL, size, L"zh-Hans", fmt.GetAddressOf());
     return fmt;
 }
 
 // 每个字体族一个 TextFormat（跨帧缓存，键为字体族名）
 Microsoft::WRL::ComPtr<IDWriteTextFormat> FamilyFormat(const std::wstring& family, float size) {
-    static std::map<std::wstring, Microsoft::WRL::ComPtr<IDWriteTextFormat>> cache;
+    auto& cache = FamilyCache();
     auto it = cache.find(family);
     if (it != cache.end()) return it->second;
     auto fmt = MakeTextFormat(family.c_str(), size);

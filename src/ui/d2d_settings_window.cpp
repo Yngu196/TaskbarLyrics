@@ -3,6 +3,7 @@
 #include "ui/d2d_settings_window.h"
 #include "ui/color_utils.h"
 #include "ui/settings_draw_utils.h"
+#include "ui/font_picker.h"
 #include "util/logger.h"
 
 #include <algorithm>
@@ -136,88 +137,58 @@ void D2DSettingsWindow::DetectDarkMode() {
     isDarkMode_ = true;
 }
 
+void D2DSettingsWindow::ApplyDwmBorder(bool active) {
+    // DWMWA_BORDER_COLOR = 34（Win11 22H2+，失败则静默忽略）
+    // 激活态边框较醒目，失活态更淡一档，颜色跟随当前深浅主题
+    const COLORREF border = active
+        ? (isDarkMode_ ? RGB(0x3A, 0x3A, 0x3A) : RGB(0xDB, 0xDB, 0xDB))
+        : (isDarkMode_ ? RGB(0x2D, 0x2D, 0x2D) : RGB(0xE6, 0xE6, 0xE6));
+    ::DwmSetWindowAttribute(hwnd_, 34, &border, sizeof(border));
+}
+
 void D2DSettingsWindow::UpdateThemeColors() {
     // 读取当前 settingsTheme（从 editedConfig_ 获取最新值）
     std::string themeName = editedConfig_.Appearance().settingsTheme;
 
-    // 根据主题名决定暗色/亮色模式："蓝"和"深色"用暗色，"浅色"和"白色"用亮色
-    isDarkMode_ = (themeName == "blue" || themeName == "dark");
-
-    if (isDarkMode_) {
-        // 每个主题定义完整配色：背景、表面、边框、文本、强调色
-        if (themeName == "dark") {
-            // Visual Studio Dark 风格
-            theme_.bg            = HexToColorF("#1E1E1E");
-            theme_.surface       = HexToColorF("#2D2D2D");
-            theme_.border        = HexToColorF("#3E3E3E");
-            theme_.text          = HexToColorF("#F0F0F0");
-            theme_.textSecondary = HexToColorF("#A0A0A0");
-            theme_.accent        = HexToColorF("#007ACC");
-            theme_.accentHover   = HexToColorF("#1A8CDC");
-        } else if (themeName == "light") {
-            // Visual Studio Light 风格 (暗色模式下的浅灰变体)
-            theme_.bg            = HexToColorF("#2D2D30");
-            theme_.surface       = HexToColorF("#3E3E42");
-            theme_.border        = HexToColorF("#4E4E54");
-            theme_.text          = HexToColorF("#F5F5F5");
-            theme_.textSecondary = HexToColorF("#B0B0B8");
-            theme_.accent        = HexToColorF("#0099FF");
-            theme_.accentHover   = HexToColorF("#33ADFF");
-        } else if (themeName == "white") {
-            // 纯白简洁风格
-            theme_.bg            = HexToColorF("#2B2B2F");
-            theme_.surface       = HexToColorF("#3C3C40");
-            theme_.border        = HexToColorF("#4D4D54");
-            theme_.text          = HexToColorF("#FFFFFF");
-            theme_.textSecondary = HexToColorF("#C8C8D0");
-            theme_.accent        = HexToColorF("#3399FF");
-            theme_.accentHover   = HexToColorF("#5AB5FF");
-        } else {
-            // 默认: Visual Studio Blue 风格
-            theme_.bg            = HexToColorF("#1E1E2E");
-            theme_.surface       = HexToColorF("#252540");
-            theme_.border        = HexToColorF("#3A3A5C");
-            theme_.text          = HexToColorF("#F0F0F5");
-            theme_.textSecondary = HexToColorF("#9B9BB8");
-            theme_.accent        = HexToColorF("#0078D4");
-            theme_.accentHover   = HexToColorF("#2390E5");
-        }
+    // 按主题名一次性确定配色，不做两分支交叉查找（避免映射错位）
+    if (themeName == "dark") {
+        // 深色
+        theme_.bg            = HexToColorF("#1C1C1C");
+        theme_.surface       = HexToColorF("#262626");
+        theme_.border        = HexToColorF("#333333");
+        theme_.text          = HexToColorF("#F5F5F5");
+        theme_.textSecondary = HexToColorF("#9D9D9D");
+        theme_.accent        = HexToColorF("#007ACC");
+        theme_.accentHover   = HexToColorF("#1A8CDC");
+    } else if (themeName == "light") {
+        // 浅色：极浅灰背景（#F9F9F9）+ 纯白卡片，白卡片由此凸显层次
+        theme_.bg            = HexToColorF("#F9F9F9");
+        theme_.surface       = HexToColorF("#FFFFFF");
+        theme_.border        = HexToColorF("#E6E6E6");
+        theme_.text          = HexToColorF("#1A1A1A");
+        theme_.textSecondary = HexToColorF("#606060");
+        theme_.accent        = HexToColorF("#0099FF");
+        theme_.accentHover   = HexToColorF("#33ADFF");
+    } else if (themeName == "white") {
+        // 白色：纯白背景 + 纯白卡片（靠边框区分层次）
+        theme_.bg            = HexToColorF("#FFFFFF");
+        theme_.surface       = HexToColorF("#FFFFFF");
+        theme_.border        = HexToColorF("#E3E3E3");
+        theme_.text          = HexToColorF("#1A1A1A");
+        theme_.textSecondary = HexToColorF("#757575");
+        theme_.accent        = HexToColorF("#0078D4");
+        theme_.accentHover   = HexToColorF("#2390E5");
     } else {
-        if (themeName == "dark") {
-            theme_.bg            = HexToColorF("#F0F0F0");
-            theme_.surface       = HexToColorF("#FFFFFF");
-            theme_.border        = HexToColorF("#D0D0D0");
-            theme_.text          = HexToColorF("#1E1E1E");
-            theme_.textSecondary = HexToColorF("#6B6B6B");
-            theme_.accent        = HexToColorF("#007ACC");
-            theme_.accentHover   = HexToColorF("#1A8CDC");
-        } else if (themeName == "light") {
-            theme_.bg            = HexToColorF("#FAFAFA");
-            theme_.surface       = HexToColorF("#FFFFFF");
-            theme_.border        = HexToColorF("#E0E0E0");
-            theme_.text          = HexToColorF("#2D2D30");
-            theme_.textSecondary = HexToColorF("#8A8A8A");
-            theme_.accent        = HexToColorF("#0099FF");
-            theme_.accentHover   = HexToColorF("#33ADFF");
-        } else if (themeName == "white") {
-            theme_.bg            = HexToColorF("#FFFFFF");
-            theme_.surface       = HexToColorF("#F8F8F8");
-            theme_.border        = HexToColorF("#E8E8E8");
-            theme_.text          = HexToColorF("#1A1A1A");
-            theme_.textSecondary = HexToColorF("#808080");
-            theme_.accent        = HexToColorF("#0078D4");
-            theme_.accentHover   = HexToColorF("#2390E5");
-        } else {
-            // 默认: Visual Studio Blue 风格 (亮色)
-            theme_.bg            = HexToColorF("#F5F7FA");
-            theme_.surface       = HexToColorF("#FFFFFF");
-            theme_.border        = HexToColorF("#D8DEE4");
-            theme_.text          = HexToColorF("#1E1E2E");
-            theme_.textSecondary = HexToColorF("#6B7280");
-            theme_.accent        = HexToColorF("#0078D4");
-            theme_.accentHover   = HexToColorF("#2390E5");
-        }
+        // 默认（蓝）：中性暗色 + 蓝强调
+        theme_.bg            = HexToColorF("#202020");
+        theme_.surface       = HexToColorF("#2B2B2B");
+        theme_.border        = HexToColorF("#3A3A3A");
+        theme_.text          = HexToColorF("#FFFFFF");
+        theme_.textSecondary = HexToColorF("#A6A6A6");
+        theme_.accent        = HexToColorF("#0078D4");
+        theme_.accentHover   = HexToColorF("#2390E5");
     }
+    isDarkMode_ = (themeName == "blue" || themeName == "dark");
     UpdateDrawContext();
 }
 
@@ -391,6 +362,7 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
         // 设置标题栏颜色跟随当前主题（深色→暗色标题栏，浅色→亮色标题栏）
         BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
         DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        ApplyDwmBorder(true);
     }
 
     // 初始化 D2D
@@ -427,8 +399,14 @@ void D2DSettingsWindow::Close() {
         hwnd_ = nullptr;
     }
     ShutdownD2D();
-}
 
+    // 释放设置界面持有的共享 DWrite 工厂与字体格式缓存，
+    // 并修剪工作集，避免关闭后内存占用迟迟不回落
+    moekoe::ui::ReleaseSharedUIDWriteFactory();
+    ReleaseFontPickerCaches();
+    SetProcessWorkingSetSize(GetCurrentProcess(),
+                             static_cast<SIZE_T>(-1), static_cast<SIZE_T>(-1));
+}
 // ═══════════════════════════════
 // D2D 初始化
 // ═══════════════════════════════
@@ -651,8 +629,8 @@ void D2DSettingsWindow::DrawTitleBar(ID2D1RenderTarget* rt) {
 void D2DSettingsWindow::DrawComboBoxDropdown(ID2D1RenderTarget* rt, ui::ComboBox* combo) {
     if (!combo || combo->items.empty()) return;
 
-    const float boxX = combo->X() + combo->Width() / 2;
-    const float boxW = combo->Width() / 2;
+    float boxX, boxW;
+    combo->GetBoxRect(&boxX, &boxW);
     const float boxY = combo->Y() + 5 + 30;  // 与 ComboBox::Draw 中的 boxY+boxH 匹配
     const float itemH = 32;
     const float dropH = static_cast<float>(combo->items.size()) * itemH;
@@ -782,19 +760,29 @@ void D2DSettingsWindow::UpdateActiveColorRow(const D2D1_COLOR_F& color, const st
     }
 }
 
+namespace {
+// 深度优先遍历页面下所有控件（穿透分组卡片 / SettingRow 行等容器）
+template <typename Fn>
+void ForEachControl(ui::UIElement* node, Fn&& fn) {
+    if (!node) return;
+    for (auto& child : node->Children()) {
+        fn(child.get());
+        ForEachControl(child.get(), fn);
+    }
+}
+} // namespace
+
 void D2DSettingsWindow::UpdateActiveFontRow(const std::wstring& family) {
     if (fontPickerTargetId_.empty()) return;
     // 在当前页面查找目标 LabelRow 并写回（字体行只存在于外观页）
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
-        for (auto& card : pages_[currentPage_]->Children()) {
-            for (auto& child : card->Children()) {
-                if (auto* row = dynamic_cast<ui::LabelRow*>(child.get())) {
-                    if (row->id == fontPickerTargetId_) {
-                        row->textValue = WideToLocalUtf8(family);
-                    }
+        ForEachControl(pages_[currentPage_].get(), [&](ui::UIElement* e) {
+            if (auto* row = dynamic_cast<ui::LabelRow*>(e)) {
+                if (row->id == fontPickerTargetId_) {
+                    row->textValue = WideToLocalUtf8(family);
                 }
             }
-        }
+        });
     }
     fontPickerTargetId_.clear();
 }
@@ -948,6 +936,8 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             MARGINS dwmMargins = {0, 0, 0, 1};
             DwmExtendFrameIntoClientArea(hwnd, &dwmMargins);
         }
+        if (self)
+            self->ApplyDwmBorder(LOWORD(wParam) != WA_INACTIVE);
         break;
 
     case WM_DWMCOMPOSITIONCHANGED:
@@ -956,6 +946,8 @@ LRESULT CALLBACK D2DSettingsWindow::WndProc(HWND hwnd, UINT msg, WPARAM wParam, 
             MARGINS dwmMargins = {0, 0, 0, 1};
             DwmExtendFrameIntoClientArea(hwnd, &dwmMargins);
         }
+        if (self)
+            self->ApplyDwmBorder(GetForegroundWindow() == hwnd);
         break;
 
     case WM_NCCALCSIZE:
@@ -1295,28 +1287,36 @@ void D2DSettingsWindow::ArrangeUI() {
     int clientH = static_cast<int>(rc.bottom / dpiScale_);
 
     const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
-    int contentW = clientW - navW;
+    const int restW = std::max(0, clientW - navW);
 
-    // 普通窗口沿用紧凑布局；宽屏/全屏时允许内容区扩展，避免两侧留下大面积空白。
-    // 960 DIP 仍能让双列表单控件保持易读，且只影响布局尺寸，不增加绘制资源。
-    const int kMaxContentWidth = 960;
-    if (contentW > kMaxContentWidth) {
-        contentW = kMaxContentWidth;
-    }
+    // 内容列宽度：窄窗口占满剩余空间；宽屏取剩余宽度的 60%（参考 Fluent 设置比例，
+    // 避免内容列窄、两侧大片空白），上限 1440 防止超宽屏下行卡片过长。
+    int contentW = std::min(restW, std::max(960, restW * 6 / 10));
+    contentW = std::min(contentW, 1440);
 
-    // 最大化时整体居中：导航栏+内容区作为整体居中显示，左右对称留白
-    const int totalWidth = navW + contentW;
-    panelOffsetX_ = (clientW - totalWidth) / 2;
-    if (panelOffsetX_ < 0) panelOffsetX_ = 0;
+    // 导航栏固定贴窗口左缘（参考 Fluent 设置：宽屏时不整体居中）；
+    // 内容列在导航栏右侧的剩余空间内居中，避免内容贴着导航或偏到一边。
+    panelOffsetX_ = 0;
+    contentOffsetX_ = navW + std::max(0, (restW - contentW) / 2);
 
     // 导航区域
     navView_->Arrange(panelOffsetX_, kTitleBarHeight, navW, clientH - kTitleBarHeight);
+
+    // 导航栏底部帮助入口与版本号（DIP 坐标，参考 Fluent 设置页脚布局）
+    {
+        constexpr int kFooterItemH = 32;
+        constexpr int kVersionH = 20;
+        const int footerTop = clientH - 20 - kFooterItemH - kVersionH;
+        footerRects_[0] = RECT{ panelOffsetX_ + 4, footerTop,
+                                panelOffsetX_ + navW - 4, footerTop + kFooterItemH };
+        footerRects_[1] = RECT{ 0, 0, 0, 0 };  // 「关于与更新」入口已移除
+    }
 
     // 当前页面
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
         auto& page = pages_[currentPage_];
         float pageH = page->MeasureHeight(contentW);
-        page->Arrange(panelOffsetX_ + navW, kTitleBarHeight - v2ScrollOffset_, contentW, pageH);
+        page->Arrange(contentOffsetX_, kTitleBarHeight - v2ScrollOffset_, contentW, pageH);
         v2ContentHeight_ = static_cast<int>(pageH);
     }
 }
@@ -1355,9 +1355,86 @@ void D2DSettingsWindow::DrawV2() {
     // 绘制导航（传递 DrawContext）
     if (navView_) navView_->Draw(renderTarget_.Get(), drawCtx_);
 
+    // 绘制导航栏底部帮助入口与版本号
+    if (navView_) {
+        // 局部绘制辅助（与本文件其余部分保持一致的直接 D2D 调用风格）
+        auto solid = [this](const D2D1_COLOR_F& c) {
+            Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> b;
+            renderTarget_->CreateSolidColorBrush(c, b.GetAddressOf());
+            return b;
+        };
+        auto mkfmt = [this](const wchar_t* family, float size,
+                            DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL) {
+            Microsoft::WRL::ComPtr<IDWriteTextFormat> f;
+            dwriteFactory_->CreateTextFormat(family, nullptr, weight, DWRITE_FONT_STYLE_NORMAL,
+                                             DWRITE_FONT_STRETCH_NORMAL, size, L"zh-Hans",
+                                             f.GetAddressOf());
+            return f;
+        };
+
+        const int navLeft = panelOffsetX_;
+        const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
+        const int footerTop = footerRects_[0].top;
+        constexpr int kFooterItemH = 32;
+
+        const wchar_t* kFooterLabels[] = { L"问题反馈" };
+        const wchar_t* kFooterIcons[]  = { L"\uE8B7" };
+
+        for (int i = 0; i < 1; ++i) {
+            const D2D1_RECT_F fr = D2D1::RectF(
+                static_cast<FLOAT>(footerRects_[i].left),
+                static_cast<FLOAT>(footerRects_[i].top),
+                static_cast<FLOAT>(footerRects_[i].right),
+                static_cast<FLOAT>(footerRects_[i].bottom));
+
+            // 悬停/按下背景（Fluent 中性高亮，按下叠加强调色）
+            if (pressedFooterIndex_ == i) {
+                auto pressedBg = solid(Lerp(theme_.surface, theme_.accent, 0.10f));
+                renderTarget_->FillRoundedRectangle(D2D1::RoundedRect(fr, 6, 6), pressedBg.Get());
+            } else if (hoverFooterIndex_ == i) {
+                auto hoverBg = solid(Lerp(theme_.surface, theme_.text, 0.06f));
+                renderTarget_->FillRoundedRectangle(D2D1::RoundedRect(fr, 6, 6), hoverBg.Get());
+            }
+
+            // 图标（Segoe MDL2 Assets）
+            if (auto iconFmt = mkfmt(L"Segoe MDL2 Assets", 15)) {
+                iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                auto iconBrush = solid(theme_.textSecondary);
+                renderTarget_->DrawTextW(kFooterIcons[i], 1, iconFmt.Get(),
+                    D2D1::RectF(static_cast<FLOAT>(navLeft + 14), fr.top,
+                                static_cast<FLOAT>(navLeft + 38), fr.bottom),
+                    iconBrush.Get());
+            }
+
+            // 文字
+            if (auto fmt = mkfmt(L"Segoe UI Variable", 13)) {
+                fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                auto txtBrush = solid(theme_.textSecondary);
+                renderTarget_->DrawTextW(kFooterLabels[i], wcslen(kFooterLabels[i]), fmt.Get(),
+                    D2D1::RectF(static_cast<FLOAT>(navLeft + 42), fr.top,
+                                static_cast<FLOAT>(navLeft + navW - 8), fr.bottom),
+                    txtBrush.Get());
+            }
+        }
+
+        // 版本号
+        if (auto verFmt = mkfmt(L"Segoe UI Variable", 12)) {
+            verFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+            const std::wstring verText = L"版本 v" + Utf8ToWide(moekoe::constants::PLUGIN_VERSION);
+            auto verBrush = solid(theme_.textSecondary);
+            renderTarget_->DrawTextW(verText.c_str(), static_cast<UINT32>(verText.size()),
+                verFmt.Get(),
+                D2D1::RectF(static_cast<FLOAT>(navLeft + 14),
+                            static_cast<FLOAT>(footerTop + kFooterItemH),
+                            static_cast<FLOAT>(navLeft + navW - 8),
+                            static_cast<FLOAT>(footerTop + kFooterItemH + 20)),
+                verBrush.Get());
+        }
+    }
+
     // 绘制当前页面（裁剪内容区）
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
-        const float contentClipLeft = static_cast<float>(panelOffsetX_ + moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP);
+        const float contentClipLeft = static_cast<float>(contentOffsetX_);
         renderTarget_->PushAxisAlignedClip(
             D2D1::RectF(contentClipLeft,
                         static_cast<float>(kTitleBarHeight),
@@ -1368,15 +1445,14 @@ void D2DSettingsWindow::DrawV2() {
         pages_[currentPage_]->Draw(renderTarget_.Get(), drawCtx_);
         renderTarget_->PopAxisAlignedClip();
 
-        // ComboBox 下拉列表绘制在裁剪区域外（覆盖下方 Card）
-        for (auto& card : pages_[currentPage_]->Children()) {
-            for (auto& child : card->Children()) {
-                auto* combo = dynamic_cast<ui::ComboBox*>(child.get());
-                if (combo && combo->dropped) {
+        // ComboBox 下拉列表绘制在裁剪区域外（覆盖下方分组卡片）
+        ForEachControl(pages_[currentPage_].get(), [&](ui::UIElement* e) {
+            if (auto* combo = dynamic_cast<ui::ComboBox*>(e)) {
+                if (combo->dropped) {
                     DrawComboBoxDropdown(renderTarget_.Get(), combo);
                 }
             }
-        }
+        });
     }
 
     // 绘制颜色选择器弹窗（在最上层，不受裁剪和内容滚动影响）
@@ -1415,90 +1491,150 @@ ui::UIElement* D2DSettingsWindow::HitTestV2(int x, int y) {
     return nullptr;
 }
 
+int D2DSettingsWindow::HitFooter(int x, int y) const {
+    for (int i = 0; i < 1; ++i) {  // 仅「问题反馈」
+        if (PtInRect(&footerRects_[i], POINT{ x, y })) return i;
+    }
+    return -1;
+}
+
 void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
+    // ── 导航栏底部帮助入口命中（自绘区域，不进控件树）──
+    if (int fi = HitFooter(x, y); fi >= 0) {
+        pressedFooterIndex_ = fi;
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+    pressedFooterIndex_ = -1;
+
     // ── 优先处理已展开的 ComboBox（下拉弹窗在最上层）──
     if (currentPage_ >= 0 && currentPage_ < static_cast<int>(pages_.size())) {
         auto& page = pages_[currentPage_];
-        for (auto& card : page->Children()) {
-            for (auto& child : card->Children()) {
-                auto* combo = dynamic_cast<ui::ComboBox*>(child.get());
-                if (combo && combo->dropped) {
-                    // 检查点击是否在下拉区域内
-                    float dropH = static_cast<float>(combo->items.size() * 32);
-                    float boxY = combo->Y() + 5 + 30;
-                    if (x >= combo->X() && x <= combo->X() + combo->Width() &&
-                        y >= boxY && y <= boxY + dropH) {
-                        // 选中下拉项
-                        float relY = static_cast<float>(y) - boxY;
-                        int idx = static_cast<int>(relY / 32);
-                        if (idx >= 0 && idx < static_cast<int>(combo->items.size())) {
-                            combo->selectedIndex = idx;
-                        }
-                        combo->dropped = false;
-                        // settingsTheme 切换时刷新设置界面主题颜色
-                        if (combo->id == "settingsTheme") {
-                            ApplyChanges();  // 先收集新值到 editedConfig_
-                            UpdateThemeColors();
-                            // 同步更新系统标题栏颜色
-                            BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
-                            DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
-                            CreateBgGradientBrush();
-                            ArrangeUI();
-                            InvalidateRect(hwnd_, nullptr, FALSE);
-                            return;
-                        }
-                        // displayMode 切换时更新外观页和歌词页
-                        if (combo->id == "displayMode") {
-                            std::string newMode = (combo->selectedIndex == 1) ? "card" : "karaoke";
-                            auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
-                            if (appearPage) {
-                                appearPage->UpdateVisibility(newMode);
-                            }
-                            auto* lyricsPage = dynamic_cast<ui::LyricsPage*>(pages_[0].get());
-                            if (lyricsPage) {
-                                // 需要临时收集当前配置来获取翻译模式值
-                                moekoe::Config tmpCfg = currentConfig_;
-                                CollectAllChanges(tmpCfg);
-                                lyricsPage->UpdateForDisplayMode(newMode, tmpCfg);
-                            }
-                            auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[5].get());
-                            if (advPage) {
-                                advPage->UpdateVisibility(newMode);
-                            }
-                            ArrangeUI();
-                        }
-                        // displaySelectionMode 切换时更新窗口页"指定显示器"下拉的可见性
-                        if (combo->id == "displaySelectionMode") {
-                            std::string newMode = (combo->selectedIndex == 1) ? "manual" : "auto";
-                            auto* windowPage = dynamic_cast<ui::WindowPage*>(pages_[3].get());
-                            if (windowPage) {
-                                windowPage->UpdateVisibility(newMode);
-                            }
-                            ArrangeUI();
-                        }
-                        ApplyChanges();
-                        if (combo->id == "marqueeMode") {
-                            auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
-                            if (appearPage) {
-                                const auto& appearance = editedConfig_.Appearance();
-                                appearPage->UpdateMarqueeVisibility(
-                                    appearance.enableMarquee, appearance.marqueeMode);
-                                ArrangeUI();
-                            }
-                        }
-                    } else {
-                        // 点击下拉区域外 → 关闭下拉（不选择）
-                        combo->dropped = false;
-                    }
-                    InvalidateRect(hwnd_, nullptr, FALSE);
-                    return;  // 下拉展开时拦截所有点击
+        bool intercepted = false;
+        ForEachControl(page.get(), [&](ui::UIElement* e) {
+            auto* combo = dynamic_cast<ui::ComboBox*>(e);
+            if (!(combo && combo->dropped)) return;
+            // 检查点击是否在下拉区域内
+            float dropH = static_cast<float>(combo->items.size() * 32);
+            float boxY = combo->Y() + 5 + 30;
+            if (x >= combo->X() && x <= combo->X() + combo->Width() &&
+                y >= boxY && y <= boxY + dropH) {
+                // 选中下拉项
+                float relY = static_cast<float>(y) - boxY;
+                int idx = static_cast<int>(relY / 32);
+                if (idx >= 0 && idx < static_cast<int>(combo->items.size())) {
+                    combo->selectedIndex = idx;
                 }
+                combo->dropped = false;
+                // settingsTheme 切换时刷新设置界面主题颜色
+                if (combo->id == "settingsTheme") {
+                    ApplyChanges();  // 先收集新值到 editedConfig_
+                    UpdateThemeColors();
+                    // 同步更新系统标题栏颜色
+                    BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
+                    DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+                    ApplyDwmBorder(true);
+                    CreateBgGradientBrush();
+                    ArrangeUI();
+                    intercepted = true;
+                    return;
+                }
+                // displayMode 切换时更新外观页和歌词页
+                if (combo->id == "displayMode") {
+                    std::string newMode = (combo->selectedIndex == 1) ? "card" : "karaoke";
+                    auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                    if (appearPage) {
+                        appearPage->UpdateVisibility(newMode);
+                    }
+                    auto* lyricsPage = dynamic_cast<ui::LyricsPage*>(pages_[0].get());
+                    if (lyricsPage) {
+                        // 需要临时收集当前配置来获取翻译模式值
+                        moekoe::Config tmpCfg = currentConfig_;
+                        CollectAllChanges(tmpCfg);
+                        lyricsPage->UpdateForDisplayMode(newMode, tmpCfg);
+                    }
+                    auto* advPage = dynamic_cast<ui::AdvancedPage*>(pages_[5].get());
+                    if (advPage) {
+                        advPage->UpdateVisibility(newMode);
+                    }
+                    ArrangeUI();
+                }
+                // displaySelectionMode 切换时更新窗口页"指定显示器"下拉的可见性
+                if (combo->id == "displaySelectionMode") {
+                    std::string newMode = (combo->selectedIndex == 1) ? "manual" : "auto";
+                    auto* windowPage = dynamic_cast<ui::WindowPage*>(pages_[3].get());
+                    if (windowPage) {
+                        windowPage->UpdateVisibility(newMode);
+                    }
+                    ArrangeUI();
+                }
+                ApplyChanges();
+                if (combo->id == "marqueeMode") {
+                    auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                    if (appearPage) {
+                        const auto& appearance = editedConfig_.Appearance();
+                        appearPage->UpdateMarqueeVisibility(
+                            appearance.enableMarquee, appearance.marqueeMode);
+                        ArrangeUI();
+                    }
+                }
+            } else {
+                // 点击下拉区域外 → 关闭下拉（不选择）
+                combo->dropped = false;
             }
-        }
+            InvalidateRect(hwnd_, nullptr, FALSE);
+            intercepted = true;  // 下拉展开时拦截所有点击
+        });
+        if (intercepted) return;
     }
 
     ui::UIElement* hit = HitTestV2(x, y);
     if (hit) {
+        // SettingRow 行空白点击 → 转发到行内控件（Win11 设置：整行可点开关/选色/选字体）
+        // 注意：点击控件本体时 HitTest 会直接返回子控件，走下方常规分支。
+        auto* row = dynamic_cast<ui::SettingRow*>(hit);
+        if (row) {
+            ui::UIElement* ctrl = row->Control();
+            if (auto* t = dynamic_cast<ui::Toggle*>(ctrl)) {
+                t->value = !t->value;
+                ApplyChanges();
+
+                if (t->id == "marquee") {
+                    auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
+                    if (appearPage) {
+                        const auto& appearance = editedConfig_.Appearance();
+                        appearPage->UpdateMarqueeVisibility(
+                            appearance.enableMarquee, appearance.marqueeMode);
+                        ArrangeUI();
+                    }
+                }
+
+                InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            if (auto* cr = dynamic_cast<ui::ColorRow*>(ctrl)) {
+                activeColorRow_ = cr;
+                colorPicker_.Activate(hwnd_, cr->colorValue, kTitleBarHeight, dpiScale_);
+                InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            if (auto* lr = dynamic_cast<ui::LabelRow*>(ctrl)) {
+                if (!lr->readOnly && (lr->id == "fontFamily" || lr->id == "cardFontFamily")) {
+                    fontPickerTargetId_ = lr->id;
+                    fontPicker_.Activate(hwnd_, Utf8ToWide(lr->textValue),
+                                         kTitleBarHeight, dpiScale_);
+                    InvalidateRect(hwnd_, nullptr, FALSE);
+                }
+                return;
+            }
+            if (auto* b = dynamic_cast<ui::Button*>(ctrl)) {
+                b->pressed = true;
+                capturedElement_ = b;
+                InvalidateRect(hwnd_, nullptr, FALSE);
+                return;
+            }
+            // Slider/ComboBox 行：点击行空白不转发（避免误跳值），交给默认分支处理
+        }
         // Toggle 切换 → 实时应用
         auto* toggle = dynamic_cast<ui::Toggle*>(hit);
         if (toggle) {
@@ -1595,20 +1731,18 @@ void D2DSettingsWindow::OnMouseDownV2(int x, int y) {
                     if (tp->id == "themePresets") {
                         auto* appearPage = dynamic_cast<ui::AppearancePage*>(pages_[1].get());
                         if (appearPage) {
-                            for (auto& card : appearPage->Children()) {
-                                for (auto& child : card->Children()) {
-                                    auto* cr = dynamic_cast<ui::ColorRow*>(child.get());
-                                    if (cr) {
-                                        if (cr->id == "normalColor") {
-                                            cr->textValue = ColorFToHex(tp->presets[idx].nlColor);
-                                            cr->colorValue = tp->presets[idx].nlColor;
-                                        } else if (cr->id == "highlightColor") {
-                                            cr->textValue = ColorFToHex(tp->presets[idx].hlColor);
-                                            cr->colorValue = tp->presets[idx].hlColor;
-                                        }
+                            ForEachControl(appearPage, [&](ui::UIElement* e) {
+                                auto* cr = dynamic_cast<ui::ColorRow*>(e);
+                                if (cr) {
+                                    if (cr->id == "normalColor") {
+                                        cr->textValue = ColorFToHex(tp->presets[idx].nlColor);
+                                        cr->colorValue = tp->presets[idx].nlColor;
+                                    } else if (cr->id == "highlightColor") {
+                                        cr->textValue = ColorFToHex(tp->presets[idx].hlColor);
+                                        cr->colorValue = tp->presets[idx].hlColor;
                                     }
                                 }
-                            }
+                            });
                         }
                     }
                     ApplyChanges();
@@ -1625,6 +1759,14 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
     hoverClose_  = PtInRect(&closeBtnRect_, {x, y});
     hoverMax_    = PtInRect(&maxBtnRect_, {x, y});
     hoverMin_    = PtInRect(&minBtnRect_, {x, y});
+
+    // 导航栏底部帮助入口悬停（独占命中，优先于控件树）
+    hoverFooterIndex_ = HitFooter(x, y);
+    if (hoverFooterIndex_ >= 0) {
+        hoveredElement_ = nullptr;
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
 
     ui::UIElement* hit = HitTestV2(x, y);
 
@@ -1646,6 +1788,13 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
         if (labelRow) labelRow->hovered = false;
         auto* tp = dynamic_cast<ui::ThemePresets*>(hoveredElement_);
         if (tp) tp->hoveredIndex = -1;
+        // SettingRow 行级高亮：命中行空白或行内控件时都要清除旧行
+        if (auto* prevRow = dynamic_cast<ui::SettingRow*>(hoveredElement_)) {
+            prevRow->hovered = false;
+        } else if (hoveredElement_->Parent()) {
+            if (auto* prevRow = dynamic_cast<ui::SettingRow*>(hoveredElement_->Parent()))
+                prevRow->hovered = false;
+        }
     }
     hoveredElement_ = hit;
 
@@ -1691,6 +1840,13 @@ void D2DSettingsWindow::OnMouseMoveV2(int x, int y) {
                 tp->hoveredIndex = -1;
             }
         }
+        // SettingRow 行级悬停高亮（命中行空白或行内控件时点亮整行）
+        if (auto* hitRow = dynamic_cast<ui::SettingRow*>(hit)) {
+            hitRow->hovered = true;
+        } else if (hit->Parent()) {
+            if (auto* row = dynamic_cast<ui::SettingRow*>(hit->Parent()))
+                row->hovered = true;
+        }
     }
 
     // Slider 拖动
@@ -1733,25 +1889,23 @@ void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
         ResetConfigToDefaults();
     } else if (btn->id == "resetSpectrum") {
         if (auto* specPage = dynamic_cast<ui::SpectrumPage*>(pages_[2].get())) {
-            for (auto& card : specPage->Children()) {
-                for (auto& child : card->Children()) {
-                    if (auto* s = dynamic_cast<ui::Slider*>(child.get())) {
-                        if (s->id == "spectrumDbCeil")       s->value = -10.0f;
-                        else if (s->id == "spectrumDbFloor") s->value = -62.0f;
-                        else if (s->id == "spectrumOpacity") s->value = 100.0f;
-                        else if (s->id == "spectrumNumBands") s->value = 32.0f;
-                        else if (s->id == "spectrumBarWidth") s->value = 0.0f;
-                    } else if (auto* cr = dynamic_cast<ui::ColorRow*>(child.get())) {
-                        if (cr->id == "spectrumColor") {
-                            moekoe::AppearanceConfig defApp;
-                            cr->textValue = defApp.spectrumColor;
-                            cr->colorValue = HexToColorF(cr->textValue);
-                        }
-                    } else if (auto* cb = dynamic_cast<ui::ComboBox*>(child.get())) {
-                        if (cb->id == "spectrumMode") cb->selectedIndex = 0;
+            ForEachControl(specPage, [&](ui::UIElement* e) {
+                if (auto* s = dynamic_cast<ui::Slider*>(e)) {
+                    if (s->id == "spectrumDbCeil")       s->value = -10.0f;
+                    else if (s->id == "spectrumDbFloor") s->value = -62.0f;
+                    else if (s->id == "spectrumOpacity") s->value = 100.0f;
+                    else if (s->id == "spectrumNumBands") s->value = 32.0f;
+                    else if (s->id == "spectrumBarWidth") s->value = 0.0f;
+                } else if (auto* cr = dynamic_cast<ui::ColorRow*>(e)) {
+                    if (cr->id == "spectrumColor") {
+                        moekoe::AppearanceConfig defApp;
+                        cr->textValue = defApp.spectrumColor;
+                        cr->colorValue = HexToColorF(cr->textValue);
                     }
+                } else if (auto* cb = dynamic_cast<ui::ComboBox*>(e)) {
+                    if (cb->id == "spectrumMode") cb->selectedIndex = 0;
                 }
-            }
+            });
         }
         ApplyChanges();
         InvalidateRect(hwnd_, nullptr, FALSE);
@@ -1771,6 +1925,7 @@ void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
         UpdateThemeColors();
         BOOL darkMode = isDarkMode_ ? TRUE : FALSE;
         DwmSetWindowAttribute(hwnd_, DWMWA_USE_IMMERSIVE_DARK_MODE, &darkMode, sizeof(darkMode));
+        ApplyDwmBorder(true);
         CreateBgGradientBrush();
         ArrangeUI();
         InvalidateRect(hwnd_, nullptr, FALSE);
@@ -1780,6 +1935,20 @@ void D2DSettingsWindow::ExecuteButtonAction(ui::Button* btn) {
 }
 
 void D2DSettingsWindow::OnMouseUpV2(int x, int y) {
+    // ── 导航栏底部帮助入口点击触发 ──
+    if (pressedFooterIndex_ >= 0) {
+        const int fi = pressedFooterIndex_;
+        pressedFooterIndex_ = -1;
+        if (HitFooter(x, y) == fi) {
+            // 问题反馈 → 打开 GitHub Issues
+            ShellExecuteW(nullptr, L"open",
+                          L"https://github.com/Yngu196/TaskbarLyrics/issues",
+                          nullptr, nullptr, SW_SHOWNORMAL);
+        }
+        InvalidateRect(hwnd_, nullptr, FALSE);
+        return;
+    }
+
     if (capturedElement_) {
         auto* slider = dynamic_cast<ui::Slider*>(capturedElement_);
         if (slider) {
@@ -1790,9 +1959,9 @@ void D2DSettingsWindow::OnMouseUpV2(int x, int y) {
         auto* btn = dynamic_cast<ui::Button*>(capturedElement_);
         if (btn) {
             btn->pressed = false;
-            // 检查鼠标是否仍在按钮上
+            // 检查鼠标是否仍在按钮上（行内按钮允许释放时落在所属 SettingRow 行上）
             ui::UIElement* hit = HitTestV2(x, y);
-            if (hit == btn) {
+            if (hit == btn || (hit && hit == btn->Parent())) {
                 ExecuteButtonAction(btn);
             }
             InvalidateRect(hwnd_, nullptr, FALSE);

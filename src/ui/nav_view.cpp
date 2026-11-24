@@ -17,12 +17,7 @@ static Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> MakeBrush(
 }
 
 static Microsoft::WRL::ComPtr<IDWriteFactory>& GetDWriteFactory() {
-    static Microsoft::WRL::ComPtr<IDWriteFactory> factory;
-    if (!factory) {
-        ::DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                              reinterpret_cast<IUnknown**>(factory.GetAddressOf()));
-    }
-    return factory;
+    return moekoe::ui::GetSharedDWriteFactory();
 }
 
 static Microsoft::WRL::ComPtr<IDWriteTextFormat> MakeTextFormat(

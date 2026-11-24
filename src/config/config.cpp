@@ -237,6 +237,9 @@ bool Config::Load() {
             appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
             appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
             appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
+            // 仅支持浅色/深色两种主题，旧配置的 blue/white 归一化到深色
+            if (appearance_.settingsTheme != "light" && appearance_.settingsTheme != "dark")
+                appearance_.settingsTheme = "dark";
             appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
@@ -550,6 +553,9 @@ bool Config::ImportFromFile(const std::string& path) {
             appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
             appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
             appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
+            // 仅支持浅色/深色两种主题，旧配置的 blue/white 归一化到深色
+            if (appearance_.settingsTheme != "light" && appearance_.settingsTheme != "dark")
+                appearance_.settingsTheme = "dark";
             appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
             appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
             appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);

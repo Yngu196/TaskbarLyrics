@@ -116,10 +116,20 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
             app.d2dSettingsWindow = std::make_unique<D2DSettingsWindow>();
             app.d2dSettingsWindow->OnConfigChanged([&](const Config& cfg) {
                 const auto savedPos = app.config->Position();
+                // 判断是否仅为"设置界面主题"变更：每次 ApplyChanges 只对应一次
+                // 控件交互，settingsTheme 变化即说明本次只动了主题选项。
+                // 主题只影响设置窗口自身，无需重建渲染器/重定位任务栏窗口。
+                const std::string prevTheme = app.config->Appearance().settingsTheme;
+                const bool themeOnly = (prevTheme != cfg.Appearance().settingsTheme);
                 *app.config = cfg;
                 app.config->MutablePosition() = savedPos;
                 // 立即持久化，避免仅在进程退出时写盘
                 app.config->Save();
+
+                if (themeOnly) {
+                    Log("[SETTINGS] Theme-only change, skip renderer reapply\n");
+                    return;
+                }
 
                 // 热更新调试日志开关（原实现只在启动时生效，
                 // 导致设置中开启调试日志后运行中的进程实际未开启）

@@ -47,7 +47,7 @@ public:
 class LyricsPage : public SettingsPage {
 public:
     std::string Title() const override { return "歌词"; }
-    std::string Subtitle() const override { return "自定义歌词内容和显示方式"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 
@@ -58,7 +58,7 @@ public:
 class AppearancePage : public SettingsPage {
 public:
     std::string Title() const override { return "外观"; }
-    std::string Subtitle() const override { return "调整歌词视觉效果"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 
@@ -72,7 +72,7 @@ public:
 class SpectrumPage : public SettingsPage {
 public:
     std::string Title() const override { return "频谱"; }
-    std::string Subtitle() const override { return "纯音乐时的频谱显示设置"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 };
@@ -80,7 +80,7 @@ public:
 class WindowPage : public SettingsPage {
 public:
     std::string Title() const override { return "窗口"; }
-    std::string Subtitle() const override { return "调整歌词窗口位置和尺寸"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 
@@ -91,7 +91,7 @@ public:
 class BehaviorPage : public SettingsPage {
 public:
     std::string Title() const override { return "行为"; }
-    std::string Subtitle() const override { return "插件启动和窗口行为"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 };
@@ -99,7 +99,7 @@ public:
 class AdvancedPage : public SettingsPage {
 public:
     std::string Title() const override { return "高级"; }
-    std::string Subtitle() const override { return "高级设置（修改端口可能影响使用）"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 
@@ -110,7 +110,7 @@ public:
 class AboutPage : public SettingsPage {
 public:
     std::string Title() const override { return "关于"; }
-    std::string Subtitle() const override { return "插件信息"; }
+    std::string Subtitle() const override { return ""; }
     void BuildContent(const moekoe::Config& cfg) override;
     void CollectChanges(moekoe::Config& cfg) override;
 };
