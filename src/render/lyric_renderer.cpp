@@ -23,6 +23,36 @@ void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, 
         textFormat_.Get(), layout, brush);
 }
 
+// ═══════════════════════════════════════
+// 跟唱流光：当前演唱行卡拉OK进度前沿的流动光晕
+// ═══════════════════════════════════════
+
+bool TaskbarRenderer::SingGlowActive(bool enableKaraoke, bool useHighlightColor,
+                                     double progress, bool layoutValid) const {
+    // 仅当前演唱行（useHighlightColor=false 表示非悬停歌曲信息场景），
+    // 进度位于行中（>0 且 <1）时才绘制前沿光带
+    return settings_.enableSingAlongGlow && singGlowBrush_ &&
+           !useHighlightColor && enableKaraoke && layoutValid &&
+           progress > 0.0 && progress < 1.0;
+}
+
+bool TaskbarRenderer::SetupSingGlowBrush(float front, bool vertical) {
+    if (!singGlowBrush_) return false;
+    // 对称窄带（参考 taskbar-lyrics-displayer）：半宽 = 字号×0.65，夹紧到 [7,18] px，
+    // 亮核居中于进度前沿，两侧对称展开暗带
+    const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+    const float fontPx = std::max(8.0f, static_cast<float>(settings_.fontSize)) * dpiScale;
+    const float halfWidth = std::clamp(fontPx * 0.65f, 7.0f, 18.0f);
+    if (vertical) {
+        singGlowBrush_->SetStartPoint(D2D1::Point2F(0.0f, front - halfWidth));
+        singGlowBrush_->SetEndPoint(D2D1::Point2F(0.0f, front + halfWidth));
+    } else {
+        singGlowBrush_->SetStartPoint(D2D1::Point2F(front - halfWidth, 0.0f));
+        singGlowBrush_->SetEndPoint(D2D1::Point2F(front + halfWidth, 0.0f));
+    }
+    return true;
+}
+
 void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       double progress,
                                                       bool enableKaraoke,
@@ -152,6 +182,19 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->PopAxisAlignedClip();
             }
         }
+
+        // 跟唱流光：进度前沿的垂直光带（外层 layoutRect 裁剪仍在生效）
+        if (SingGlowActive(enableKaraoke, useHighlightColor, progress, true)) {
+            const float front = glyphY + totalHeight * static_cast<float>(std::clamp(progress, 0.0, 1.0));
+            if (SetupSingGlowBrush(front, true)) {
+                for (UINT32 i = 0; i < length; ++i) {
+                    const D2D1_RECT_F glyphRect = D2D1::RectF(
+                        layoutRect.left, glyphY + glyphHeight * static_cast<float>(i),
+                        layoutRect.right, glyphY + glyphHeight * static_cast<float>(i + 1));
+                    renderTarget_->DrawTextW(&text[i], 1, textFormat_.Get(), glyphRect, singGlowBrush_.Get());
+                }
+            }
+        }
         renderTarget_->PopAxisAlignedClip();
     } else if (needsMarquee) {
         cachedLayout_->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
@@ -176,6 +219,15 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->PopAxisAlignedClip();
             }
         }
+
+        // 跟唱流光：进度前沿的横向光带（随跑马灯滚动位置同步移动）
+        if (SingGlowActive(enableKaraoke, useHighlightColor, progress, layoutValid)) {
+            const float front = textLeft + textWidth * static_cast<float>(std::clamp(progress, 0.0, 1.0));
+            if (SetupSingGlowBrush(front, false)) {
+                renderTarget_->DrawTextLayout(
+                    D2D1::Point2F(textLeft, layoutRect.top), cachedLayout_.Get(), singGlowBrush_.Get());
+            }
+        }
         renderTarget_->PopAxisAlignedClip();
     } else {
         // ═══════ 非滚动模式：居中显示 ═══════
@@ -197,6 +249,16 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->DrawTextW(
                     text.c_str(), length, textFormat_.Get(), layoutRect, highlightBrush_.Get());
                 renderTarget_->PopAxisAlignedClip();
+            }
+        }
+
+        // 跟唱流光：进度前沿的横向光带（居中文本）
+        if (SingGlowActive(enableKaraoke, useHighlightColor, progress, layoutValid)) {
+            const float centeredLeft = layoutRect.left + (availableWidth - textWidth) / 2.0f;
+            const float front = centeredLeft + textWidth * static_cast<float>(std::clamp(progress, 0.0, 1.0));
+            if (SetupSingGlowBrush(front, false)) {
+                renderTarget_->DrawTextW(
+                    text.c_str(), length, textFormat_.Get(), layoutRect, singGlowBrush_.Get());
             }
         }
         renderTarget_->PopAxisAlignedClip();

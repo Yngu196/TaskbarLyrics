@@ -85,6 +85,13 @@ private:
                                           const float* overridePaddingRight = nullptr,
                                           const D2D1_RECT_F* overrideLayout = nullptr,
                                           bool useHighlightColor = false);
+    /// 跟唱流光：将流光渐变画刷的渐变轴对齐到卡拉OK进度前沿。
+    /// vertical=false 时 front 为前沿 x 坐标（水平渐变），否则为 y 坐标（垂直渐变）。
+    /// 返回 false 表示画刷不可用（跳过绘制）。
+    bool SetupSingGlowBrush(float front, bool vertical);
+    /// 当前帧是否应绘制跟唱流光（开关+卡拉OK启用+进度在行内+布局有效）
+    bool SingGlowActive(bool enableKaraoke, bool useHighlightColor,
+                        double progress, bool layoutValid) const;
     void DrawTranslatedText(const std::wstring& text,
                             const float* overridePaddingLeft = nullptr,
                             float opacity = 1.0f,
@@ -189,6 +196,9 @@ private:
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> normalBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> translationBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> spectrumBrush_;
+
+    // 跟唱流光渐变画刷（渐变轴每帧按进度前沿动态设置）
+    Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> singGlowBrush_;
 
     RenderState lastState_;
 

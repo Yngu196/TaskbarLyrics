@@ -185,6 +185,12 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
         t->value = a.enableKaraoke;
         auto* row = AddGroupRow(*g, "逐字高亮", "卡拉OK 逐字填充效果", L"\uE734", std::move(t));
         row->SetVisible(!isCard);
+        auto glow = std::make_unique<Toggle>();
+        glow->id = "singGlow";
+        glow->value = a.enableSingAlongGlow;
+        auto* glowRow = AddGroupRow(*g, "跟唱流光",
+                                    "需要开启逐字高亮", L"\uE706", std::move(glow));
+        glowRow->SetVisible(!isCard);
     }
 
     AddSection(*this, "翻译模式");
@@ -225,6 +231,7 @@ void LyricsPage::CollectChanges(moekoe::Config& cfg) {
                     }
                 } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                     if (t->id == "karaoke") ap.enableKaraoke = t->value;
+                    else if (t->id == "singGlow") ap.enableSingAlongGlow = t->value;
                 }
             }
         }
@@ -238,9 +245,11 @@ void LyricsPage::UpdateForDisplayMode(const std::string& displayMode, const moek
     for (auto& group : children_) {
         for (auto& row : group->Children()) {
             for (auto& child : row->Children()) {
-                // 更新"逐字高亮"可见性（行同步隐藏）
+                // 更新"逐字高亮"/"跟唱流光"可见性（行同步隐藏）
                 if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                     if (t->id == "karaoke") {
+                        SetRowVisible(t, !isCard);
+                    } else if (t->id == "singGlow") {
                         SetRowVisible(t, !isCard);
                     }
                 }

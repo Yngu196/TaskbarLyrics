@@ -22,6 +22,10 @@ struct AppearanceConfig {
     int         fontSize{20};
     bool        enableKaraoke{true};
     bool        enableTranslation{true};
+
+    // 跟唱流光：在当前演唱行的卡拉OK进度前沿绘制一道流动光晕，
+    // 需要逐字歌词（逐字进度），仅作用于当前演唱行
+    bool        enableSingAlongGlow{true};
     // 翻译显示模式: "off"=不显示翻译 | "below"=原文下方显示(默认) | "replace"=替换原文
     std::string translationMode{"below"};
 
