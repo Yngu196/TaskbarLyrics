@@ -163,6 +163,7 @@ private:
     // V2 滚动
     int v2ScrollOffset_{0};
     int v2ContentHeight_{0};
+    int navWidthDp_{0};  // 当前导航宽度（DIP），ArrangeUI 按最大化状态计算，DrawV2 页脚绘制复用
 
     // 窗口尺寸基准值
     static constexpr int kWinWidthBase  = 960;

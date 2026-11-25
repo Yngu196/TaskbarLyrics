@@ -208,6 +208,7 @@ public:
     std::wstring icon;      // Segoe MDL2 Assets 图标码点（空=无图标）
     int pageIndex{0};       // 对应的页面索引
     bool selected{false};
+    float contentOffset{40.0f};  // 图标/文字距导航左缘的偏移（NavView 按宽度动态设置）
 
     // 运行时状态
     bool hovered{false};

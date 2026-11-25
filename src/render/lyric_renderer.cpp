@@ -36,19 +36,52 @@ bool TaskbarRenderer::SingGlowActive(bool enableKaraoke, bool useHighlightColor,
            progress > 0.0 && progress < 1.0;
 }
 
-bool TaskbarRenderer::SetupSingGlowBrush(float front, bool vertical) {
-    if (!singGlowBrush_) return false;
+void TaskbarRenderer::CreateSingGlowGradient(const D2D1_COLOR_F& base,
+                                             ID2D1LinearGradientBrush** out) {
+    if (!renderTarget_ || !out) return;
+    // 亮核：基准色向白色提亮 85%，模拟发光
+    const D2D1_COLOR_F bright{
+        base.r + (1.0f - base.r) * 0.85f,
+        base.g + (1.0f - base.g) * 0.85f,
+        base.b + (1.0f - base.b) * 0.85f, 1.0f};
+    // 暗带：亮度压到 30%，形成亮核两侧的影子夹层
+    const D2D1_COLOR_F dark{base.r * 0.30f, base.g * 0.30f, base.b * 0.30f, 0.85f};
+    const D2D1_GRADIENT_STOP stops[5] = {
+        {0.0f,  {base.r,  base.g,  base.b,  0.0f}},
+        {0.25f, dark.r,   dark.g,   dark.b,   dark.a},
+        {0.5f,  bright.r, bright.g, bright.b, bright.a},
+        {0.75f, dark.r,   dark.g,   dark.b,   dark.a},
+        {1.0f,  {base.r,  base.g,  base.b,  0.0f}},
+    };
+    Microsoft::WRL::ComPtr<ID2D1GradientStopCollection> stopCollection;
+    if (SUCCEEDED(renderTarget_->CreateGradientStopCollection(
+            stops, 5, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP,
+            stopCollection.GetAddressOf())) && stopCollection) {
+        // d2d1.h 内联重载：(const props&, 停止点集合, 输出画刷)
+        D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES lgbp =
+            D2D1::LinearGradientBrushProperties(
+                D2D1::Point2F(0.0f, 0.0f), D2D1::Point2F(1.0f, 0.0f));
+        renderTarget_->CreateLinearGradientBrush(lgbp, stopCollection.Get(), out);
+    }
+}
+
+bool TaskbarRenderer::SetupSingGlowBrush(float front, bool vertical, float fontSizeOverride,
+                                         ID2D1LinearGradientBrush* brush) {
+    ID2D1LinearGradientBrush* b = brush ? brush : singGlowBrush_.Get();
+    if (!b) return false;
     // 对称窄带（参考 taskbar-lyrics-displayer）：半宽 = 字号×0.65，夹紧到 [7,18] px，
     // 亮核居中于进度前沿，两侧对称展开暗带
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
-    const float fontPx = std::max(8.0f, static_cast<float>(settings_.fontSize)) * dpiScale;
+    const float baseFont = fontSizeOverride > 0.0f ? fontSizeOverride
+                                                   : static_cast<float>(settings_.fontSize);
+    const float fontPx = std::max(8.0f, baseFont) * dpiScale;
     const float halfWidth = std::clamp(fontPx * 0.65f, 7.0f, 18.0f);
     if (vertical) {
-        singGlowBrush_->SetStartPoint(D2D1::Point2F(0.0f, front - halfWidth));
-        singGlowBrush_->SetEndPoint(D2D1::Point2F(0.0f, front + halfWidth));
+        b->SetStartPoint(D2D1::Point2F(0.0f, front - halfWidth));
+        b->SetEndPoint(D2D1::Point2F(0.0f, front + halfWidth));
     } else {
-        singGlowBrush_->SetStartPoint(D2D1::Point2F(front - halfWidth, 0.0f));
-        singGlowBrush_->SetEndPoint(D2D1::Point2F(front + halfWidth, 0.0f));
+        b->SetStartPoint(D2D1::Point2F(front - halfWidth, 0.0f));
+        b->SetEndPoint(D2D1::Point2F(front + halfWidth, 0.0f));
     }
     return true;
 }

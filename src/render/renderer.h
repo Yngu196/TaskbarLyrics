@@ -87,8 +87,15 @@ private:
                                           bool useHighlightColor = false);
     /// 跟唱流光：将流光渐变画刷的渐变轴对齐到卡拉OK进度前沿。
     /// vertical=false 时 front 为前沿 x 坐标（水平渐变），否则为 y 坐标（垂直渐变）。
+    /// fontSizeOverride > 0 时用它计算带宽（卡片模式用 cardFontSizeCurrent），否则用 settings_.fontSize。
+    /// brush 为空时使用单行模式的 singGlowBrush_，否则使用指定画刷（卡片模式传 cardSingGlowBrush_）。
     /// 返回 false 表示画刷不可用（跳过绘制）。
-    bool SetupSingGlowBrush(float front, bool vertical);
+    bool SetupSingGlowBrush(float front, bool vertical,
+                            float fontSizeOverride = 0.0f,
+                            ID2D1LinearGradientBrush* brush = nullptr);
+    /// 创建跟唱流光渐变画刷（亮-暗-亮对称夹层，单行/卡片模式共用，颜色取基准歌词色）
+    void CreateSingGlowGradient(const D2D1_COLOR_F& base,
+                                ID2D1LinearGradientBrush** out);
     /// 当前帧是否应绘制跟唱流光（开关+卡拉OK启用+进度在行内+布局有效）
     bool SingGlowActive(bool enableKaraoke, bool useHighlightColor,
                         double progress, bool layoutValid) const;
@@ -113,8 +120,16 @@ private:
     void DrawMediaCardIcon(const wchar_t* icon, const D2D1_RECT_F& rect,
                            IDWriteTextFormat* format, ID2D1Brush* brush);
 
+    // ═════ 卡片模式滚动信息（滚动偏移 + 缓存的无换行文本布局） ═════
+    struct CardScrollInfo {
+        float offset{0.0f};                 // 当前滚动偏移（px，正值=文本左移）
+        IDWriteTextLayout* layout{nullptr}; // 该行的无换行布局（无滚动时为 nullptr）
+    };
+
     // ═════ 卡片模式渲染（无卡拉OK效果） ═════
-    void RenderCardStyle(const RenderState& state);
+    void RenderCardStyle(const RenderState& state,
+                         const CardScrollInfo& curScroll = CardScrollInfo{},
+                         const CardScrollInfo& nextScroll = CardScrollInfo{});
     /// 垂直任务栏专用：堆叠式布局（封面在上，歌词在下）
     void RenderCardStyleVertical(const RenderState& state);
     /// 绘制卡片背景（毛玻璃封面 + 半透明主题色叠加），纯音乐模式共用
@@ -123,16 +138,25 @@ private:
                       float x, float y, float size);
     /// 绘制单行卡片模式歌词（isCurrent=true → 当前行大号亮色，false → 下一行小号灰色）
     /// brushOverride 非空时使用指定画刷（悬停歌曲信息使用高亮色）。
+    /// scrollOffset > 0 时按偏移水平滚动绘制（scrollLayout 为对应行的无换行布局）。
+    /// progress/karaokeEnabled 仅 isCurrent=true 时生效：卡拉OK高亮填充 + 跟唱流光。
     void DrawCardLyricsSingle(const std::wstring& line,
                               float x, float y, float availWidth,
                               float yOffset, float alpha, bool isCurrent,
-                              ID2D1SolidColorBrush* brushOverride = nullptr);
+                              ID2D1SolidColorBrush* brushOverride = nullptr,
+                              float scrollOffset = 0.0f,
+                              IDWriteTextLayout* scrollLayout = nullptr,
+                              double progress = 0.0,
+                              bool karaokeEnabled = false);
     void DrawCardLyrics(const std::wstring& currentLine,
                         const std::wstring& nextLine,
                         float x, float y, float availWidth,
                         float yOffset = 0.0f, float alpha = 1.0f,
                         float curFontSizeScale = 1.0f, float nextFontSizeScale = 1.0f,
-                        ID2D1SolidColorBrush* brushOverride = nullptr);
+                        ID2D1SolidColorBrush* brushOverride = nullptr,
+                        const CardScrollInfo& curScroll = CardScrollInfo{},
+                        const CardScrollInfo& nextScroll = CardScrollInfo{},
+                        double progress = 0.0);
 
     static D2D1_COLOR_F ParseColor(const std::string& hex, float alpha = 1.0f);
 
@@ -142,18 +166,18 @@ private:
 
     /// 跑马灯滚动模式
     enum class MarqueeMode {
-        Bounce,   // 左右往返滚动（推荐）
+        Bounce,   // 历史命名：现语义为"跟随滚动"（旧往返行为已移除）
         Off,      // 关闭跑马灯，直接截断
     };
 
     /// 跑马灯内部状态
     enum class MarqueeState {
         Idle,        // 不需要滚动（短文本 / 跑马灯关闭）
-        Delay,       // 延迟等待（歌词刚显示）
+        Delay,       // 延迟等待（卡片模式开始滚动前）
         ScrollLeft,  // 向左滚动中
-        PauseRight,  // 右端点暂停（仅 bounce 模式）
-        ScrollRight, // 向右滚回（仅 bounce 模式）
-        PauseLeft,   // 左端点暂停 → 回到 Delay（仅 bounce 模式）
+        PauseRight,  // 终端态：滚动到末端后定住（复用自旧 bounce 命名）
+        ScrollRight, // （已废弃）旧 bounce 回滚，不再进入
+        PauseLeft,   // （已废弃）旧 bounce 左端点暂停，不再进入
     };
 
     /// 将字符串转换为 MarqueeMode
@@ -165,7 +189,7 @@ private:
     /// availableWidth: 歌词实际可用宽度（已考虑封面偏移），用于计算正确的最大滚动偏移
     float UpdateMarquee(const std::string& lyricText, float progress, bool& needRedraw, float availableWidth = 0.0f);
 
-    /// 垂直任务栏专用：按实际可视高度与歌词进度驱动上下往返滚动。
+    /// 垂直任务栏专用：按实际可视高度与歌词进度驱动上下滚动（单程，到末端定住）。
     float UpdateVerticalMarquee(const std::wstring& lyricText, float progress, float glyphHeight,
                                 float availableHeight, bool& needRedraw);
 
@@ -200,6 +224,17 @@ private:
     // 跟唱流光渐变画刷（渐变轴每帧按进度前沿动态设置）
     Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> singGlowBrush_;
 
+    // 卡片模式颜色画刷：普通歌词（未唱 + 下一行）与高亮歌词（已唱填充）
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardHighlightBrush_;
+    // 卡片模式跟唱流光渐变画刷（颜色取卡片高亮色，渐变轴动态设置）
+    Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> cardSingGlowBrush_;
+
+    // 卡片模式逐字高亮：当前行文本宽度测量缓存（仅在文本/宽度变化时重建布局）
+    Microsoft::WRL::ComPtr<IDWriteTextLayout> cardKaraokeLayout_;
+    std::wstring cardKaraokeText_;
+    float        cardKaraokeAvailWidth_{-1.0f};
+    float        cardKaraokeTextWidth_{0.0f};
+
     RenderState lastState_;
 
     AppearanceConfig settings_;
@@ -225,6 +260,30 @@ private:
     std::wstring   verticalMarqueeText_;
     double         verticalStateStartTime_{0.0};
     double         verticalLastUpdateTime_{0.0};
+
+    // ═══════════════════════════════
+    // 卡片模式跑马灯（长歌词滚动，仅当前行、单程滚到末端定住）
+    // 仅在 displayMode=="card" 且关闭"歌词显示扩展"时启用；
+    // 纯时间驱动（LRC 无逐字进度也能滚动）。
+    // ═══════════════════════════════
+    struct CardMarqueeState {
+        MarqueeState state{MarqueeState::Idle};
+        float        offset{0.0f};      // 当前滚动偏移（px）
+        float        maxOffset{0.0f};   // 最大滚动距离 = textWidth - availWidth
+        float        textWidth{0.0f};   // 文本像素宽度（缓存）
+        std::wstring text;              // 上一次文本（变化检测）
+        double       stateStart{0.0};   // 当前状态开始时间（秒）
+        double       lastUpdate{0.0};   // 上次步进时间（秒）
+        Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;  // 无换行布局缓存
+    };
+    CardMarqueeState cardMarqueeCur_;
+
+    /// 卡片模式跑马灯步进（进度驱动单程滚动：偏移目标 = maxOffset × progress，
+    /// 以设定速度向目标逼近——高亮从行首推进时同步开始滚动，唱完必然滚完）。
+    /// enabled=false 时重置状态并返回 0。needRedraw 表示本帧因滚动需要重绘。
+    float UpdateCardMarquee(CardMarqueeState& m, const std::wstring& text,
+                            IDWriteTextFormat* format, float availWidth, float boxHeight,
+                            bool enabled, double progress, bool& needRedraw);
 
     // ═══════════════════════════════
     // 卡片模式成员
@@ -258,7 +317,6 @@ private:
 
     // 卡片模式专用颜色画刷
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardCurrentBrush_;
-    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardNextBrush_;
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardBackgroundBrush_;  // 卡片背景画刷（随封面主色调变化）
 
     // 媒体卡片画刷（深色玻璃卡片）

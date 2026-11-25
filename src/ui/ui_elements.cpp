@@ -937,18 +937,21 @@ void NavItem::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
             hoverBg.Get());
     }
 
-    // 图标（Segoe MDL2 Assets）
-    float textX = x_ + 36;
+    // 图标（Segoe MDL2 Assets）；contentOffset 由 NavView 按导航宽度动态设置，
+    // 宽侧栏（最大化）时内边距更大
+    float textX = x_ + contentOffset + 4;
     if (!icon.empty()) {
         auto iconFmt = MakeTextFormat(L"Segoe MDL2 Assets", 15);
         if (iconFmt) {
             iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
             auto iconBrush = MakeBrush(rt, selected ? ctx.accent : ctx.TextSecondary());
             rt->DrawTextW(icon.c_str(), static_cast<UINT32>(icon.size()),
-                          iconFmt.Get(), D2D1::RectF(x_ + 32, y_, x_ + 56, y_ + h_),
+                          iconFmt.Get(),
+                          D2D1::RectF(x_ + contentOffset, y_,
+                                      x_ + contentOffset + 24, y_ + h_),
                           iconBrush.Get());
         }
-        textX = x_ + 60;
+        textX = x_ + contentOffset + 28;
     }
 
     // 文本

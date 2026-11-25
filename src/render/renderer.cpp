@@ -243,8 +243,9 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
             ParseColor(settings_.cardCurrentColor, 1.0f),
             cardCurrentBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
-            ParseColor(settings_.cardNextColor, 1.0f),
-            cardNextBrush_.GetAddressOf());
+            ParseColor(settings_.cardHighlightColor.empty()
+                           ? settings_.highlightColor : settings_.cardHighlightColor, 1.0f),
+            cardHighlightBrush_.GetAddressOf());
     }
 
     initialized_ = (renderTarget_ != nullptr);
@@ -302,7 +303,8 @@ void TaskbarRenderer::RecreateBrushes() {
     translationBrush_.Reset();
     spectrumBrush_.Reset();
     cardCurrentBrush_.Reset();
-    cardNextBrush_.Reset();
+    cardHighlightBrush_.Reset();
+    cardSingGlowBrush_.Reset();
     cardBackgroundBrush_.Reset();
     mediaPanelBrush_.Reset();
     mediaBorderBrush_.Reset();
@@ -328,40 +330,23 @@ void TaskbarRenderer::RecreateBrushes() {
     // 对称亮-暗-亮夹层——亮核居中于卡拉OK前沿，两侧暗带压暗字形，
     // 制造"中间一道亮光、两边是影子"的对比；渐变轴 [0,1] 映射
     // [front - halfWidth, front + halfWidth]。
+    // 单行模式取高亮色，卡片模式取卡片高亮歌词色。
     singGlowBrush_.Reset();
+    CreateSingGlowGradient(hi, singGlowBrush_.GetAddressOf());
+    cardSingGlowBrush_.Reset();
     {
-        // 亮核：高亮色向白色提亮 85%，模拟发光（复用上方已解析的高亮色 hi）
-        const D2D1_COLOR_F bright{
-            hi.r + (1.0f - hi.r) * 0.85f,
-            hi.g + (1.0f - hi.g) * 0.85f,
-            hi.b + (1.0f - hi.b) * 0.85f, 1.0f};
-        // 暗带：亮度压到 30%，形成亮核两侧的影子夹层
-        const D2D1_COLOR_F dark{hi.r * 0.30f, hi.g * 0.30f, hi.b * 0.30f, 0.85f};
-        const D2D1_GRADIENT_STOP stops[5] = {
-            {0.0f,  {hi.r,     hi.g,     hi.b,     0.0f}},
-            {0.25f, dark.r,    dark.g,   dark.b,   dark.a},
-            {0.5f,  bright.r,  bright.g, bright.b, bright.a},
-            {0.75f, dark.r,    dark.g,   dark.b,   dark.a},
-            {1.0f,  {hi.r,     hi.g,     hi.b,     0.0f}},
-        };
-        Microsoft::WRL::ComPtr<ID2D1GradientStopCollection> stopCollection;
-        if (SUCCEEDED(renderTarget_->CreateGradientStopCollection(
-                stops, 5, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP,
-                stopCollection.GetAddressOf())) && stopCollection) {
-            // d2d1.h 内联重载：(const props&, 停止点集合, 输出画刷)
-            D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES lgbp =
-                D2D1::LinearGradientBrushProperties(
-                    D2D1::Point2F(0.0f, 0.0f), D2D1::Point2F(1.0f, 0.0f));
-            renderTarget_->CreateLinearGradientBrush(
-                lgbp, stopCollection.Get(), singGlowBrush_.GetAddressOf());
-        }
+        const std::string& cardHiHex = settings_.cardHighlightColor.empty()
+            ? settings_.highlightColor : settings_.cardHighlightColor;
+        CreateSingGlowGradient(ParseColor(cardHiHex, 1.0f),
+                               cardSingGlowBrush_.GetAddressOf());
     }
     renderTarget_->CreateSolidColorBrush(
         ParseColor(settings_.cardCurrentColor, 1.0f),
         cardCurrentBrush_.GetAddressOf());
     renderTarget_->CreateSolidColorBrush(
-        ParseColor(settings_.cardNextColor, 1.0f),
-        cardNextBrush_.GetAddressOf());
+        ParseColor(settings_.cardHighlightColor.empty()
+                       ? settings_.highlightColor : settings_.cardHighlightColor, 1.0f),
+        cardHighlightBrush_.GetAddressOf());
     // 封面位图已随旧 RT 失效（CreateRenderTarget 中重置），主题色回落默认灰蓝
     coverThemeColor_ = D2D1::ColorF(0.45f, 0.45f, 0.50f, 1.0f);
     renderTarget_->CreateSolidColorBrush(coverThemeColor_, cardBackgroundBrush_.GetAddressOf());
@@ -444,7 +429,8 @@ void TaskbarRenderer::Shutdown() {
     // 确保 renderer 的共享上下文和 D2D 资源不会在后台线程之后失效。
     if (coverCtx_) coverCtx_->CancelAndJoin();
     ReleasePresentResources();
-    cardNextBrush_.Reset();
+    cardHighlightBrush_.Reset();
+    cardSingGlowBrush_.Reset();
     cardCurrentBrush_.Reset();
     cardBackgroundBrush_.Reset();
     mediaPanelBrush_.Reset();
@@ -619,7 +605,7 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
         const float padRight = padLeft; // baseRightPadding（封面调整前）
         const bool showLyrics = (state.hasLyrics && !state.currentLine.empty());
         if (isVerticalTaskbar_) {
-            // 上下排布时按可用高度计算往返滚动距离，主歌词有翻译时只使用上半区。
+            // 上下排布时按可用高度计算滚动距离，主歌词有翻译时只使用上半区。
             float contentTop = padLeft;
             if (settings_.enableCover && showLyrics) {
                 const float coverSize = std::max(0.0f, std::min({
@@ -659,6 +645,39 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
     if (cardMode) {
         cardScrollNeedsRedraw = UpdateCardAnim(state.currentLine, state.nextLine,
                                                state.currentLineIndex);
+    }
+
+    // 卡片模式跑马灯（长歌词滚动，仅当前行生效）
+    // 仅在 displayMode=="card" 且关闭"歌词显示扩展"且跑马灯开启时启用；
+    // 进度驱动单程滚动：偏移跟随逐字高亮进度（边滚动边高亮），滚到尽头停住。
+    bool cardMarqueeNeedsRedraw = false;
+    CardScrollInfo cardCurScroll, cardNextScroll;
+    if (cardMode) {
+        const bool marqueeEnabled = !settings_.cardDynamicWidth && settings_.enableMarquee;
+        const float dpiScale = static_cast<float>(dpi_) / 96.0f;
+        const float paddingX = constants::TEXT_PADDING_X * dpiScale;
+        const float coverPart = settings_.enableCover
+            ? (static_cast<float>(settings_.coverSize) + static_cast<float>(settings_.cardGap)) * dpiScale
+            : 0.0f;
+        const float cardAvailWidth = std::max(0.0f,
+            static_cast<float>(width_) - paddingX * 2.0f - coverPart);
+        const float cardBoxHeight = static_cast<float>(height_) * 0.5f;
+
+        // 与卡片渲染路径的翻译替换逻辑保持一致（见下方 cardState 处理）
+        std::string dispCur = state.currentLine;
+        if (settings_.enableTranslation) {
+            if (cardTranslationMode_ == "replace" && !state.currentTranslated.empty()) {
+                dispCur = state.currentTranslated;
+            }
+            // "dual" 模式下一行显示译文，当前行仍为原文，无需处理
+        }
+
+        cardCurScroll.offset = UpdateCardMarquee(
+            cardMarqueeCur_, Utf8ToWide(dispCur), cardCurrentFormat_.Get(),
+            cardAvailWidth, cardBoxHeight, marqueeEnabled, state.progress,
+            cardMarqueeNeedsRedraw);
+        cardCurScroll.layout = cardMarqueeCur_.layout.Get();
+        // 下一行不滚动（cardNextScroll 保持默认零偏移，静止显示开头）
     }
 
     // P3: 歌词切换动画 + 进度弹簧（仅 karaoke 模式）
@@ -708,7 +727,7 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
         ((state.isPlaying && !state.coverArtUrl.empty() && !d2dCoverBitmap_) ||
          coverQueuePending);
     if (!stateChanged && !marqueeNeedsRedraw && !needCoverRedraw &&
-        !cardScrollNeedsRedraw && !kP3NeedsRedraw) {
+        !cardScrollNeedsRedraw && !cardMarqueeNeedsRedraw && !kP3NeedsRedraw) {
         return;
     }
 
@@ -765,7 +784,7 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
             if (isVerticalTaskbar_) {
                 RenderCardStyleVertical(cardState);
             } else {
-                RenderCardStyle(cardState);
+                RenderCardStyle(cardState, cardCurScroll, cardNextScroll);
             }
         } else if (state.isPlaying) {
             // 纯音乐：封面 + 频谱/文字

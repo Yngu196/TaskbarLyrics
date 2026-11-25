@@ -183,14 +183,12 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
         auto t = std::make_unique<Toggle>();
         t->id = "karaoke";
         t->value = a.enableKaraoke;
-        auto* row = AddGroupRow(*g, "逐字高亮", "卡拉OK 逐字填充效果", L"\uE734", std::move(t));
-        row->SetVisible(!isCard);
+        AddGroupRow(*g, "逐字高亮", "卡拉OK 逐字填充效果", L"\uE734", std::move(t));
         auto glow = std::make_unique<Toggle>();
         glow->id = "singGlow";
         glow->value = a.enableSingAlongGlow;
-        auto* glowRow = AddGroupRow(*g, "跟唱流光",
-                                    "需要开启逐字高亮", L"\uE706", std::move(glow));
-        glowRow->SetVisible(!isCard);
+        AddGroupRow(*g, "跟唱流光",
+                    "需要开启逐字高亮", L"\uE706", std::move(glow));
     }
 
     AddSection(*this, "翻译模式");
@@ -245,14 +243,6 @@ void LyricsPage::UpdateForDisplayMode(const std::string& displayMode, const moek
     for (auto& group : children_) {
         for (auto& row : group->Children()) {
             for (auto& child : row->Children()) {
-                // 更新"逐字高亮"/"跟唱流光"可见性（行同步隐藏）
-                if (auto* t = dynamic_cast<Toggle*>(child.get())) {
-                    if (t->id == "karaoke") {
-                        SetRowVisible(t, !isCard);
-                    } else if (t->id == "singGlow") {
-                        SetRowVisible(t, !isCard);
-                    }
-                }
                 // 更新翻译模式选项
                 if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
                     if (cb->id == "translationMode") {
@@ -387,29 +377,23 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
 
     AddSection(*this, "长歌词滚动", "marqueeH");
     {
+        // 卡片模式关闭"歌词显示扩展"后同样使用本组参数（仅当前行，跟随高亮进度滚动）
         Card* g = AddGroup(*this, "marqueeCard");
-        g->SetVisible(!isCard);
         auto t = std::make_unique<Toggle>();
         t->id = "marquee";
         t->value = a.enableMarquee;
         AddGroupRow(*g, "启用长歌词滚动效果", "", L"\uE72C", std::move(t));
         auto dm = std::make_unique<ComboBox>();
         dm->id = "marqueeMode";
-        dm->items = {"往返滚动（推荐）", "关闭（截断显示）"};
+        dm->items = {"跟随滚动（推荐）", "关闭（截断显示）"};
         dm->selectedIndex = (a.marqueeMode == "off") ? 1 : 0;
-        AddGroupRow(*g, "滚动模式", "", L"\uE72C", std::move(dm));
+        AddGroupRow(*g, "滚动模式", "跟随高亮进度滚动，唱完停在末端（单行与双行模式一致）", L"\uE72C", std::move(dm));
         auto s = std::make_unique<Slider>();
         s->id = "marqueeDelay";
         s->minValue = 0; s->maxValue = 5000;
         s->value = static_cast<float>(a.marqueeDelayMs);
         s->suffix = " ms";
-        AddGroupRow(*g, "开始延迟", "", L"\uE70F", std::move(s));
-        s = std::make_unique<Slider>();
-        s->id = "marqueePause";
-        s->minValue = 0; s->maxValue = 3000;
-        s->value = static_cast<float>(a.marqueePauseMs);
-        s->suffix = " ms";
-        AddGroupRow(*g, "端点暂停", "", L"\uE70F", std::move(s));
+        AddGroupRow(*g, "开始延迟", "滚动开始前的等待时间", L"\uE70F", std::move(s));
         s = std::make_unique<Slider>();
         s->id = "marqueeSpeed";
         s->minValue = 10; s->maxValue = 200;
@@ -474,12 +458,14 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
         cr->id = "cardCurrentColor";
         cr->textValue = a.cardCurrentColor;
         cr->colorValue = HexToColorF(a.cardCurrentColor);
-        AddGroupRow(*g, "当前行颜色", "", L"\uE790", std::move(cr));
+        AddGroupRow(*g, "普通歌词颜色", "当前行未唱部分与下一行", L"\uE790", std::move(cr));
         cr = std::make_unique<ColorRow>();
-        cr->id = "cardNextColor";
-        cr->textValue = a.cardNextColor;
-        cr->colorValue = HexToColorF(a.cardNextColor);
-        AddGroupRow(*g, "下一行颜色", "", L"\uE790", std::move(cr));
+        cr->id = "cardHighlightColor";
+        const std::string cardHiResolved = a.cardHighlightColor.empty()
+            ? a.highlightColor : a.cardHighlightColor;
+        cr->textValue = cardHiResolved;
+        cr->colorValue = HexToColorF(cardHiResolved);
+        AddGroupRow(*g, "高亮歌词颜色", "当前行已唱部分（逐字填充）", L"\uE790", std::move(cr));
     }
 
     AddSection(*this, "卡片背景", "cardBgH");
@@ -494,7 +480,8 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
         auto t = std::make_unique<Toggle>();
         t->id = "cardDynamicWidth";
         t->value = a.cardDynamicWidth;
-        AddGroupRow(*g, "歌词显示扩展", "", L"\uE73E", std::move(t));
+        AddGroupRow(*g, "歌词显示扩展",
+                    "窗口随长歌词自动加宽；关闭后当前行长歌词将滚动显示", L"\uE73E", std::move(t));
     }
 
     AddSection(*this, "歌词位置", "cardLineOffsetH");
@@ -533,11 +520,13 @@ void AppearancePage::BuildContent(const moekoe::Config& cfg) {
 void AppearancePage::UpdateVisibility(const std::string& displayMode) {
     bool isCard = (displayMode == "card");
     // 单行（卡拉OK）模式专属：分组标题 H 后缀 + 分组卡片
+    // 注：长歌词滚动（marqueeH/marqueeCard）两种模式通用——卡片模式
+    // 关闭"歌词显示扩展"后长歌词也会滚动，因此始终可见
     static const char* kKaraokeIds[] = {
-        "karaokeFontH", "karaokeColorH", "themePresetsH", "marqueeH",
+        "karaokeFontH", "karaokeColorH", "themePresetsH",
         "karaokeOffsetH", "singleLineBgH",
         "karaokeFont", "karaokeColor", "themePresets",
-        "marqueeCard", "karaokeOffset", "singleLineBg"};
+        "karaokeOffset", "singleLineBg"};
     // 双行（卡片）模式专属
     static const char* kCardIds[] = {
         "cardFontH", "cardColorH", "cardBgH", "cardLineOffsetH",
@@ -554,14 +543,14 @@ void AppearancePage::UpdateVisibility(const std::string& displayMode) {
 }
 
 void AppearancePage::UpdateMarqueeVisibility(bool enabled, const std::string& marqueeMode) {
-    // 滚动模式下拉始终保留，便于用户在关闭后快速重新选择往返滚动；
-    // 只有实际启用往返滚动时，延迟/停顿/速度参数行才有意义。
+    // 滚动模式下拉始终保留，便于用户在关闭后快速重新开启；
+    // 只有实际启用滚动时，延迟/速度参数行才有意义。
     const bool showParameters = enabled && marqueeMode != "off";
     for (auto& group : children_) {
         if (group->id != "marqueeCard") continue;
         for (auto& row : group->Children()) {
             for (auto& c : row->Children()) {
-                if (c->id == "marqueeDelay" || c->id == "marqueePause" ||
+                if (c->id == "marqueeDelay" ||
                     c->id == "marqueeSpeed") {
                     SetRowVisible(c.get(), showParameters);
                 }
@@ -579,7 +568,6 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                     if (s->id == "fontSize")           ap.fontSize = static_cast<int>(s->value);
                     else if (s->id == "opacity")       ap.normalOpacity = s->value / 100.f;
                     else if (s->id == "marqueeDelay")  ap.marqueeDelayMs = static_cast<int>(s->value);
-                    else if (s->id == "marqueePause")  ap.marqueePauseMs = static_cast<int>(s->value);
                     else if (s->id == "marqueeSpeed")  ap.marqueeSpeedPxPerSec = s->value;
                     else if (s->id == "cardFontSizeCurrent") ap.cardFontSizeCurrent = static_cast<int>(s->value);
                     else if (s->id == "cardFontSizeNext")    ap.cardFontSizeNext = static_cast<int>(s->value);
@@ -608,7 +596,7 @@ void AppearancePage::CollectChanges(moekoe::Config& cfg) {
                     if (cr->id == "normalColor")       ap.normalColor = cr->textValue;
                     else if (cr->id == "highlightColor") ap.highlightColor = cr->textValue;
                     else if (cr->id == "cardCurrentColor") ap.cardCurrentColor = cr->textValue;
-                    else if (cr->id == "cardNextColor")    ap.cardNextColor = cr->textValue;
+                    else if (cr->id == "cardHighlightColor") ap.cardHighlightColor = cr->textValue;
                 } else if (auto* lr = dynamic_cast<LabelRow*>(child.get())) {
                     if (lr->id == "fontFamily")        ap.fontFamily = lr->textValue;
                     else if (lr->id == "cardFontFamily") ap.cardFontFamily = lr->textValue;

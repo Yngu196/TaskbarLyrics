@@ -314,8 +314,9 @@ constexpr float SPECTRUM_SMOOTH_RELEASE = 0.88f;
 /// Settings 2.0 窗口基准宽度（导航 + 内容）
 constexpr int SETTINGS_WIN_WIDTH_BASE_DP = 720;
 
-/// Settings 2.0 左侧导航宽度
+/// Settings 2.0 左侧导航宽度（普通窗口 / 最大化，最大化时加宽提升可读性）
 constexpr int SETTINGS_NAV_WIDTH_BASE_DP = 180;
+constexpr int SETTINGS_NAV_WIDTH_MAXIMIZED_DP = 230;
 
 /// Settings 2.0 右侧内容区宽度
 constexpr int SETTINGS_CONTENT_WIDTH_BASE_DP = 540;

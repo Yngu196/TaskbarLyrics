@@ -12,7 +12,7 @@ using renderer_utils::Utf8ToWide;
 using renderer_utils::GetCurrentTimeSeconds;
 
 TaskbarRenderer::MarqueeMode TaskbarRenderer::ParseMarqueeMode(const std::string& mode) {
-    // 旧版本的 loop 配置不再提供，统一回退到往返滚动，避免升级后出现
+    // 旧版本的 loop 配置不再提供，统一回退到滚动开启，避免升级后出现
     // UI 没有对应选项但内部仍执行旧循环逻辑的状态。
     if (mode == "loop" || mode == "Loop") return MarqueeMode::Bounce;
     if (mode == "off" || mode == "Off")   return MarqueeMode::Off;
@@ -67,7 +67,6 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         if (marqueeTextWidth_ > availWidth + 1.0f) {
             marqueeMaxOffset_ = marqueeTextWidth_ - availWidth;
             // 长歌词直接进入滚动状态（跟随高亮进度），不需要先 Delay 等待。
-            // Delay 仅用于 bounce 模式的回位后循环。
             marqueeState_ = MarqueeState::ScrollLeft;
         } else {
             // 短文本不需要滚动
@@ -132,46 +131,20 @@ float TaskbarRenderer::UpdateMarquee(const std::string& lyricText, float progres
         }
         needRedraw = true;
 
-        // 只有同时满足以下两个条件才触发回位序列：
+        // 只有同时满足以下两个条件才进入终端态：
         // 1. 已滚动到最大偏移量（整句歌词末端已可见）
         // 2. 高亮进度已完成（progress >= 1.0）
         if (scrollOffset_ >= marqueeMaxOffset_ && progress >= 1.0f) {
             scrollOffset_ = marqueeMaxOffset_;
-            marqueeState_ = MarqueeState::PauseRight;
+            marqueeState_ = MarqueeState::PauseRight;  // 终端态：定住不回弹
             stateStartTime_ = now;
         }
         return scrollOffset_;
     }
 
     case MarqueeState::PauseRight:
-        // 右端点暂停 pauseMs
-        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
-            marqueeState_ = MarqueeState::ScrollRight;
-            stateStartTime_ = now;
-            marqueeLastUpdateTime_ = now;
-        }
+        // 终端态：唱完停在末端（PauseRight 复用为 HoldEnd，旧 bounce 逻辑已移除）
         return marqueeMaxOffset_;
-
-    case MarqueeState::ScrollRight: {
-        const float distance = static_cast<float>(frameDelta) * speed;
-        scrollOffset_ = marqueeMaxOffset_ - std::min(distance, marqueeMaxOffset_);
-        needRedraw = true;
-
-        if (scrollOffset_ <= 0.0f) {
-            scrollOffset_ = 0.0f;
-            marqueeState_ = MarqueeState::PauseLeft;
-            stateStartTime_ = now;
-        }
-        return scrollOffset_;
-    }
-
-    case MarqueeState::PauseLeft:
-        // 左端点暂停 pauseMs 后回到 Delay
-        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
-            marqueeState_ = MarqueeState::Delay;
-            stateStartTime_ = now;
-        }
-        return 0.0f;
     }
 
     return 0.0f;
@@ -249,41 +222,121 @@ float TaskbarRenderer::UpdateVerticalMarquee(const std::wstring& lyricText,
         }
         needRedraw = true;
         if (verticalScrollOffset_ >= verticalMaxOffset_ && progress >= 1.0f) {
-            verticalMarqueeState_ = MarqueeState::PauseRight;
+            verticalMarqueeState_ = MarqueeState::PauseRight;  // 终端态：定住不回弹
             verticalStateStartTime_ = now;
         }
         break;
     }
     case MarqueeState::PauseRight:
-        needRedraw = true;
-        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
-            verticalMarqueeState_ = MarqueeState::ScrollRight;
-            verticalStateStartTime_ = now;
-        }
+        // 终端态：唱完停在末端（PauseRight 复用为 HoldEnd，旧 bounce 逻辑已移除）
         break;
-    case MarqueeState::ScrollRight:
-        // 从右端（底端）平滑回位，而非每帧重新从最大值扣除同一距离。
-        verticalScrollOffset_ = std::max(0.0f, verticalScrollOffset_ - step);
-        needRedraw = true;
-        if (verticalScrollOffset_ <= 0.0f) {
-            verticalMarqueeState_ = MarqueeState::PauseLeft;
-            verticalStateStartTime_ = now;
-        }
-        break;
-    case MarqueeState::PauseLeft:
-        needRedraw = true;
-        if (elapsed * 1000.0 >= static_cast<double>(settings_.marqueePauseMs)) {
-            verticalMarqueeState_ = MarqueeState::Delay;
-            verticalStateStartTime_ = now;
-        }
-        break;
-    case MarqueeState::Idle:
+    default:
         break;
     }
     return verticalScrollOffset_;
 }
 
-// ═════════════════════════════════════════
+// ═══════════════════════════════════════
+// 卡片模式跑马灯（进度驱动单程滚动：跟随逐字高亮从行首开始滚，滚到尽头停住）
+// ═══════════════════════════════════════
+
+float TaskbarRenderer::UpdateCardMarquee(CardMarqueeState& m, const std::wstring& text,
+                                         IDWriteTextFormat* format, float availWidth,
+                                         float boxHeight, bool enabled, double progress,
+                                         bool& needRedraw) {
+    needRedraw = false;
+
+    // 禁用（扩展宽度开启 / 跑马灯关闭 / 空文本）→ 重置并停用
+    if (!enabled || text.empty() || availWidth <= 0.0f) {
+        if (m.state != MarqueeState::Idle || m.offset != 0.0f || m.layout) {
+            m.state = MarqueeState::Idle;
+            m.offset = 0.0f;
+            m.maxOffset = 0.0f;
+            m.layout.Reset();
+            needRedraw = true;
+        }
+        m.text = text;
+        return 0.0f;
+    }
+
+    const double now = GetCurrentTimeSeconds();
+
+    // 文本变化 → 重建布局缓存并重置状态机
+    if (text != m.text) {
+        m.text = text;
+        m.offset = 0.0f;
+        m.maxOffset = 0.0f;
+        m.textWidth = 0.0f;
+        m.layout.Reset();
+        if (dwriteFactory_ && format) {
+            Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+            if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
+                    text.c_str(), static_cast<UINT32>(text.size()),
+                    format, 10000.0f, boxHeight, layout.GetAddressOf()))) {
+                DWRITE_TEXT_METRICS metrics{};
+                if (SUCCEEDED(layout->GetMetrics(&metrics))) {
+                    m.textWidth = metrics.width;
+                    m.layout = layout;  // 无换行布局（format 已设 NO_WRAP）
+                }
+            }
+        }
+        if (m.textWidth > availWidth + 1.0f) {
+            m.maxOffset = m.textWidth - availWidth;
+            m.state = MarqueeState::ScrollLeft;  // 进度驱动：跟随高亮立即开始滚动
+        } else {
+            m.state = MarqueeState::Idle;    // 短文本不需要滚动
+            m.layout.Reset();
+        }
+        m.stateStart = now;
+        m.lastUpdate = now;
+        needRedraw = true;
+        return 0.0f;
+    }
+
+    if (m.state == MarqueeState::Idle) return 0.0f;
+
+    const double frameDelta = m.lastUpdate > 0.0 ? now - m.lastUpdate : 0.016;
+    m.lastUpdate = now;
+
+    // 恒定速度（超长文本自动加速，与卡拉OK跑马灯一致）
+    float speed = std::max(1.0f, settings_.marqueeSpeedPxPerSec);
+    if (m.textWidth > availWidth * constants::MARQUEE_SPEEDUP_THRESHOLD) {
+        const float ratio = m.textWidth / availWidth;
+        speed *= std::min(ratio / constants::MARQUEE_SPEEDUP_THRESHOLD, 3.0f);
+    }
+    const float step = std::max(0.0f, static_cast<float>(frameDelta)) * speed;
+
+    switch (m.state) {
+    case MarqueeState::ScrollLeft: {
+        // 进度驱动：目标偏移 = maxOffset × 逐字进度。
+        // 高亮从行首推进的同时滚动同步开始（边滚动边高亮），
+        // 进度到 1 时目标到达 maxOffset，唱完必然滚完。
+        const float clamped = static_cast<float>(std::clamp(progress, 0.0, 1.0));
+        const float target = m.maxOffset * clamped;
+        const float prev = m.offset;
+        if (m.offset < target) {
+            m.offset = std::min(m.offset + step, target);
+        } else if (m.offset > target) {
+            m.offset = std::max(m.offset - step, target);
+        }
+        needRedraw = (m.offset != prev);
+        if (m.offset >= m.maxOffset) {
+            // 滚到尽头后停在终端态（PauseRight 复用为 HoldEnd），不回弹
+            m.state = MarqueeState::PauseRight;
+            needRedraw = true;
+        }
+        return m.offset;
+    }
+
+    case MarqueeState::PauseRight:
+        // 终端态：保持停在文本末端（不回弹）
+        return m.maxOffset;
+
+    default:
+        return 0.0f;
+    }
+}
+
 // 卡片模式歌词切换动画（淡入淡出 + 位移）
 // ═════════════════════════════════════════
 

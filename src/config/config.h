@@ -43,14 +43,13 @@ struct AppearanceConfig {
     std::string cardFontFamily{};
 
     // 卡片模式专用颜色（独立于 highlightColor / normalColor）
-    std::string cardCurrentColor{"#FFFFFF"};  // 当前行文字颜色
-    std::string cardNextColor{"#AAAAAA"};     // 下一行文字颜色
+    std::string cardCurrentColor{"#FFFFFF"};   // 普通歌词颜色（当前行未唱部分，下一行同色）
+    std::string cardHighlightColor{""};        // 高亮歌词颜色（已唱填充；空串时迁移自 highlightColor）
 
     // 跑马灯（长歌词滚动）配置
     bool        enableMarquee{true};           // 是否启用跑马灯
-    std::string marqueeMode{"bounce"};        // bounce=往返 / off=关闭（旧 loop 配置自动回退 bounce）
-    int         marqueeDelayMs{2000};          // 歌词显示后延迟多久开始滚动（毫秒）
-    int         marqueePauseMs{1000};          // 滚动到端点后暂停时间（毫秒）
+    std::string marqueeMode{"bounce"};        // bounce=滚动 / off=关闭（旧 loop 配置自动回退 bounce）
+    int         marqueeDelayMs{2000};          // 歌词显示后延迟多久开始滚动（毫秒，卡片模式使用）
     float       marqueeSpeedPxPerSec{40.0f};   // 滚动速度（像素/秒）
 
     // 封面与布局参数（供渲染器使用）

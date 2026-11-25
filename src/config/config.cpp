@@ -40,10 +40,9 @@ void Config::NormalizeValues() {
     appearance_.cardFontSizeCurrent = std::clamp(appearance_.cardFontSizeCurrent, 10, 20);
     appearance_.cardFontSizeNext = std::clamp(appearance_.cardFontSizeNext, 8, 18);
     appearance_.marqueeDelayMs = std::clamp(appearance_.marqueeDelayMs, 0, 10000);
-    appearance_.marqueePauseMs = std::clamp(appearance_.marqueePauseMs, 0, 10000);
     appearance_.marqueeSpeedPxPerSec = std::clamp(appearance_.marqueeSpeedPxPerSec, 10.0f, 500.0f);
     if (appearance_.marqueeMode != "off") {
-        // 循环跑马灯已移除；旧配置统一迁移到往返滚动。
+        // 循环跑马灯已移除；旧配置统一迁移到滚动开启。
         appearance_.marqueeMode = "bounce";
     }
     appearance_.windowWidthOverride = std::clamp(
@@ -224,14 +223,17 @@ bool Config::Load() {
             appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
             appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
             appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
-            appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
+            appearance_.cardHighlightColor   = a.value("card_highlight_color",  appearance_.cardHighlightColor);
+            // 迁移：高亮歌词颜色未配置时沿用单行模式高亮色
+            if (appearance_.cardHighlightColor.empty()) {
+                appearance_.cardHighlightColor = appearance_.highlightColor;
+            }
             appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
             appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
             appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
             appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
-            appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
             appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
             appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
             appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
@@ -307,10 +309,10 @@ bool Config::Load() {
 
     // 配置校验日志：确认关键字段值正确
     moekoe::Log("[CONFIG] Validate: enabled=%d autoStart=%d "
-               "marqueeSpeed=%.1f marqueeDelay=%d marqueePause=%d "
+               "marqueeSpeed=%.1f marqueeDelay=%d "
                "lockPos=%d lockFull=%d debugLog=%d\n",
         (int)enabled_, (int)autoStart_,
-        appearance_.marqueeSpeedPxPerSec, appearance_.marqueeDelayMs, appearance_.marqueePauseMs,
+        appearance_.marqueeSpeedPxPerSec, appearance_.marqueeDelayMs,
         (int)position_.lockPosition, (int)position_.lockFully,
         (int)advanced_.debugLog);
 
@@ -347,14 +349,13 @@ bool Config::Save() const {
         {"card_font_size_next",    appearance_.cardFontSizeNext},
         {"card_font_family",       appearance_.cardFontFamily},
         {"card_current_color",     appearance_.cardCurrentColor},
-        {"card_next_color",        appearance_.cardNextColor},
+        {"card_highlight_color",   appearance_.cardHighlightColor},
         {"card_background_mode",  appearance_.cardBackgroundMode},
         {"single_line_background_mode", appearance_.singleLineBackgroundMode},
         {"card_dynamic_width",    appearance_.cardDynamicWidth},
         {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
         {"marquee_mode",       appearance_.marqueeMode},
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},
-        {"marquee_pause_ms",   appearance_.marqueePauseMs},
         {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
         {"enable_cover",          appearance_.enableCover},
         {"cover_size",           appearance_.coverSize},
@@ -452,14 +453,13 @@ bool Config::ExportToFile(const std::string& path) const {
         {"card_font_size_next",    appearance_.cardFontSizeNext},
         {"card_font_family",       appearance_.cardFontFamily},
         {"card_current_color",     appearance_.cardCurrentColor},
-        {"card_next_color",        appearance_.cardNextColor},
+        {"card_highlight_color",   appearance_.cardHighlightColor},
         {"card_background_mode",  appearance_.cardBackgroundMode},
         {"single_line_background_mode", appearance_.singleLineBackgroundMode},
         {"card_dynamic_width",    appearance_.cardDynamicWidth},
         {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
         {"marquee_mode",       appearance_.marqueeMode},
         {"marquee_delay_ms",   appearance_.marqueeDelayMs},
-        {"marquee_pause_ms",   appearance_.marqueePauseMs},
         {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
         {"enable_cover",          appearance_.enableCover},
         {"cover_size",           appearance_.coverSize},
@@ -543,14 +543,17 @@ bool Config::ImportFromFile(const std::string& path) {
             appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
             appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
             appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
-            appearance_.cardNextColor        = a.value("card_next_color",      appearance_.cardNextColor);
+            appearance_.cardHighlightColor   = a.value("card_highlight_color",  appearance_.cardHighlightColor);
+            // 迁移：高亮歌词颜色未配置时沿用单行模式高亮色
+            if (appearance_.cardHighlightColor.empty()) {
+                appearance_.cardHighlightColor = appearance_.highlightColor;
+            }
             appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
             appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
             appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
             appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
             appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
             appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
-            appearance_.marqueePauseMs    = a.value("marquee_pause_ms",  appearance_.marqueePauseMs);
             appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
             appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
             appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));

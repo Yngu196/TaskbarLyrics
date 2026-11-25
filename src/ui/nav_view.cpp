@@ -92,19 +92,23 @@ void NavView::Draw(ID2D1RenderTarget* rt, const DrawContext& ctx) {
     rt->DrawLine(D2D1::Point2F(x_ + w_ - 0.5f, y_), D2D1::Point2F(x_ + w_ - 0.5f, y_ + h_),
                  sepBrush.Get(), 1);
 
-    // 标题 "TaskbarLyrics"（紫色强调色）
+    // 标题 "TaskbarLyrics"（紫色强调色）；左内边距随导航宽度同步缩放
     auto titleFmt = MakeTextFormat(L"Segoe UI Variable", 16, DWRITE_FONT_WEIGHT_BOLD);
     if (titleFmt) {
+        const float titleX = (w_ >= 240.0f) ? 40.0f : 24.0f;
         auto titleBrush = MakeBrush(rt, ctx.accent);  // 使用紫色
         rt->DrawTextW(L"TaskbarLyrics", 14,
-                      titleFmt.Get(), D2D1::RectF(x_ + 16, y_ + 12, x_ + w_ - 16, y_ + 44),
+                      titleFmt.Get(), D2D1::RectF(x_ + titleX, y_ + 12, x_ + w_ - 16, y_ + 44),
                       titleBrush.Get());
     }
 
     // 导航项
     float itemY = y_ + 50;
+    // 宽侧栏（最大化 ≥240dp）时加大左内边距，标签不贴左缘
+    const float itemOffset = (w_ >= 240.0f) ? 56.0f : 40.0f;
     for (auto& child : children_) {
         if (child->IsVisible()) {
+            static_cast<NavItem*>(child.get())->contentOffset = itemOffset;
             child->Arrange(x_, itemY, w_, child->MeasureHeight(w_));
             child->Draw(rt, ctx);
             itemY += child->MeasureHeight(w_);

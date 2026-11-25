@@ -248,9 +248,9 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 
 ## 界面预览
 
-| 双行歌词模式 | 单行歌词模式 | 双行歌词（双语切换） |
-| :---: | :---: | :---: |
-| ![双行歌词模式](Samples/sample1.gif "双行歌词模式") | ![单行歌词模式](Samples/sample2.gif "单行歌词模式") | ![双行歌词模式（歌词双语切换）](Samples/sample3.gif "双行歌词模式（歌词双语切换）") |
+| 双行歌词模式 | 单行歌词模式 |
+| :---: | :---: | 
+| ![双行歌词模式](Samples/sample1.gif "双行歌词模式") | ![单行歌词模式](Samples/sample2.gif "单行歌词模式") | 
 
 | 设置页面 | 歌词窗口菜单 | 托盘菜单 |
 | :---: | :---: | :---: |
@@ -263,20 +263,17 @@ python scripts\pack_zip.py moeKoe-taskbar-lyrics\ moeKoe-taskbar-lyrics-windows-
 - [常见问题自查](Docs/常见问题自查.md)
 - [计划书](Docs/计划书.md)
 
-## 第三方库
+## 灵感来源
 
-本仓库使用了以下第三方库，感谢原作者的贡献：
-
-| 库 | 用途 | 许可证 | 引入方式 |
-| --- | --- | --- | --- |
-| [IXWebSocket](https://github.com/machinezone/IXWebSocket) | 与主控程序的 WebSocket 连接 | BSD-3-Clause | third_party 源码编译 |
-| [cpp-httplib](https://github.com/yhirose/cpp-httplib) | 诊断接口的 HTTP 服务 | MIT | vcpkg |
-| [moodycamel::concurrentqueue](https://github.com/cameron314/concurrentqueue) | 跨线程无锁消息队列 | BSD-3 / Boost 双许可 | third_party 单头 |
-| [nlohmann/json](https://github.com/nlohmann/json) | JSON 解析与序列化 | MIT | vcpkg |
-| [zlib](https://www.zlib.net/) | WebSocket 消息 gzip 解压 | Zlib | vcpkg |
-| [Mbed TLS](https://www.trustedfirmware.org/projects/mbed-tls/) | WebSocket TLS 加密 | Apache-2.0 | vcpkg |
-| [kissfft](https://github.com/mborgerding/kissfft) | 音频波形/频谱计算 | BSD-3-Clause | vcpkg |
-| [Catch2](https://github.com/catchorg/Catch2) | 单元测试框架（仅测试） | BSL-1 | CMake FetchContent |
+* [IXWebSocket](https://github.com/machinezone/IXWebSocket) 用于与主控程序的 WebSocket 连接 
+* [cpp-httplib](https://github.com/yhirose/cpp-httplib) 用于诊断接口的 HTTP 服务
+* [moodycamel::concurrentqueue](https://github.com/cameron314/concurrentqueue) 用于跨线程无锁消息队列
+* [nlohmann/json](https://github.com/nlohmann/json) 用于 JSON 解析与序列化
+* [zlib](https://www.zlib.net/) 用于 WebSocket 消息 gzip 解压
+* [Mbed TLS](https://www.trustedfirmware.org/projects/mbed-tls/) 用于 WebSocket TLS 加密
+* [kissfft](https://github.com/mborgerding/kissfft) 用于 音频波形/频谱计算
+* [Catch2](https://github.com/catchorg/Catch2) 用于单元测试框架（仅测试）
+* [taskbar-lyrics-displayer](https://github.com/H0308/taskbar-lyrics-displayer) 参考一些效果
 
 ## 许可证
 

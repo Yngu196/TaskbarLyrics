@@ -135,7 +135,9 @@ void TaskbarRenderer::DrawCardBackground() {
     }
 }
 
-void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
+void TaskbarRenderer::RenderCardStyle(const RenderState& state,
+                                      const CardScrollInfo& curScroll,
+                                      const CardScrollInfo& nextScroll) {
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
     const float coverSize = static_cast<float>(settings_.coverSize) * dpiScale;
     const float gap = static_cast<float>(settings_.cardGap) * dpiScale;
@@ -207,13 +209,16 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
             DrawCardLyricsSingle(curW, lyricsX, vNudgeCur, lyricsWidth,
                                  inOffset, fadeInAlpha,
                                  /*isCurrent=*/true,
-                                 state.showSongInfo ? highlightBrush_.Get() : nullptr);
+                                 state.showSongInfo ? highlightBrush_.Get() : nullptr,
+                                 curScroll.offset, curScroll.layout,
+                                 state.progress, settings_.enableKaraoke);
         }
         if (!nextW.empty()) {
             DrawCardLyricsSingle(nextW, lyricsX, halfH - vNudgeNext, lyricsWidth,
                                  inOffset, fadeInAlpha,
                                  /*isCurrent=*/false,
-                                 state.showSongInfo ? highlightBrush_.Get() : nullptr);
+                                 state.showSongInfo ? highlightBrush_.Get() : nullptr,
+                                 nextScroll.offset, nextScroll.layout);
         }
 
         renderTarget_->PopAxisAlignedClip();
@@ -221,7 +226,9 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state) {
         // ═════ 非动画状态：正常双行绘制 ═════
         DrawCardLyrics(curW, nextW, lyricsX, 0.0f, lyricsWidth, 0.0f, 1.0f,
                        1.0f, 1.0f,
-                       state.showSongInfo ? highlightBrush_.Get() : nullptr);
+                       state.showSongInfo ? highlightBrush_.Get() : nullptr,
+                       curScroll, nextScroll,
+                       state.progress);
     }
 }
 
@@ -281,7 +288,8 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
                                                 bool isCurrent, float alpha) {
         if (line.empty() || alpha <= 0.001f) return;
         IDWriteTextFormat* format = isCurrent ? cardCurrentFormat_.Get() : cardNextFormat_.Get();
-        ID2D1SolidColorBrush* brush = isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get();
+        // 下一行与未唱部分同为普通歌词颜色（原样绘制）
+        ID2D1SolidColorBrush* brush = cardCurrentBrush_.Get();
         if (!format || !brush) return;
 
         const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -719,7 +727,11 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
                                            float x, float y, float availWidth,
                                            float yOffset, float alpha,
                                            bool isCurrent,
-                                           ID2D1SolidColorBrush* brushOverride) {
+                                           ID2D1SolidColorBrush* brushOverride,
+                                           float scrollOffset,
+                                           IDWriteTextLayout* scrollLayout,
+                                           double progress,
+                                           bool karaokeEnabled) {
     if (!renderTarget_ || line.empty() || alpha <= 0.001f) return;
 
     const float h = static_cast<float>(height_);
@@ -730,9 +742,8 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
                                         : static_cast<float>(settings_.cardLine2OffsetY)) * dpiScale;
 
     IDWriteTextFormat* format = isCurrent ? cardCurrentFormat_.Get() : cardNextFormat_.Get();
-    ID2D1SolidColorBrush* brush = brushOverride
-        ? brushOverride
-        : (isCurrent ? cardCurrentBrush_.Get() : cardNextBrush_.Get());
+    // 基础画刷：悬停歌曲信息用覆盖画刷；其余（当前行未唱部分 + 下一行）均为普通歌词颜色
+    ID2D1SolidColorBrush* brush = brushOverride ? brushOverride : cardCurrentBrush_.Get();
     if (!format || !brush) return;
 
     D2D1_COLOR_F origColor = brush->GetColor();
@@ -741,9 +752,114 @@ void TaskbarRenderer::DrawCardLyricsSingle(const std::wstring& line,
     brush->SetColor(animColor);
 
     D2D1_RECT_F layout = D2D1::RectF(x, y + yOffset + userOffsetY, x + availWidth, y + midY + yOffset + userOffsetY);
-    renderTarget_->DrawTextW(
-        line.c_str(), static_cast<UINT32>(line.size()),
-        format, layout, brush);
+    if (scrollOffset > 0.0f && scrollLayout) {
+        // 长歌词滚动：裁剪到行区域，按偏移左移绘制无换行布局
+        // （scrollLayout 与本行文本对应，段落对齐=LEADING，文本起点=绘制原点）
+        renderTarget_->PushAxisAlignedClip(layout, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        renderTarget_->DrawTextLayout(
+            D2D1::Point2F(x - scrollOffset, layout.top), scrollLayout, brush);
+        renderTarget_->PopAxisAlignedClip();
+    } else {
+        // 静态绘制：裁剪到行区域（下一行不滚动，超长文本截断显示开头，防止溢出盖到封面）
+        renderTarget_->PushAxisAlignedClip(layout, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        renderTarget_->DrawTextW(
+            line.c_str(), static_cast<UINT32>(line.size()),
+            format, layout, brush);
+        renderTarget_->PopAxisAlignedClip();
+    }
+
+    // ═════ 逐字高亮 + 跟唱流光（仅当前行；悬停歌曲信息/纯色覆盖时不叠加） ═════
+    if (isCurrent && karaokeEnabled && progress > 0.0 && !brushOverride && cardHighlightBrush_) {
+        // 文本宽度：滚动时取无换行布局 metrics（文本随滚动左移）；
+        // 否则用缓存布局测量（左对齐 LEADING，文本从 layout.left 起）。
+        float textWidth = 0.0f;
+        float textLeft = layout.left;
+        const bool scrolling = (scrollOffset > 0.0f && scrollLayout);
+        if (scrolling) {
+            DWRITE_TEXT_METRICS m{};
+            if (SUCCEEDED(scrollLayout->GetMetrics(&m))) {
+                textWidth = m.width;
+                textLeft = x - scrollOffset;
+            }
+        } else {
+            const float layoutHeight = layout.bottom - layout.top;
+            if (cardKaraokeLayout_ && line == cardKaraokeText_ &&
+                std::abs(cardKaraokeAvailWidth_ - availWidth) < 0.5f) {
+                textWidth = cardKaraokeTextWidth_;
+            } else {
+                Microsoft::WRL::ComPtr<IDWriteTextLayout> newLayout;
+                if (SUCCEEDED(dwriteFactory_->CreateTextLayout(
+                        line.c_str(), static_cast<UINT32>(line.size()),
+                        format, availWidth, layoutHeight,
+                        newLayout.GetAddressOf())) && newLayout) {
+                    DWRITE_TEXT_METRICS m{};
+                    if (SUCCEEDED(newLayout->GetMetrics(&m))) {
+                        cardKaraokeLayout_ = newLayout;
+                        cardKaraokeText_ = line;
+                        cardKaraokeAvailWidth_ = availWidth;
+                        cardKaraokeTextWidth_ = m.width;
+                        textWidth = m.width;
+                    }
+                }
+            }
+        }
+
+        if (textWidth > 0.0f) {
+            const float clamped = static_cast<float>(std::clamp(progress, 0.0, 1.0));
+            const float highlightWidth = std::min(textWidth * clamped, textWidth);
+
+            // 高亮歌词画刷透明度与基础画刷同步（行切换 fade 过渡自然带动填充淡入淡出）
+            D2D1_COLOR_F hiOrig = cardHighlightBrush_->GetColor();
+            D2D1_COLOR_F hi = hiOrig;
+            hi.a = std::max(0.0f, std::min(1.0f, hiOrig.a * alpha));
+            cardHighlightBrush_->SetColor(hi);
+
+            // ── 逐字高亮：已唱部分裁剪重绘为高亮歌词色（硬切换，与单行模式一致） ──
+            // 裁剪矩形与歌词可视区域 [layout.left, layout.right] 求交集：
+            // 滚动时 textLeft 随偏移左移，不求交集会把已唱文字画到左侧封面上。
+            if (highlightWidth > 0.0f) {
+                const float clipL = std::max(textLeft, layout.left);
+                const float clipR = std::min(textLeft + highlightWidth, layout.right);
+                if (clipR > clipL) {
+                    renderTarget_->PushAxisAlignedClip(
+                        D2D1::RectF(clipL, layout.top, clipR, layout.bottom),
+                        D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    if (scrolling) {
+                        renderTarget_->DrawTextLayout(
+                            D2D1::Point2F(textLeft, layout.top), scrollLayout, cardHighlightBrush_.Get());
+                    } else {
+                        renderTarget_->DrawTextW(
+                            line.c_str(), static_cast<UINT32>(line.size()),
+                            format, layout, cardHighlightBrush_.Get());
+                    }
+                    renderTarget_->PopAxisAlignedClip();
+                }
+            }
+
+            // ── 跟唱流光：亮-暗-亮对称窄带叠加在字形上（卡片高亮色渐变） ──
+            // 整体裁剪到歌词可视区域，防止滚动后字形延伸到封面区域。
+            if (SingGlowActive(karaokeEnabled, false, progress, true) && cardSingGlowBrush_) {
+                const float front = textLeft + textWidth * clamped;
+                if (SetupSingGlowBrush(front, false, settings_.cardFontSizeCurrent,
+                                       cardSingGlowBrush_.Get())) {
+                    cardSingGlowBrush_->SetOpacity(alpha);
+                    renderTarget_->PushAxisAlignedClip(layout, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    if (scrolling) {
+                        renderTarget_->DrawTextLayout(
+                            D2D1::Point2F(textLeft, layout.top), scrollLayout, cardSingGlowBrush_.Get());
+                    } else {
+                        renderTarget_->DrawTextW(
+                            line.c_str(), static_cast<UINT32>(line.size()),
+                            format, layout, cardSingGlowBrush_.Get());
+                    }
+                    renderTarget_->PopAxisAlignedClip();
+                    cardSingGlowBrush_->SetOpacity(1.0f);
+                }
+            }
+
+            cardHighlightBrush_->SetColor(hiOrig);
+        }
+    }
 
     brush->SetColor(origColor);
 }
@@ -753,7 +869,10 @@ void TaskbarRenderer::DrawCardLyrics(const std::wstring& currentLine,
                                      float x, float y, float availWidth,
                                      float yOffset, float alpha,
                                      float /*curFontSizeScale*/, float /*nextFontSizeScale*/,
-                                     ID2D1SolidColorBrush* brushOverride) {
+                                     ID2D1SolidColorBrush* brushOverride,
+                                     const CardScrollInfo& curScroll,
+                                     const CardScrollInfo& nextScroll,
+                                     double progress) {
     if (!renderTarget_ || alpha <= 0.001f) return;
 
     const float dpiScale = static_cast<float>(dpi_) / 96.0f;
@@ -763,12 +882,15 @@ void TaskbarRenderer::DrawCardLyrics(const std::wstring& currentLine,
 
     if (!currentLine.empty()) {
         DrawCardLyricsSingle(currentLine, x, y + vNudgeCur, availWidth, yOffset, alpha,
-                             /*isCurrent=*/true, brushOverride);
+                             /*isCurrent=*/true, brushOverride,
+                             curScroll.offset, curScroll.layout,
+                             progress, settings_.enableKaraoke);
     }
 
     if (!nextLine.empty()) {
         DrawCardLyricsSingle(nextLine, x, y + halfH - vNudgeNext, availWidth, yOffset, alpha,
-                             /*isCurrent=*/false, brushOverride);
+                             /*isCurrent=*/false, brushOverride,
+                             nextScroll.offset, nextScroll.layout);
     }
 }
 

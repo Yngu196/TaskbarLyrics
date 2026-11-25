@@ -379,6 +379,13 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     BuildPages(currentConfig);
     ArrangeUI();
 
+    // 窗口对象跨开/关持久存在（仅 HWND 被 Close 销毁），currentPage_ 会残留
+    // 上次离开时的页码；而 BuildPages 每次重建导航栏（默认选中「歌词」），
+    // 两者不同步会出现"导航高亮歌词、内容却是旧页面"的错位。这里以导航栏
+    // 选中项为准重新对齐，并重置内容区滚动偏移。
+    currentPage_ = navView_ ? navView_->SelectedIndex() : 0;
+    v2ScrollOffset_ = 0;
+
     ShowWindow(hwnd_, SW_SHOW);
     SetFocus(hwnd_);
 
@@ -394,6 +401,10 @@ bool D2DSettingsWindow::IsVisible() const {
 
 void D2DSettingsWindow::Close() {
     StopAnimationTimer();
+    // 悬停/按下指针指向页面内部控件，页面即将随窗口销毁而释放；
+    // 窗口对象本身持久存在，不清空的话下次打开会悬空引用已释放的旧控件
+    capturedElement_ = nullptr;
+    hoveredElement_ = nullptr;
     if (hwnd_) {
         DestroyWindow(hwnd_);
         hwnd_ = nullptr;
@@ -1286,7 +1297,12 @@ void D2DSettingsWindow::ArrangeUI() {
     int clientW = static_cast<int>(rc.right / dpiScale_);
     int clientH = static_cast<int>(rc.bottom / dpiScale_);
 
-    const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
+    // 导航宽度按窗口状态动态取值：普通窗口用基准宽度，最大化时加宽
+    // （全屏下侧边栏太窄、内容列过宽失衡）。DrawV2 页脚绘制复用该值。
+    const int navW = ::IsZoomed(hwnd_)
+        ? moekoe::constants::SETTINGS_NAV_WIDTH_MAXIMIZED_DP
+        : moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
+    navWidthDp_ = navW;
     const int restW = std::max(0, clientW - navW);
 
     // 内容列宽度：窄窗口占满剩余空间；宽屏取剩余宽度的 60%（参考 Fluent 设置比例，
@@ -1307,8 +1323,8 @@ void D2DSettingsWindow::ArrangeUI() {
         constexpr int kFooterItemH = 32;
         constexpr int kVersionH = 20;
         const int footerTop = clientH - 20 - kFooterItemH - kVersionH;
-        footerRects_[0] = RECT{ panelOffsetX_ + 4, footerTop,
-                                panelOffsetX_ + navW - 4, footerTop + kFooterItemH };
+        footerRects_[0] = RECT{ panelOffsetX_ + 10, footerTop,
+                                panelOffsetX_ + navW - 10, footerTop + kFooterItemH };
         footerRects_[1] = RECT{ 0, 0, 0, 0 };  // 「关于与更新」入口已移除
     }
 
@@ -1373,9 +1389,12 @@ void D2DSettingsWindow::DrawV2() {
         };
 
         const int navLeft = panelOffsetX_;
-        const int navW = moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
+        const int navW = navWidthDp_ > 0
+            ? navWidthDp_ : moekoe::constants::SETTINGS_NAV_WIDTH_BASE_DP;
         const int footerTop = footerRects_[0].top;
         constexpr int kFooterItemH = 32;
+        // 左内边距随导航宽度缩放（宽侧栏/最大化时加大，与导航项对齐）
+        const int footInset = (navW >= 240) ? 42 : 26;
 
         const wchar_t* kFooterLabels[] = { L"问题反馈" };
         const wchar_t* kFooterIcons[]  = { L"\uE8B7" };
@@ -1401,8 +1420,8 @@ void D2DSettingsWindow::DrawV2() {
                 iconFmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                 auto iconBrush = solid(theme_.textSecondary);
                 renderTarget_->DrawTextW(kFooterIcons[i], 1, iconFmt.Get(),
-                    D2D1::RectF(static_cast<FLOAT>(navLeft + 14), fr.top,
-                                static_cast<FLOAT>(navLeft + 38), fr.bottom),
+                    D2D1::RectF(static_cast<FLOAT>(navLeft + footInset), fr.top,
+                                static_cast<FLOAT>(navLeft + footInset + 24), fr.bottom),
                     iconBrush.Get());
             }
 
@@ -1411,7 +1430,7 @@ void D2DSettingsWindow::DrawV2() {
                 fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
                 auto txtBrush = solid(theme_.textSecondary);
                 renderTarget_->DrawTextW(kFooterLabels[i], wcslen(kFooterLabels[i]), fmt.Get(),
-                    D2D1::RectF(static_cast<FLOAT>(navLeft + 42), fr.top,
+                    D2D1::RectF(static_cast<FLOAT>(navLeft + footInset + 28), fr.top,
                                 static_cast<FLOAT>(navLeft + navW - 8), fr.bottom),
                     txtBrush.Get());
             }
@@ -1424,7 +1443,7 @@ void D2DSettingsWindow::DrawV2() {
             auto verBrush = solid(theme_.textSecondary);
             renderTarget_->DrawTextW(verText.c_str(), static_cast<UINT32>(verText.size()),
                 verFmt.Get(),
-                D2D1::RectF(static_cast<FLOAT>(navLeft + 14),
+                D2D1::RectF(static_cast<FLOAT>(navLeft + footInset),
                             static_cast<FLOAT>(footerTop + kFooterItemH),
                             static_cast<FLOAT>(navLeft + navW - 8),
                             static_cast<FLOAT>(footerTop + kFooterItemH + 20)),
