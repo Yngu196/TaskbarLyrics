@@ -2,22 +2,16 @@
 // renderer_utils.h - 渲染器内部辅助函数（多翻译单元共享）
 #pragma once
 
+#include "util/string_utils.h"
+
 #include <string>
 #include <windows.h>
 
 namespace moekoe {
 namespace renderer_utils {
 
-inline std::wstring Utf8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int len = ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                    static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                          static_cast<int>(s.size()), &out[0], len);
-    return out;
-}
+// 兼容既有调用点：转换实现统一由 util/string_utils.h 提供。
+using moekoe::Utf8ToWide;
 
 inline wchar_t FirstUtf8CharAsWide(const std::string& s) {
     if (s.empty()) return L'?';

@@ -9,6 +9,7 @@
 #pragma once
 
 #include "lyrics/lyrics_data.h"
+#include "core/constants.h"
 
 #include <atomic>
 #include <functional>
@@ -39,7 +40,7 @@ public:
     // 启动连接（异步）
     // exactPath=true 表示 url 来自宿主下发的精确端点（1.7.2+），
     // 不再交替尝试去掉 /moekoe 的根路径
-    bool Connect(const std::string& url = "ws://127.0.0.1:6520", bool exactPath = false);
+    bool Connect(const std::string& url = constants::DEFAULT_WS_URL, bool exactPath = false);
 
     // 主动断开（不会自动重连）
     void Disconnect();
@@ -85,7 +86,7 @@ private:
     std::atomic<bool> reconnectNow_{false};
 
     // 配置
-    std::string url_{"ws://127.0.0.1:6520"};
+    std::string url_{constants::DEFAULT_WS_URL};
     bool        exactPath_{false};
     bool        debugLog_{false};
 

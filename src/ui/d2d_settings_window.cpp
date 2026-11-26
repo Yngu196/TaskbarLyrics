@@ -5,6 +5,7 @@
 #include "ui/settings_draw_utils.h"
 #include "ui/font_picker.h"
 #include "util/logger.h"
+#include "util/string_utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -17,16 +18,7 @@ namespace moekoe {
 
 using namespace Microsoft::WRL;
 
-// Utf8ToWide 已移至 color_utils.h（inline moekoe::Utf8ToWide）
-// 宽字符 → UTF-8（仅此文件使用）
-static std::string WideToLocalUtf8(const std::wstring& ws) {
-    if (ws.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string s(n - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], n, nullptr, nullptr);
-    return s;
-}
+// UTF-8 ↔ 宽字符转换统一由 util/string_utils.h 提供。
 
 // 简单输入对话框（模态，用于修改端口等数值）
 // 使用静态 DLGPROC + thread_local 数据传递
@@ -786,7 +778,7 @@ void D2DSettingsWindow::UpdateActiveFontRow(const std::wstring& family) {
         ForEachControl(pages_[currentPage_].get(), [&](ui::UIElement* e) {
             if (auto* row = dynamic_cast<ui::LabelRow*>(e)) {
                 if (row->id == fontPickerTargetId_) {
-                    row->textValue = WideToLocalUtf8(family);
+                    row->textValue = WideToUtf8(family);
                 }
             }
         });
@@ -837,14 +829,7 @@ void D2DSettingsWindow::ExportCurrentConfig() {
 
     // 先收集当前设置窗口中的值
     ApplyChanges();
-    std::string path;
-    {
-        int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0, nullptr, nullptr);
-        if (len > 0) {
-            path.resize(len - 1);
-            WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, &path[0], len, nullptr, nullptr);
-        }
-    }
+    std::string path = WideToUtf8(pszPath);
     CoTaskMemFree(pszPath);
 
     if (!path.empty()) {
@@ -879,14 +864,7 @@ void D2DSettingsWindow::ImportConfigFromFile() {
     hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
     if (FAILED(hr) || !pszPath) return;
 
-    std::string path;
-    {
-        int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0, nullptr, nullptr);
-        if (len > 0) {
-            path.resize(len - 1);
-            WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, &path[0], len, nullptr, nullptr);
-        }
-    }
+    std::string path = WideToUtf8(pszPath);
     CoTaskMemFree(pszPath);
 
     if (!path.empty() && editedConfig_.ImportFromFile(path)) {

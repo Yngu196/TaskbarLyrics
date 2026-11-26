@@ -3,6 +3,7 @@
 #include "config/config.h"
 #include "core/constants.h"
 #include "util/logger.h"
+#include "util/string_utils.h"
 
 #include <nlohmann/json.hpp>
 
@@ -60,16 +61,6 @@ void Config::NormalizeValues() {
     advanced_.websocketPort = std::clamp(advanced_.websocketPort, 1024, 65535);
     advanced_.httpServerPort = std::clamp(advanced_.httpServerPort, 1024, 65535);
     advanced_.refreshRateHz = std::clamp(advanced_.refreshRateHz, 1, 120);
-}
-
-// ── 本地辅助函数：UTF-8 ↔ 宽字符转换 ──
-static std::string WideToUtf8(const std::wstring& ws) {
-    if (ws.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string s(n - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], n, nullptr, nullptr);
-    return s;
 }
 
 namespace {
@@ -163,6 +154,181 @@ void MigrateConfig(json& j, int fromVersion) {
     // if (fromVersion < 2) { ... }
 }
 
+json Config::ToJson() const {
+    json j;
+    j["schema_version"] = Config::kSchemaVersion;
+    j["enabled"]    = enabled_;
+    j["auto_start"] = autoStart_;
+
+    j["appearance"] = {
+        {"highlight_color",    appearance_.highlightColor},
+        {"normal_color",       appearance_.normalColor},
+        {"normal_opacity",     appearance_.normalOpacity},
+        {"font_family",        appearance_.fontFamily},
+        {"font_size",          appearance_.fontSize},
+        {"enable_karaoke",     appearance_.enableKaraoke},
+        {"enable_singalong_glow", appearance_.enableSingAlongGlow},
+        {"enable_stardust",       appearance_.enableStardust},
+        {"enable_translation", appearance_.enableTranslation},
+        {"translation_mode",   appearance_.translationMode},
+        {"card_translation_mode", appearance_.cardTranslationMode},
+        {"enable_marquee",     appearance_.enableMarquee},
+        {"display_mode",       appearance_.displayMode},
+        {"card_font_size_current", appearance_.cardFontSizeCurrent},
+        {"card_font_size_next",    appearance_.cardFontSizeNext},
+        {"card_font_family",       appearance_.cardFontFamily},
+        {"card_current_color",     appearance_.cardCurrentColor},
+        {"card_highlight_color",   appearance_.cardHighlightColor},
+        {"card_background_mode",  appearance_.cardBackgroundMode},
+        {"single_line_background_mode", appearance_.singleLineBackgroundMode},
+        {"card_dynamic_width",    appearance_.cardDynamicWidth},
+        {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
+        {"marquee_mode",       appearance_.marqueeMode},
+        {"marquee_delay_ms",   appearance_.marqueeDelayMs},
+        {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
+        {"enable_cover",          appearance_.enableCover},
+        {"cover_size",           appearance_.coverSize},
+        {"cover_offset_x",       appearance_.coverOffsetX},
+        {"cover_corner_radius",  appearance_.coverCornerRadius},
+        {"settings_theme",       appearance_.settingsTheme},
+        {"lyric_offset_y",      appearance_.lyricOffsetY},
+        {"card_line1_offset_y", appearance_.cardLine1OffsetY},
+        {"card_line2_offset_y", appearance_.cardLine2OffsetY},
+        {"window_width_override", appearance_.windowWidthOverride},
+        {"display_selection_mode", appearance_.displaySelectionMode},
+        {"manual_display_index",   appearance_.manualDisplayIndex},
+        {"spectrum_mode",  appearance_.spectrumMode},
+        {"spectrum_color", appearance_.spectrumColor},
+        {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
+        {"spectrum_db_floor",   appearance_.spectrumDbFloor},
+        {"spectrum_opacity",    appearance_.spectrumOpacity},
+        {"spectrum_num_bands",  appearance_.spectrumNumBands},
+        {"spectrum_bar_width",  appearance_.spectrumBarWidth},
+    };
+
+    j["advanced"] = {
+        {"websocket_port",          advanced_.websocketPort},
+        {"http_server_port",        advanced_.httpServerPort},
+        {"refresh_rate_hz",         advanced_.refreshRateHz},
+        {"debug_log",               advanced_.debugLog},
+        {"always_show_lyrics",      advanced_.alwaysShowLyrics},
+    };
+
+    j["position"] = {
+        {"offset_x",      position_.offsetX},
+        {"offset_y",      position_.offsetY},
+        {"lock_position", position_.lockPosition},
+        {"lock_fully",    position_.lockFully},
+    };
+    PositionConfig savedHorizontal = horizontalPosition_;
+    PositionConfig savedVertical = verticalPosition_;
+    if (activeVerticalProfile_) savedVertical = position_;
+    else savedHorizontal = position_;
+    j["position_profiles"] = {
+        {"horizontal", {{"offset_x", savedHorizontal.offsetX}, {"offset_y", savedHorizontal.offsetY},
+                          {"lock_position", savedHorizontal.lockPosition}, {"lock_fully", savedHorizontal.lockFully}}},
+        {"vertical",   {{"offset_x", savedVertical.offsetX}, {"offset_y", savedVertical.offsetY},
+                          {"lock_position", savedVertical.lockPosition}, {"lock_fully", savedVertical.lockFully}}},
+    };
+    return j;
+}
+
+void Config::FromJson(const json& j, bool includePosition) {
+    enabled_   = j.value("enabled",   true);
+    autoStart_ = j.value("auto_start", false);
+
+    if (j.contains("appearance")) {
+        const auto& a = j["appearance"];
+        appearance_.highlightColor    = a.value("highlight_color",   appearance_.highlightColor);
+        appearance_.normalColor       = a.value("normal_color",      appearance_.normalColor);
+        appearance_.normalOpacity     = a.value("normal_opacity",    appearance_.normalOpacity);
+        appearance_.fontFamily        = a.value("font_family",       appearance_.fontFamily);
+        appearance_.fontSize          = a.value("font_size",         appearance_.fontSize);
+        appearance_.enableKaraoke     = a.value("enable_karaoke",    appearance_.enableKaraoke);
+        appearance_.enableSingAlongGlow = a.value("enable_singalong_glow", appearance_.enableSingAlongGlow);
+        appearance_.enableStardust     = a.value("enable_stardust",     appearance_.enableStardust);
+        appearance_.enableTranslation = a.value("enable_translation", appearance_.enableTranslation);
+        appearance_.translationMode   = a.value("translation_mode",   appearance_.translationMode);
+        appearance_.cardTranslationMode = a.value("card_translation_mode", appearance_.cardTranslationMode);
+        appearance_.enableMarquee     = a.value("enable_marquee",    appearance_.enableMarquee);
+        appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
+        appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
+        appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
+        appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
+        appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
+        appearance_.cardHighlightColor   = a.value("card_highlight_color",  appearance_.cardHighlightColor);
+        // 迁移：高亮歌词颜色未配置时沿用单行模式高亮色
+        if (appearance_.cardHighlightColor.empty()) {
+            appearance_.cardHighlightColor = appearance_.highlightColor;
+        }
+        appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
+        appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
+        appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
+        appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
+        appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
+        appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
+        appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
+        appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
+        appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
+        appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
+        appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
+        appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
+        // 仅支持浅色/深色两种主题，旧配置的 blue/white 归一化到深色
+        if (appearance_.settingsTheme != "light" && appearance_.settingsTheme != "dark")
+            appearance_.settingsTheme = "dark";
+        appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
+        appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
+        appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
+        appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
+        appearance_.displaySelectionMode = a.value("display_selection_mode", appearance_.displaySelectionMode);
+        appearance_.manualDisplayIndex   = a.value("manual_display_index",   appearance_.manualDisplayIndex);
+        appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
+        appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
+        appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
+        appearance_.spectrumDbFloor  = static_cast<float>(a.value("spectrum_db_floor",  appearance_.spectrumDbFloor));
+        appearance_.spectrumOpacity  = static_cast<float>(a.value("spectrum_opacity",   appearance_.spectrumOpacity));
+        appearance_.spectrumNumBands = a.value("spectrum_num_bands", appearance_.spectrumNumBands);
+        appearance_.spectrumBarWidth  = static_cast<float>(a.value("spectrum_bar_width", appearance_.spectrumBarWidth));
+    }
+
+    if (j.contains("advanced")) {
+        const auto& a = j["advanced"];
+        advanced_.websocketPort        = a.value("websocket_port",          advanced_.websocketPort);
+        advanced_.httpServerPort       = a.value("http_server_port",        advanced_.httpServerPort);
+        advanced_.refreshRateHz        = a.value("refresh_rate_hz",          advanced_.refreshRateHz);
+        advanced_.debugLog             = a.value("debug_log",               advanced_.debugLog);
+        advanced_.alwaysShowLyrics     = a.value("always_show_lyrics",      advanced_.alwaysShowLyrics);
+    }
+
+    if (!includePosition) return;
+
+    if (j.contains("position")) {
+        const auto& p = j["position"];
+        position_.offsetX      = p.value("offset_x",       position_.offsetX);
+        position_.offsetY      = p.value("offset_y",       position_.offsetY);
+        position_.lockPosition = p.value("lock_position",  position_.lockPosition);
+        position_.lockFully    = p.value("lock_fully",     position_.lockFully);
+    }
+
+    // 左右侧与上下侧任务栏保存独立的拖动位置。旧配置只有 position，
+    // 升级时两套都从该位置初始化，保持既有行为。
+    horizontalPosition_ = position_;
+    verticalPosition_ = position_;
+    if (j.contains("position_profiles")) {
+        const auto loadProfile = [](const json& p, PositionConfig& dst) {
+            dst.offsetX = p.value("offset_x", dst.offsetX);
+            dst.offsetY = p.value("offset_y", dst.offsetY);
+            dst.lockPosition = p.value("lock_position", dst.lockPosition);
+            dst.lockFully = p.value("lock_fully", dst.lockFully);
+        };
+        const auto& profiles = j["position_profiles"];
+        if (profiles.contains("horizontal")) loadProfile(profiles["horizontal"], horizontalPosition_);
+        if (profiles.contains("vertical")) loadProfile(profiles["vertical"], verticalPosition_);
+    }
+    activeVerticalProfile_ = false;
+    position_ = horizontalPosition_;
+}
+
 Config::Config() = default;
 
 std::string Config::GetConfigPath() {
@@ -202,97 +368,7 @@ bool Config::Load() {
             MigrateConfig(j, loadedVersion);
         }
 
-        enabled_   = j.value("enabled",   true);
-        autoStart_ = j.value("auto_start", false);
-
-        if (j.contains("appearance")) {
-            const auto& a = j["appearance"];
-            appearance_.highlightColor    = a.value("highlight_color",   appearance_.highlightColor);
-            appearance_.normalColor       = a.value("normal_color",      appearance_.normalColor);
-            appearance_.normalOpacity     = a.value("normal_opacity",    appearance_.normalOpacity);
-            appearance_.fontFamily        = a.value("font_family",       appearance_.fontFamily);
-            appearance_.fontSize          = a.value("font_size",         appearance_.fontSize);
-            appearance_.enableKaraoke     = a.value("enable_karaoke",    appearance_.enableKaraoke);
-            appearance_.enableSingAlongGlow = a.value("enable_singalong_glow", appearance_.enableSingAlongGlow);
-            appearance_.enableStardust     = a.value("enable_stardust",     appearance_.enableStardust);
-            appearance_.enableTranslation = a.value("enable_translation", appearance_.enableTranslation);
-            appearance_.translationMode   = a.value("translation_mode",   appearance_.translationMode);
-            appearance_.cardTranslationMode = a.value("card_translation_mode", appearance_.cardTranslationMode);
-            appearance_.enableMarquee     = a.value("enable_marquee",    appearance_.enableMarquee);
-            appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
-            appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
-            appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
-            appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
-            appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
-            appearance_.cardHighlightColor   = a.value("card_highlight_color",  appearance_.cardHighlightColor);
-            // 迁移：高亮歌词颜色未配置时沿用单行模式高亮色
-            if (appearance_.cardHighlightColor.empty()) {
-                appearance_.cardHighlightColor = appearance_.highlightColor;
-            }
-            appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
-            appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
-            appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
-            appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
-            appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
-            appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
-            appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
-            appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
-            appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
-            appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
-            appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
-            appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
-            // 仅支持浅色/深色两种主题，旧配置的 blue/white 归一化到深色
-            if (appearance_.settingsTheme != "light" && appearance_.settingsTheme != "dark")
-                appearance_.settingsTheme = "dark";
-            appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
-            appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
-            appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
-            appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
-            appearance_.displaySelectionMode = a.value("display_selection_mode", appearance_.displaySelectionMode);
-            appearance_.manualDisplayIndex   = a.value("manual_display_index",   appearance_.manualDisplayIndex);
-            appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
-            appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
-            appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
-            appearance_.spectrumDbFloor  = static_cast<float>(a.value("spectrum_db_floor",  appearance_.spectrumDbFloor));
-            appearance_.spectrumOpacity  = static_cast<float>(a.value("spectrum_opacity",   appearance_.spectrumOpacity));
-            appearance_.spectrumNumBands = a.value("spectrum_num_bands", appearance_.spectrumNumBands);
-            appearance_.spectrumBarWidth  = static_cast<float>(a.value("spectrum_bar_width", appearance_.spectrumBarWidth));
-        }
-
-        if (j.contains("advanced")) {
-            const auto& a = j["advanced"];
-            advanced_.websocketPort        = a.value("websocket_port",          advanced_.websocketPort);
-            advanced_.httpServerPort       = a.value("http_server_port",        advanced_.httpServerPort);
-            advanced_.refreshRateHz        = a.value("refresh_rate_hz",          advanced_.refreshRateHz);
-            advanced_.debugLog             = a.value("debug_log",               advanced_.debugLog);
-            advanced_.alwaysShowLyrics     = a.value("always_show_lyrics",      advanced_.alwaysShowLyrics);
-        }
-
-        if (j.contains("position")) {
-            const auto& p = j["position"];
-            position_.offsetX      = p.value("offset_x",       position_.offsetX);
-            position_.offsetY      = p.value("offset_y",       position_.offsetY);
-            position_.lockPosition = p.value("lock_position",  position_.lockPosition);
-            position_.lockFully    = p.value("lock_fully",     position_.lockFully);
-        }
-
-        // 左右侧与上下侧任务栏保存独立的拖动位置。旧配置只有 position，
-        // 升级时两套都从该位置初始化，保持既有行为。
-        horizontalPosition_ = position_;
-        verticalPosition_ = position_;
-        if (j.contains("position_profiles")) {
-            const auto loadProfile = [](const json& p, PositionConfig& dst) {
-                dst.offsetX = p.value("offset_x", dst.offsetX);
-                dst.offsetY = p.value("offset_y", dst.offsetY);
-                dst.lockPosition = p.value("lock_position", dst.lockPosition);
-                dst.lockFully = p.value("lock_fully", dst.lockFully);
-            };
-            const auto& profiles = j["position_profiles"];
-            if (profiles.contains("horizontal")) loadProfile(profiles["horizontal"], horizontalPosition_);
-            if (profiles.contains("vertical")) loadProfile(profiles["vertical"], verticalPosition_);
-        }
-        activeVerticalProfile_ = false;
-        position_ = horizontalPosition_;
+        FromJson(j, /*includePosition*/ true);
 
         // 范围验证：将异常值 clamp 到合理区间
         NormalizeValues();
@@ -328,82 +404,7 @@ bool Config::Save() const {
     std::ofstream out(tmpPath, std::ios::trunc);
     if (!out.is_open()) return false;
 
-    json j;
-    j["schema_version"] = Config::kSchemaVersion;
-    j["enabled"]    = enabled_;
-    j["auto_start"] = autoStart_;
-
-    j["appearance"] = {
-        {"highlight_color",    appearance_.highlightColor},
-        {"normal_color",       appearance_.normalColor},
-        {"normal_opacity",     appearance_.normalOpacity},
-        {"font_family",        appearance_.fontFamily},
-        {"font_size",          appearance_.fontSize},
-        {"enable_karaoke",     appearance_.enableKaraoke},
-        {"enable_singalong_glow", appearance_.enableSingAlongGlow},
-        {"enable_stardust",       appearance_.enableStardust},
-        {"enable_translation", appearance_.enableTranslation},
-        {"translation_mode",   appearance_.translationMode},
-        {"card_translation_mode", appearance_.cardTranslationMode},
-        {"enable_marquee",     appearance_.enableMarquee},
-        {"display_mode",       appearance_.displayMode},
-        {"card_font_size_current", appearance_.cardFontSizeCurrent},
-        {"card_font_size_next",    appearance_.cardFontSizeNext},
-        {"card_font_family",       appearance_.cardFontFamily},
-        {"card_current_color",     appearance_.cardCurrentColor},
-        {"card_highlight_color",   appearance_.cardHighlightColor},
-        {"card_background_mode",  appearance_.cardBackgroundMode},
-        {"single_line_background_mode", appearance_.singleLineBackgroundMode},
-        {"card_dynamic_width",    appearance_.cardDynamicWidth},
-        {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
-        {"marquee_mode",       appearance_.marqueeMode},
-        {"marquee_delay_ms",   appearance_.marqueeDelayMs},
-        {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
-        {"enable_cover",          appearance_.enableCover},
-        {"cover_size",           appearance_.coverSize},
-        {"cover_offset_x",       appearance_.coverOffsetX},
-        {"cover_corner_radius",  appearance_.coverCornerRadius},
-        {"settings_theme",       appearance_.settingsTheme},
-        {"lyric_offset_y",      appearance_.lyricOffsetY},
-        {"card_line1_offset_y", appearance_.cardLine1OffsetY},
-        {"card_line2_offset_y", appearance_.cardLine2OffsetY},
-        {"window_width_override", appearance_.windowWidthOverride},
-        {"display_selection_mode", appearance_.displaySelectionMode},
-        {"manual_display_index",   appearance_.manualDisplayIndex},
-        {"spectrum_mode",  appearance_.spectrumMode},
-        {"spectrum_color", appearance_.spectrumColor},
-        {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
-        {"spectrum_db_floor",   appearance_.spectrumDbFloor},
-        {"spectrum_opacity",    appearance_.spectrumOpacity},
-        {"spectrum_num_bands",  appearance_.spectrumNumBands},
-        {"spectrum_bar_width",  appearance_.spectrumBarWidth},
-    };
-
-    j["advanced"] = {
-        {"websocket_port",          advanced_.websocketPort},
-        {"http_server_port",        advanced_.httpServerPort},
-        {"refresh_rate_hz",         advanced_.refreshRateHz},
-        {"debug_log",               advanced_.debugLog},
-        {"always_show_lyrics",      advanced_.alwaysShowLyrics},
-    };
-
-    j["position"] = {
-        {"offset_x",      position_.offsetX},
-        {"offset_y",      position_.offsetY},
-        {"lock_position", position_.lockPosition},
-        {"lock_fully",    position_.lockFully},
-    };
-    PositionConfig savedHorizontal = horizontalPosition_;
-    PositionConfig savedVertical = verticalPosition_;
-    if (activeVerticalProfile_) savedVertical = position_;
-    else savedHorizontal = position_;
-    j["position_profiles"] = {
-        {"horizontal", {{"offset_x", savedHorizontal.offsetX}, {"offset_y", savedHorizontal.offsetY},
-                          {"lock_position", savedHorizontal.lockPosition}, {"lock_fully", savedHorizontal.lockFully}}},
-        {"vertical",   {{"offset_x", savedVertical.offsetX}, {"offset_y", savedVertical.offsetY},
-                          {"lock_position", savedVertical.lockPosition}, {"lock_fully", savedVertical.lockFully}}},
-    };
-
+    const json j = ToJson();
     out << j.dump(2);
     out.close();
     if (out.fail()) {
@@ -432,83 +433,8 @@ bool Config::ExportToFile(const std::string& path) const {
         return false;
     }
 
-    // 复用 Save() 的序列化逻辑
-    json j;
-    j["schema_version"] = Config::kSchemaVersion;
-    j["enabled"]    = enabled_;
-    j["auto_start"] = autoStart_;
-
-    j["appearance"] = {
-        {"highlight_color",    appearance_.highlightColor},
-        {"normal_color",       appearance_.normalColor},
-        {"normal_opacity",     appearance_.normalOpacity},
-        {"font_family",        appearance_.fontFamily},
-        {"font_size",          appearance_.fontSize},
-        {"enable_karaoke",     appearance_.enableKaraoke},
-        {"enable_singalong_glow", appearance_.enableSingAlongGlow},
-        {"enable_stardust",       appearance_.enableStardust},
-        {"enable_translation", appearance_.enableTranslation},
-        {"translation_mode",   appearance_.translationMode},
-        {"card_translation_mode", appearance_.cardTranslationMode},
-        {"enable_marquee",     appearance_.enableMarquee},
-        {"display_mode",       appearance_.displayMode},
-        {"card_font_size_current", appearance_.cardFontSizeCurrent},
-        {"card_font_size_next",    appearance_.cardFontSizeNext},
-        {"card_font_family",       appearance_.cardFontFamily},
-        {"card_current_color",     appearance_.cardCurrentColor},
-        {"card_highlight_color",   appearance_.cardHighlightColor},
-        {"card_background_mode",  appearance_.cardBackgroundMode},
-        {"single_line_background_mode", appearance_.singleLineBackgroundMode},
-        {"card_dynamic_width",    appearance_.cardDynamicWidth},
-        {"card_max_expand_ratio", appearance_.cardMaxExpandRatio},
-        {"marquee_mode",       appearance_.marqueeMode},
-        {"marquee_delay_ms",   appearance_.marqueeDelayMs},
-        {"marquee_speed_px_per_sec", appearance_.marqueeSpeedPxPerSec},
-        {"enable_cover",          appearance_.enableCover},
-        {"cover_size",           appearance_.coverSize},
-        {"cover_offset_x",       appearance_.coverOffsetX},
-        {"cover_corner_radius",  appearance_.coverCornerRadius},
-        {"settings_theme",       appearance_.settingsTheme},
-        {"lyric_offset_y",      appearance_.lyricOffsetY},
-        {"card_line1_offset_y", appearance_.cardLine1OffsetY},
-        {"card_line2_offset_y", appearance_.cardLine2OffsetY},
-        {"window_width_override", appearance_.windowWidthOverride},
-        {"display_selection_mode", appearance_.displaySelectionMode},
-        {"manual_display_index",   appearance_.manualDisplayIndex},
-        {"spectrum_mode",  appearance_.spectrumMode},
-        {"spectrum_color", appearance_.spectrumColor},
-        {"spectrum_db_ceil",    appearance_.spectrumDbCeil},
-        {"spectrum_db_floor",   appearance_.spectrumDbFloor},
-        {"spectrum_opacity",    appearance_.spectrumOpacity},
-        {"spectrum_num_bands",  appearance_.spectrumNumBands},
-        {"spectrum_bar_width",  appearance_.spectrumBarWidth},
-    };
-
-    j["advanced"] = {
-        {"websocket_port",          advanced_.websocketPort},
-        {"http_server_port",        advanced_.httpServerPort},
-        {"refresh_rate_hz",         advanced_.refreshRateHz},
-        {"debug_log",               advanced_.debugLog},
-        {"always_show_lyrics",      advanced_.alwaysShowLyrics},
-    };
-
-    j["position"] = {
-        {"offset_x",      position_.offsetX},
-        {"offset_y",      position_.offsetY},
-        {"lock_position", position_.lockPosition},
-        {"lock_fully",    position_.lockFully},
-    };
-    PositionConfig savedHorizontal = horizontalPosition_;
-    PositionConfig savedVertical = verticalPosition_;
-    if (activeVerticalProfile_) savedVertical = position_;
-    else savedHorizontal = position_;
-    j["position_profiles"] = {
-        {"horizontal", {{"offset_x", savedHorizontal.offsetX}, {"offset_y", savedHorizontal.offsetY},
-                          {"lock_position", savedHorizontal.lockPosition}, {"lock_fully", savedHorizontal.lockFully}}},
-        {"vertical",   {{"offset_x", savedVertical.offsetX}, {"offset_y", savedVertical.offsetY},
-                          {"lock_position", savedVertical.lockPosition}, {"lock_fully", savedVertical.lockFully}}},
-    };
-
+    // 与 Save() 共用序列化，落盘策略不同（此处为非原子直写）
+    const json j = ToJson();
     out << j.dump(2);
     moekoe::Log("[CONFIG] Exported to %s\n", path.c_str());
     return true;
@@ -524,74 +450,8 @@ bool Config::ImportFromFile(const std::string& path) {
     try {
         json j;
         in >> j;
-        // 复用 Load() 的反序列化逻辑
-        enabled_   = j.value("enabled",   true);
-        autoStart_ = j.value("auto_start", false);
-
-        if (j.contains("appearance")) {
-            const auto& a = j["appearance"];
-            appearance_.highlightColor    = a.value("highlight_color",   appearance_.highlightColor);
-            appearance_.normalColor       = a.value("normal_color",      appearance_.normalColor);
-            appearance_.normalOpacity     = a.value("normal_opacity",    appearance_.normalOpacity);
-            appearance_.fontFamily        = a.value("font_family",       appearance_.fontFamily);
-            appearance_.fontSize          = a.value("font_size",         appearance_.fontSize);
-            appearance_.enableKaraoke     = a.value("enable_karaoke",    appearance_.enableKaraoke);
-            appearance_.enableSingAlongGlow = a.value("enable_singalong_glow", appearance_.enableSingAlongGlow);
-            appearance_.enableStardust     = a.value("enable_stardust",     appearance_.enableStardust);
-            appearance_.enableTranslation = a.value("enable_translation", appearance_.enableTranslation);
-            appearance_.translationMode   = a.value("translation_mode",   appearance_.translationMode);
-            appearance_.cardTranslationMode = a.value("card_translation_mode", appearance_.cardTranslationMode);
-            appearance_.enableMarquee     = a.value("enable_marquee",    appearance_.enableMarquee);
-            appearance_.displayMode       = a.value("display_mode",      appearance_.displayMode);
-            appearance_.cardFontSizeCurrent = a.value("card_font_size_current", appearance_.cardFontSizeCurrent);
-            appearance_.cardFontSizeNext    = a.value("card_font_size_next",    appearance_.cardFontSizeNext);
-            appearance_.cardFontFamily      = a.value("card_font_family",      appearance_.cardFontFamily);
-            appearance_.cardCurrentColor     = a.value("card_current_color",   appearance_.cardCurrentColor);
-            appearance_.cardHighlightColor   = a.value("card_highlight_color",  appearance_.cardHighlightColor);
-            // 迁移：高亮歌词颜色未配置时沿用单行模式高亮色
-            if (appearance_.cardHighlightColor.empty()) {
-                appearance_.cardHighlightColor = appearance_.highlightColor;
-            }
-            appearance_.cardBackgroundMode = a.value("card_background_mode", appearance_.cardBackgroundMode);
-            appearance_.singleLineBackgroundMode = a.value("single_line_background_mode", appearance_.singleLineBackgroundMode);
-            appearance_.cardDynamicWidth  = a.value("card_dynamic_width",   appearance_.cardDynamicWidth);
-            appearance_.cardMaxExpandRatio = a.value("card_max_expand_ratio", appearance_.cardMaxExpandRatio);
-            appearance_.marqueeMode       = a.value("marquee_mode",      appearance_.marqueeMode);
-            appearance_.marqueeDelayMs    = a.value("marquee_delay_ms",  appearance_.marqueeDelayMs);
-            appearance_.marqueeSpeedPxPerSec = static_cast<float>(a.value("marquee_speed_px_per_sec", static_cast<double>(appearance_.marqueeSpeedPxPerSec)));
-            appearance_.enableCover      = a.value("enable_cover",          appearance_.enableCover);
-            appearance_.coverSize        = a.value("cover_size", a.value("card_cover_size", appearance_.coverSize));
-            appearance_.coverOffsetX     = a.value("cover_offset_x",       appearance_.coverOffsetX);
-            appearance_.coverCornerRadius = a.value("cover_corner_radius", appearance_.coverCornerRadius);
-            appearance_.settingsTheme    = a.value("settings_theme",        appearance_.settingsTheme);
-            // 仅支持浅色/深色两种主题，旧配置的 blue/white 归一化到深色
-            if (appearance_.settingsTheme != "light" && appearance_.settingsTheme != "dark")
-                appearance_.settingsTheme = "dark";
-            appearance_.lyricOffsetY    = a.value("lyric_offset_y",        appearance_.lyricOffsetY);
-            appearance_.cardLine1OffsetY = a.value("card_line1_offset_y",  appearance_.cardLine1OffsetY);
-            appearance_.cardLine2OffsetY = a.value("card_line2_offset_y",  appearance_.cardLine2OffsetY);
-            appearance_.windowWidthOverride = a.value("window_width_override", appearance_.windowWidthOverride);
-            appearance_.displaySelectionMode = a.value("display_selection_mode", appearance_.displaySelectionMode);
-            appearance_.manualDisplayIndex   = a.value("manual_display_index",   appearance_.manualDisplayIndex);
-            appearance_.spectrumMode  = a.value("spectrum_mode",  appearance_.spectrumMode);
-            appearance_.spectrumColor = a.value("spectrum_color", appearance_.spectrumColor);
-            appearance_.spectrumDbCeil   = static_cast<float>(a.value("spectrum_db_ceil",   appearance_.spectrumDbCeil));
-            appearance_.spectrumDbFloor  = static_cast<float>(a.value("spectrum_db_floor",  appearance_.spectrumDbFloor));
-            appearance_.spectrumOpacity  = static_cast<float>(a.value("spectrum_opacity",   appearance_.spectrumOpacity));
-            appearance_.spectrumNumBands = a.value("spectrum_num_bands", appearance_.spectrumNumBands);
-            appearance_.spectrumBarWidth  = static_cast<float>(a.value("spectrum_bar_width", appearance_.spectrumBarWidth));
-        }
-
-        if (j.contains("advanced")) {
-            const auto& a = j["advanced"];
-            advanced_.websocketPort        = a.value("websocket_port",          advanced_.websocketPort);
-            advanced_.httpServerPort       = a.value("http_server_port",        advanced_.httpServerPort);
-            advanced_.refreshRateHz        = a.value("refresh_rate_hz",          advanced_.refreshRateHz);
-            advanced_.debugLog             = a.value("debug_log",               advanced_.debugLog);
-            advanced_.alwaysShowLyrics     = a.value("always_show_lyrics",      advanced_.alwaysShowLyrics);
-        }
-
         // 导入时不覆盖位置（位置与具体机器/显示器相关）
+        FromJson(j, /*includePosition*/ false);
         NormalizeValues();
         Save();
         moekoe::Log("[CONFIG] Imported from %s\n", path.c_str());

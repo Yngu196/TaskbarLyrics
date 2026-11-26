@@ -348,6 +348,8 @@ list(APPEND HEADERS
     src/util/environment_check.h
     src/util/compat_mode.h
     src/util/diagnostic_exporter.h
+    src/util/string_utils.h
+    src/util/math_utils.h
 )
 
 # net/: 网络通信 — WebSocket、HTTP、Native Messaging、API
@@ -410,12 +412,11 @@ list(APPEND HEADERS
     src/taskbar/taskbar_selector.h
 )
 
-# ui/: 用户界面 — 设置窗口、托盘图标、颜色选择器、配置对话框
+# ui/: 用户界面 — D2D 设置窗口、托盘图标、颜色选择器
 list(APPEND SOURCES
     src/ui/d2d_settings_window.cpp
     src/ui/tray_icon.cpp
     src/ui/tray_commands.cpp
-    src/ui/config_dialog.cpp
     src/ui/color_picker.cpp
     src/ui/font_picker.cpp
     src/ui/ui_element.cpp
@@ -435,7 +436,6 @@ list(APPEND HEADERS
     src/ui/settings_draw_utils.h
     src/ui/tray_icon.h
     src/ui/tray_commands.h
-    src/ui/config_dialog.h
 )
 
 # 资源文件

@@ -5,6 +5,7 @@
 #include "render/renderer_utils.h"
 #include "core/constants.h"
 #include "util/logger.h"
+#include "util/math_utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -963,7 +964,7 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
                 const double dur = static_cast<double>(constants::LYRIC_FADE_DURATION_MS) / 1000.0;
                 double rawT = elapsed / dur;
                 if (rawT >= 1.0) rawT = 1.0;
-                const float fadeT = EaseOutCubic(static_cast<float>(rawT));
+                const float fadeT = math::EaseOutCubic(static_cast<float>(rawT));
 
                 // 旧行：progress=1.0（已完成），无卡拉OK、无跑马灯，渐隐
                 DrawHighlightedTextPerCharacter(lyricFadeOldText_, 1.0, false, 0.0f,

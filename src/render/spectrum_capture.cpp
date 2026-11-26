@@ -611,7 +611,7 @@ struct SpectrumCapture::Impl {
 
     // MoeKoeMusic WebSocket API 端口（用于反查播放器进程）
     // 1.7.2+ 由宿主配置决定，运行时可被 SetWsPort 更新，故用原子量
-    std::atomic<int>            wsPort{6520};
+    std::atomic<int>            wsPort{constants::WEBSOCKET_LISTEN_PORT};
 
     // 进程级捕获连续无音频的会话计数与系统兜底截止时间
     int                         noAudioSessions{0};

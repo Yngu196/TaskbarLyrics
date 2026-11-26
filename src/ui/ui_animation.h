@@ -8,6 +8,8 @@
 //
 #pragma once
 
+#include "util/math_utils.h"
+
 #include <algorithm>
 #include <cmath>
 #include <chrono>
@@ -19,12 +21,7 @@ namespace moekoe::ui {
 
 // ── 缓动函数 ──
 
-// EaseOutCubic：快速启动，缓慢结束
-inline float EaseOutCubic(float t) {
-    t = std::clamp(t, 0.0f, 1.0f);
-    float f = 1.0f - t;
-    return 1.0f - f * f * f;
-}
+using moekoe::math::EaseOutCubic;
 
 // Spring：弹簧动画（带阻尼振荡）
 // stiffness: 刚度（越大越快收敛）
@@ -60,12 +57,7 @@ inline float Lerp(float a, float b, float t) {
     return a + t * (b - a);
 }
 
-// D2D1_COLOR_F 插值
-inline D2D1_COLOR_F LerpColor(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t) {
-    t = std::clamp(t, 0.0f, 1.0f);
-    return {a.r + t * (b.r - a.r), a.g + t * (b.g - a.g),
-            a.b + t * (b.b - a.b), a.a + t * (b.a - a.a)};
-}
+using moekoe::math::LerpColor;
 
 // ── Animation<T> ──
 // 泛型动画，支持 float / D2D1_COLOR_F 等可插值类型

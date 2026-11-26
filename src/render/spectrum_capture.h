@@ -2,6 +2,8 @@
 // spectrum_capture.h - WASAPI loopback 音频频谱捕获（PIMPL）
 #pragma once
 
+#include "core/constants.h"
+
 #include <atomic>
 #include <memory>
 #include <vector>
@@ -16,7 +18,7 @@ public:
     SpectrumCapture(const SpectrumCapture&) = delete;
     SpectrumCapture& operator=(const SpectrumCapture&) = delete;
 
-    bool Start(int wsPort = 6520);
+    bool Start(int wsPort = constants::WEBSOCKET_LISTEN_PORT);
     void Stop();
     bool IsRunning() const { return running_.load(); }
 

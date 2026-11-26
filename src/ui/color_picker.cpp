@@ -3,6 +3,7 @@
 
 #include "ui/color_picker.h"
 #include "ui/settings_draw_utils.h"
+#include "util/string_utils.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,16 +14,6 @@
 namespace moekoe {
 
 using namespace Microsoft::WRL;
-
-// 本地辅助：UTF-8 → 宽字符（与 d2d_settings_window.cpp 中的 Utf8ToWide 相同逻辑）
-static std::wstring Utf8ToWideLocal(const std::string& s) {
-    if (s.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], len);
-    return out;
-}
 
 // 预设色板：8 个常用颜色（含频谱默认米白、主题强调色等）
 static const std::vector<D2D1_COLOR_F>& GetPresetColors() {
@@ -318,7 +309,7 @@ void ColorPickerPopup::Draw(ID2D1RenderTarget* rt,
 
     // ── Hex 文本 ──
     std::string hexStr = ColorFToHex(previewColor);
-    std::wstring wHex = Utf8ToWideLocal(hexStr);
+    std::wstring wHex = Utf8ToWide(hexStr);
     float hexX = static_cast<float>(previewRect_.right + 8);
     float hexY = static_cast<float>(previewRect_.top - scrollOffset + 4);
     DrawTextLine(rt, valueFmt, textSecondaryBrush,

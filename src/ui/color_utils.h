@@ -6,6 +6,9 @@
 //
 #pragma once
 
+#include "util/math_utils.h"
+#include "util/string_utils.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -40,9 +43,7 @@ inline std::string ColorFToHex(const D2D1_COLOR_F& c) {
 // ── 颜色插值 ──
 
 inline D2D1_COLOR_F Lerp(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t) {
-    t = std::clamp(t, 0.0f, 1.0f);
-    return {a.r + t * (b.r - a.r), a.g + t * (b.g - a.g),
-            a.b + t * (b.b - a.b), a.a + t * (b.a - a.a)};
+    return math::LerpColor(a, b, t);
 }
 
 // ── HSL ↔ RGB 转换 ──
@@ -99,24 +100,6 @@ inline void RGBToHSL(const D2D1_COLOR_F& rgb, float& h, float& s, float& l) {
     if (h < 0) h += 360.0f;
 }
 
-// ── UTF-8 ↔ 宽字符转换 ──
-
-inline std::wstring Utf8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int len = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), &out[0], len);
-    return out;
-}
-
-inline std::string WideToUtf8(const std::wstring& ws) {
-    if (ws.empty()) return {};
-    int n = WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (n <= 0) return {};
-    std::string s(static_cast<size_t>(n - 1), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, ws.c_str(), -1, &s[0], n, nullptr, nullptr);
-    return s;
-}
+// UTF-8 ↔ 宽字符转换见 util/string_utils.h。
 
 } // namespace moekoe

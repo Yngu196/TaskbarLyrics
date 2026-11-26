@@ -11,6 +11,7 @@
 #include <string>
 
 #include "core/constants.h"
+#include <nlohmann/json_fwd.hpp>
 
 namespace moekoe {
 
@@ -117,8 +118,8 @@ struct AppearanceConfig {
 };
 
 struct AdvancedConfig {
-    int  websocketPort{6520};
-    int  httpServerPort{6523};
+    int  websocketPort{constants::WEBSOCKET_LISTEN_PORT};
+    int  httpServerPort{constants::HTTP_SERVER_PORT};
     int  refreshRateHz{constants::DEFAULT_REFRESH_RATE_HZ};
     bool debugLog{false};
     // 歌词显示模式（二选一）：
@@ -188,6 +189,11 @@ public:
     static bool IsUsingFallbackToken();
 
 private:
+    // Save/Export 共用的序列化；Load/Import 共用的反序列化。
+    // includePosition=false 表示导入，不覆盖与本机显示器绑定的位置配置。
+    nlohmann::json ToJson() const;
+    void FromJson(const nlohmann::json& j, bool includePosition);
+
     // 对文件加载、导入和运行时编辑统一执行范围校验。
     void NormalizeValues();
 

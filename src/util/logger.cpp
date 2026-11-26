@@ -2,6 +2,8 @@
 // logger.cpp - 统一日志系统实现
 #include "util/logger.h"
 
+#include "util/string_utils.h"
+
 #include <cstdio>
 #include <cstring>
 #include <atomic>
@@ -86,12 +88,8 @@ void InitLogger() {
     wchar_t* slash = wcsrchr(exePath, L'\\');
     if (slash) *slash = L'\0';
     std::wstring dir(exePath);
-    int len = ::WideCharToMultiByte(CP_UTF8, 0, dir.c_str(),
-                                    static_cast<int>(dir.size()), nullptr, 0, nullptr, nullptr);
-    if (len > 0) {
-        std::string dirUtf8(static_cast<size_t>(len), '\0');
-        ::WideCharToMultiByte(CP_UTF8, 0, dir.c_str(),
-                              static_cast<int>(dir.size()), &dirUtf8[0], len, nullptr, nullptr);
+    std::string dirUtf8 = WideToUtf8(dir);
+    if (!dirUtf8.empty()) {
         g_logPath = dirUtf8 + "\\debug.log";
     }
 }

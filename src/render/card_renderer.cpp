@@ -4,6 +4,7 @@
 #include "render/renderer_utils.h"
 #include "core/constants.h"
 #include "util/logger.h"
+#include "util/math_utils.h"
 
 #include <urlmon.h>
 #include <algorithm>
@@ -184,8 +185,8 @@ void TaskbarRenderer::RenderCardStyle(const RenderState& state,
         const float fadeOutAlpha = std::max(0.0f, (1.0f - t) * (1.0f - t));
 
         // 新轨道：位移 halfH→0（从下方滑入）；透明度 0→1
-        const float inOffset = (1.0f - EaseOutBack(t)) * halfH;
-        const float fadeInAlpha = EaseOutCubic(std::min(t / 0.85f, 1.0f));
+        const float inOffset = (1.0f - math::EaseOutBack(t)) * halfH;
+        const float fadeInAlpha = math::EaseOutCubic(std::min(t / 0.85f, 1.0f));
 
         std::wstring oldCurW = Utf8ToWide(cardPrevCurrentLine_);
         std::wstring oldNextW = Utf8ToWide(cardPrevNextLine_);
@@ -315,7 +316,7 @@ void TaskbarRenderer::RenderCardStyleVertical(const RenderState& state) {
 
         const float t = cardAnimProgress_;
         const float fadeOutAlpha = std::max(0.0f, (1.0f - t) * (1.0f - t));
-        const float fadeInAlpha = EaseOutCubic(std::min(t / 0.85f, 1.0f));
+        const float fadeInAlpha = math::EaseOutCubic(std::min(t / 0.85f, 1.0f));
 
         std::wstring oldCurW = Utf8ToWide(cardPrevCurrentLine_);
         std::wstring oldNextW = Utf8ToWide(cardPrevNextLine_);

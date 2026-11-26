@@ -8,23 +8,6 @@
 
 namespace moekoe {
 
-float TaskbarRenderer::EaseOutCubic(float t) {
-    // ease-out cubic: f(t) = 1 - (1-t)^3
-    float c = std::clamp(t, 0.0f, 1.0f);
-    float inv = 1.0f - c;
-    return 1.0f - inv * inv * inv;
-}
-
-float TaskbarRenderer::EaseOutBack(float t) {
-    // ease-out back：末端轻微"冲出"然后回弹
-    // f(t) = 1 + c3*(t-1)^3 + c2*(t-1)^2, c1=1.70158, c2=c1+1, c3=c1+1
-    const float c1 = 1.70158f;
-    const float c3 = c1 + 1.0f;
-    float c = std::clamp(t, 0.0f, 1.0f);
-    float v = c - 1.0f;
-    return 1.0f + c3 * v * v * v + c1 * v * v;
-}
-
 bool TaskbarRenderer::UpdateLyricFade(const std::wstring& newText)
 {
     // 首帧：新行文本入库，不做 fade

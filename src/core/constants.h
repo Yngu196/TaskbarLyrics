@@ -5,6 +5,8 @@
 // 修改常量时只需改此文件，无需在多个源文件中搜索替换
 #pragma once
 
+#include <cstddef>
+
 // 注意：不要在此文件包含 <windows.h>！
 // <windows.h> 会破坏 Winsock2 的包含顺序（详见 ws2tcpip.h 报错）。
 
@@ -39,6 +41,10 @@ namespace moekoe::constants {
 // ═══════════════════════════════════════
 // 网络通信端口
 // ═══════════════════════════════════════
+
+/// MoeKoeMusic WebSocket 服务默认端口（运行时以宿主下发端点为准）。
+constexpr int WEBSOCKET_LISTEN_PORT = 6520;
+constexpr const char* DEFAULT_WS_URL = "ws://127.0.0.1:6520";
 
 /// 本插件 HTTP 服务器端口（用于 Chrome Extension popup.js 通信）。
 /// ⚠️ 作为"默认值"使用；运行时优先从 config.json 读取 advanced.http_server_port。

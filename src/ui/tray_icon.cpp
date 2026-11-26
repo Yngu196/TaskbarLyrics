@@ -2,6 +2,8 @@
 // tray_icon.cpp - 系统托盘图标实现
 #include "ui/tray_icon.h"
 
+#include "util/string_utils.h"
+
 #include <shellapi.h>
 #include <windows.h>
 
@@ -15,17 +17,6 @@ namespace moekoe {
 namespace {
 
 constexpr UINT kTrayIconId = 1;
-
-std::wstring Utf8ToWide(const std::string& s) {
-    if (s.empty()) return {};
-    int len = ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                    static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                          static_cast<int>(s.size()), &out[0], len);
-    return out;
-}
 
 } // namespace
 

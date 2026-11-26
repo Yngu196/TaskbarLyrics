@@ -5,6 +5,7 @@
 #include "core/constants.h"
 #include "util/environment_check.h"
 #include "util/logger.h"
+#include "util/string_utils.h"
 #include "net/websocket_client.h"
 #include "taskbar/taskbar_window.h"
 
@@ -92,10 +93,7 @@ std::string GetGpuDescription() {
         DXGI_ADAPTER_DESC desc{};
         pAdapter->GetDesc(&desc);
         // 转换宽字符为 UTF-8
-        char utf8Desc[256] = {};
-        ::WideCharToMultiByte(CP_UTF8, 0, desc.Description, -1,
-                              utf8Desc, sizeof(utf8Desc) - 1, nullptr, nullptr);
-        result = utf8Desc;
+        result = WideToUtf8(desc.Description);
         pAdapter->Release();
     }
 
@@ -415,16 +413,7 @@ bool ExportDiagnosticFile(const AppContext& app, HWND ownerWnd) {
             hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
             if (SUCCEEDED(hr) && pszPath) {
                 // 写入文本文件
-                int pathLen = ::WideCharToMultiByte(CP_UTF8, 0,
-                    pszPath, -1, nullptr, 0, nullptr, nullptr);
-                std::string pathUtf8;
-                if (pathLen > 0) {
-                    pathUtf8.resize(static_cast<size_t>(pathLen));
-                    ::WideCharToMultiByte(CP_UTF8, 0,
-                        pszPath, -1, &pathUtf8[0], pathLen, nullptr, nullptr);
-                    // 去掉末尾的 null
-                    while (!pathUtf8.empty() && pathUtf8.back() == '\0') pathUtf8.pop_back();
-                }
+                std::string pathUtf8 = WideToUtf8(pszPath);
 
                 FILE* f = pathUtf8.empty() ? nullptr : fopen(pathUtf8.c_str(), "wb");
                 if (f) {

@@ -433,15 +433,6 @@ private:
     /// P3-②: 弹簧物理步进，将显示进度向目标收敛。返回是否处于运动中（需持续重绘）。
     bool UpdateProgressSpring(double target, double now);
 
-    // ═══════════════════════════════
-    // 缓动函数库
-    // ═══════════════════════════════
-
-    /// ease-out cubic: f(t) = 1 - (1-t)^3
-    static float EaseOutCubic(float t);
-
-    /// ease-out back（带有轻微回弹，用于入场）
-    static float EaseOutBack(float t);
 
     // 频谱渲染
     void DrawSpectrumBars(const std::vector<float>& bands, float x, float width, float y, float height, float alpha = 1.0f);

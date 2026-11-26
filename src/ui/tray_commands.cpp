@@ -5,12 +5,11 @@
 //
 #include "ui/tray_commands.h"
 
-#include "ui/config_dialog.h"
 #include "core/constants.h"
 #include "ui/d2d_settings_window.h"
 #include "util/logger.h"
 #include "util/diagnostic_exporter.h"
-#include "ui/color_utils.h"       // Utf8ToWide
+#include "util/string_utils.h"    // Utf8ToWide / WideToUtf8
 
 #include <shobjidl.h>
 #include <psapi.h>
@@ -166,25 +165,12 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         if (app.d2dSettingsWindow->Show(app.hInstance, app.hwnd, *app.config)) {
             break;
         }
+        // 旧 Win32 回退对话框已移除，初始化失败时明确告知用户。
         app.d2dSettingsWindow.reset();
-        app.d2dSettingsWindow = nullptr;
-
-        // ═══════ 回退：Win32 原生对话框 ═══════
-        if (ConfigDialog::Show(app.hInstance, app.hwnd, *app.config,
-                               /*boundMode*/ false,
-                               [&app]() {
-                                   // 同 ID_MENU_EXIT：ConfigDialog 的模态循环
-                                   // 嵌套在 TrackPopupMenuEx 内，WM_QUIT 会被吞掉
-                                   app.running = false;
-                               })) {
-            ApplyRendererSettings(app);
-            if (app.taskbarWindow) {
-                app.taskbarWindow->SetDragOffset(
-                    app.config->Position().offsetX, app.config->Position().offsetY);
-                app.taskbarWindow->SetWidthOverride(app.config->Appearance().windowWidthOverride);
-                app.taskbarWindow->Reposition();
-            }
-        }
+        Log("[SETTINGS] D2D settings window failed to initialize\n");
+        ::MessageBoxW(app.hwnd,
+                      L"设置界面初始化失败，请查看 debug.log 获取详细信息。",
+                      L"设置", MB_OK | MB_ICONWARNING);
         break;
     }
     case ID_MENU_LOCK_POS: {
@@ -373,11 +359,7 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
                 hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath);
                 if (SUCCEEDED(hr) && pszPath) {
                     // UTF-8 → 宽字符，供 CopyFileW 使用
-                    int srcLen = ::MultiByteToWideChar(CP_UTF8, 0,
-                        logPath.c_str(), -1, nullptr, 0);
-                    std::wstring srcWide(static_cast<size_t>(srcLen), L'\0');
-                    ::MultiByteToWideChar(CP_UTF8, 0,
-                        logPath.c_str(), -1, &srcWide[0], srcLen);
+                    const std::wstring srcWide = Utf8ToWide(logPath);
 
                     if (::CopyFileW(srcWide.c_str(), pszPath, FALSE)) {
                         std::wstring msg = L"日志已成功导出到：\n";

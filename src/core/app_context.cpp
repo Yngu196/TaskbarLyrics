@@ -10,6 +10,7 @@
 
 #include "core/constants.h"
 #include "util/logger.h"
+#include "util/string_utils.h"
 
 #include <psapi.h>
 
@@ -28,15 +29,7 @@ using moekoe::LogError;
 
 // 工具: 把 UTF-8 字符串限制到 Windows Tooltip 长度
 std::wstring ToTooltipWide(const std::string& s) {
-    if (s.empty()) return {};
-    int len = ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                    static_cast<int>(s.size()), nullptr, 0);
-    if (len <= 0) return {};
-    if (len > WINDOWS_TOOLTIP_MAX_LEN) len = WINDOWS_TOOLTIP_MAX_LEN;
-    std::wstring out(static_cast<size_t>(len), L'\0');
-    ::MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                          static_cast<int>(s.size()), &out[0], len);
-    return out;
+    return Utf8ToWideTruncated(s, WINDOWS_TOOLTIP_MAX_LEN);
 }
 
 // 应用渲染器配置（直接传递 AppearanceConfig，无需逐字段拷贝）
