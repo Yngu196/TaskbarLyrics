@@ -84,7 +84,11 @@ private:
                                           float opacity = 1.0f,
                                           const float* overridePaddingRight = nullptr,
                                           const D2D1_RECT_F* overrideLayout = nullptr,
-                                          bool useHighlightColor = false);
+                                          bool useHighlightColor = false,
+                                          double charProgress = 0.0,
+                                          double songPositionMs = 0.0,
+                                          bool isPlaying = false,
+                                          bool allowStardust = false);
     /// 跟唱流光：将流光渐变画刷的渐变轴对齐到卡拉OK进度前沿。
     /// vertical=false 时 front 为前沿 x 坐标（水平渐变），否则为 y 坐标（垂直渐变）。
     /// fontSizeOverride > 0 时用它计算带宽（卡片模式用 cardFontSizeCurrent），否则用 settings_.fontSize。
@@ -93,6 +97,14 @@ private:
     bool SetupSingGlowBrush(float front, bool vertical,
                             float fontSizeOverride = 0.0f,
                             ID2D1LinearGradientBrush* brush = nullptr);
+    /// 星尘跟唱（参考 taskbar-lyrics-displayer）：五角星沿字形顶边随逐字进度
+    /// 跳跃旋转，身后每 24ms 一粒的流星拖尾（432ms 寿命，后拉+横向散开）。
+    /// textLeft 为文本绘制原点 x（跑马灯时已含 -scrollOffset），progress 为
+    /// 逐字进度 0~1，charProgress 为当前字内进度（跳跃相位）。
+    void DrawStardust(const std::wstring& text, const D2D1_RECT_F& lineRect,
+                      IDWriteTextLayout* layout, float textWidth, float textLeft,
+                      double progress, double charProgress, double songPositionMs,
+                      bool playing, float opacity);
     /// 创建跟唱流光渐变画刷（亮-暗-亮对称夹层，单行/卡片模式共用，颜色取基准歌词色）
     void CreateSingGlowGradient(const D2D1_COLOR_F& base,
                                 ID2D1LinearGradientBrush** out);
@@ -223,6 +235,22 @@ private:
 
     // 跟唱流光渐变画刷（渐变轴每帧按进度前沿动态设置）
     Microsoft::WRL::ComPtr<ID2D1LinearGradientBrush> singGlowBrush_;
+
+    // ═════ 星尘跟唱（单行逐字歌词） ═════
+    // 星星/拖尾用实心画刷（颜色 = 高亮歌词色，换色随 RecreateBrushes 重建）
+    Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> stardustBrush_;
+    // 单位五角星路径几何（首次绘制时创建，之后仅改绘制矩阵）
+    Microsoft::WRL::ComPtr<ID2D1PathGeometry> starGeometry_;
+    // 流星拖尾：星心位置的环形采样缓冲（渲染线程每帧记录，粒子按 24ms 网格回溯）
+    struct StardustSample { double time{0.0}; float x{0.0f}, y{0.0f}; };
+    static constexpr int kStardustTrailSize = 32;
+    StardustSample stardustTrail_[kStardustTrailSize]{};
+    int         stardustTrailHead_{0};    // 下一写入槽位
+    int         stardustTrailCount_{0};   // 有效样本数（最多 kStardustTrailSize）
+    std::wstring stardustLine_;           // 当前生效的歌词文本（行变化时清空轨迹）
+    double      stardustPauseStart_{0.0}; // 暂停时刻（暂停 300ms 内星星淡出）
+    // 单行卡拉OK文本高度缓存（星尘"歌词下沉"量计算用）
+    float       cachedTextHeight_{0.0f};
 
     // 卡片模式颜色画刷：普通歌词（未唱 + 下一行）与高亮歌词（已唱填充）
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> cardHighlightBrush_;

@@ -61,6 +61,7 @@ struct RenderState {
     std::string currentLine;          // 当前行文本
     std::string currentTranslated;    // 当前行翻译
     double      progress{0.0};        // 0.0 ~ 1.0
+    double      charProgress{0.0};    // 当前逐字字符内的进度 0~1（KRC 专用，星尘跟唱的跳跃相位）
     int         currentLineIndex{-1}; // -1 表示未匹配
     bool        hasLyrics{false};
     bool        isPlaying{false};

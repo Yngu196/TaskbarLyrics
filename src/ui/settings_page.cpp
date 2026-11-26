@@ -189,6 +189,13 @@ void LyricsPage::BuildContent(const moekoe::Config& cfg) {
         glow->value = a.enableSingAlongGlow;
         AddGroupRow(*g, "跟唱流光",
                     "需要开启逐字高亮", L"\uE706", std::move(glow));
+        auto stardust = std::make_unique<Toggle>();
+        stardust->id = "stardust";
+        stardust->value = a.enableStardust;
+        auto* stardustRow = AddGroupRow(*g, "星尘跟唱",
+                    "仅单行逐字歌词生效，歌词下沉、星星跳动旋转并带流星粒子拖尾；与翻译显示互斥",
+                    L"\uE734", std::move(stardust));
+        stardustRow->SetVisible(!isCard);
     }
 
     AddSection(*this, "翻译模式");
@@ -230,6 +237,7 @@ void LyricsPage::CollectChanges(moekoe::Config& cfg) {
                 } else if (auto* t = dynamic_cast<Toggle*>(child.get())) {
                     if (t->id == "karaoke") ap.enableKaraoke = t->value;
                     else if (t->id == "singGlow") ap.enableSingAlongGlow = t->value;
+                    else if (t->id == "stardust") ap.enableStardust = t->value;
                 }
             }
         }
@@ -243,6 +251,12 @@ void LyricsPage::UpdateForDisplayMode(const std::string& displayMode, const moek
     for (auto& group : children_) {
         for (auto& row : group->Children()) {
             for (auto& child : row->Children()) {
+                // 星尘跟唱：仅单行歌词模式生效，双行模式下隐藏该行
+                if (auto* t = dynamic_cast<Toggle*>(child.get())) {
+                    if (t->id == "stardust") {
+                        SetRowVisible(t, !isCard);
+                    }
+                }
                 // 更新翻译模式选项
                 if (auto* cb = dynamic_cast<ComboBox*>(child.get())) {
                     if (cb->id == "translationMode") {

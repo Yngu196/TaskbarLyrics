@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // lyric_renderer.cpp - 卡拉OK歌词渲染（逐字着色、翻译、频谱、悬停控件）
 #include "render/renderer.h"
+#include "render/renderer_utils.h"
 #include "core/constants.h"
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <vector>
 
 namespace moekoe {
+
+using renderer_utils::GetCurrentTimeSeconds;
 
 void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset) {
     if (!renderTarget_ || !textFormat_ || !brush || text.empty()) return;
@@ -86,6 +90,173 @@ bool TaskbarRenderer::SetupSingGlowBrush(float front, bool vertical, float fontS
     return true;
 }
 
+// ═══════════════════════════════════════
+// 星尘跟唱：五角星沿字形顶边随逐字进度跳跃旋转 + 流星粒子拖尾
+// （移植自 taskbar-lyrics-displayer 的 LyricEffect::Stardust）
+// ═══════════════════════════════════════
+
+void TaskbarRenderer::DrawStardust(const std::wstring& text, const D2D1_RECT_F& lineRect,
+                                   IDWriteTextLayout* layout, float textWidth, float textLeft,
+                                   double progress, double charProgress, double songPositionMs,
+                                   bool playing, float opacity) {
+    if (!renderTarget_ || !stardustBrush_ || !layout || textWidth <= 0.0f || opacity <= 0.001f) {
+        return;
+    }
+    constexpr float pi = 3.14159265358979323846f;
+    const double now = GetCurrentTimeSeconds();
+
+    // ── 暂停淡出：暂停后星星 300ms 内淡出，拖尾随寿命自然消散 ──
+    if (playing) {
+        stardustPauseStart_ = 0.0;
+    } else if (stardustPauseStart_ == 0.0) {
+        stardustPauseStart_ = now;
+    }
+    const float liveAlpha = playing
+        ? 1.0f
+        : static_cast<float>(std::max(0.0, 1.0 - (now - stardustPauseStart_) / 0.3));
+    if (liveAlpha <= 0.0f) return;
+
+    // 行文本变化 → 清空轨迹（旧行拖尾不跨行延续）
+    if (text != stardustLine_) {
+        stardustLine_ = text;
+        stardustTrailHead_ = 0;
+        stardustTrailCount_ = 0;
+    }
+
+    // ── 星星参数（与参考实现同式，单位 DIP） ──
+    const float radius = std::clamp(static_cast<float>(settings_.fontSize) * 0.40f, 5.5f, 8.5f);
+    const float gap = 1.25f + (settings_.enableSingAlongGlow ? 1.0f : 0.0f);
+    const float inset = std::min(radius, textWidth * 0.5f);
+    const float clamped = static_cast<float>(std::clamp(progress, 0.0, 1.0));
+    const float along = std::clamp(clamped * textWidth, inset, textWidth - inset);
+    // 跳跃：当前字符内进度推进时星星上抛再落下（每字一跳）
+    const float hop = std::sin(pi * static_cast<float>(std::clamp(charProgress, 0.0, 1.0))) * 3.0f;
+
+    // ── 锚点：命中测试最近字框，取字形顶边（参考实现取 token 字框顶边） ──
+    const float layoutHeight = lineRect.bottom - lineRect.top;
+    DWRITE_HIT_TEST_METRICS hit{};
+    BOOL trailing = FALSE, inside = FALSE;
+    float glyphTop = 0.0f;
+    if (SUCCEEDED(layout->HitTestPoint(along, layoutHeight * 0.5f,
+                                       &trailing, &inside, &hit)) &&
+        hit.width > 0.0f && hit.height > 0.0f) {
+        glyphTop = hit.top;
+    }
+    const float starX = textLeft + along;
+    const float starY = lineRect.top + glyphTop - gap - radius - hop;
+
+    // ── 记录轨迹采样（渲染线程每帧一条，供拖尾回溯） ──
+    stardustTrail_[stardustTrailHead_] = {now, starX, starY};
+    stardustTrailHead_ = (stardustTrailHead_ + 1) % kStardustTrailSize;
+    stardustTrailCount_ = std::min(stardustTrailCount_ + 1, kStardustTrailSize);
+    auto findSample = [&](double targetTime) -> const StardustSample* {
+        const StardustSample* best = nullptr;
+        double bestDiff = 1e9;
+        for (int i = 0; i < stardustTrailCount_; ++i) {
+            const int slot = (stardustTrailHead_ - 1 - i + kStardustTrailSize * 2) %
+                             kStardustTrailSize;
+            const double diff = std::abs(stardustTrail_[slot].time - targetTime);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                best = &stardustTrail_[slot];
+            }
+        }
+        return best;
+    };
+
+    // ── 画刷颜色：高亮歌词色（复用画刷，逐粒子改 alpha，结束恢复） ──
+    const D2D1_COLOR_F baseColor = stardustBrush_->GetColor();
+    auto color = [&](float alpha) {
+        D2D1_COLOR_F c = baseColor;
+        c.a = std::clamp(alpha * opacity * liveAlpha, 0.0f, 1.0f);
+        stardustBrush_->SetColor(c);
+    };
+
+    // ── 流星拖尾：每 24ms 一粒，寿命 432ms；越老越向后拉、横向散开 ──
+    // 速度/散开方向由时间槽哈希决定，粒子轨迹逐帧稳定不抖动
+    const uint32_t lineHash = static_cast<uint32_t>(std::hash<std::wstring>{}(text) & 0xFFFFFFFFu);
+    for (int i = 17; i >= 1; --i) {
+        const double sampleTime = now - static_cast<double>(i) * 0.024;
+        const StardustSample* sample = findSample(sampleTime);
+        if (!sample) continue;
+        const double ageD = (now - sample->time) / 0.432;
+        if (ageD <= 0.0 || ageD >= 1.0) continue;
+        const float age = static_cast<float>(ageD);
+        // 路径方向：取相邻较旧样本连线（指向行进方向）
+        const StardustSample* older = findSample(sample->time - 0.024);
+        float dirX = 1.0f, dirY = 0.0f;
+        if (older) {
+            const float dx = sample->x - older->x;
+            const float dy = sample->y - older->y;
+            const float len = std::sqrt(dx * dx + dy * dy);
+            if (len > 0.05f) {
+                dirX = dx / len;
+                dirY = dy / len;
+            }
+        }
+        // 时间槽哈希 → 散开侧与速度（与参考实现的 seed 派生同构）
+        uint32_t seed = static_cast<uint32_t>(static_cast<int64_t>(sampleTime / 0.024)) ^
+                        (lineHash + 1u) * 0x9e3779b9u;
+        seed ^= seed >> 16;
+        seed *= 0x7feb352du;
+        seed ^= seed >> 15;
+        const float side = static_cast<float>(seed & 1023u) / 1023.0f;
+        const float speed = static_cast<float>((seed >> 10) & 1023u) / 1023.0f;
+        // 越老越向后、向外散开
+        const float lag = age * (radius + 9.0f * speed);
+        const float scatter = (side * 12.0f - 7.5f) * age;
+        const float dotX = sample->x - dirX * lag - dirY * scatter;
+        const float dotY = sample->y - dirY * lag + dirX * scatter;
+        // 离星星太近的粒子跳过，保持星星周围留白
+        const float ddx = dotX - starX;
+        const float ddy = dotY - starY;
+        if (ddx * ddx + ddy * ddy < radius * radius * 0.49f) continue;
+        const float fade = 1.0f - age;
+        const float dotRadius = 0.55f + fade * (0.8f + speed * 0.6f);
+        color(fade * fade * 0.85f);
+        renderTarget_->FillEllipse(
+            D2D1::Ellipse(D2D1::Point2F(dotX, dotY), dotRadius, dotRadius),
+            stardustBrush_.Get());
+    }
+
+    // ── 五角星本体：单位路径只建一次，旋转/缩放/平移全走绘制矩阵 ──
+    if (!starGeometry_) {
+        Microsoft::WRL::ComPtr<ID2D1Factory> factory;
+        renderTarget_->GetFactory(factory.GetAddressOf());
+        if (factory && SUCCEEDED(factory->CreatePathGeometry(starGeometry_.GetAddressOf()))) {
+            Microsoft::WRL::ComPtr<ID2D1GeometrySink> sink;
+            if (SUCCEEDED(starGeometry_->Open(sink.GetAddressOf()))) {
+                for (int k = 0; k < 10; ++k) {
+                    const float a = -pi * 0.5f + k * pi * 0.2f;
+                    const float r = (k % 2 == 0) ? 1.0f : 0.45f;
+                    const auto p = D2D1::Point2F(std::cos(a) * r, std::sin(a) * r);
+                    if (k == 0) sink->BeginFigure(p, D2D1_FIGURE_BEGIN_FILLED);
+                    else sink->AddLine(p);
+                }
+                sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                if (FAILED(sink->Close())) starGeometry_.Reset();
+            } else {
+                starGeometry_.Reset();
+            }
+        }
+    }
+    if (starGeometry_) {
+        color(1.0f);
+        // 角度只依赖播放位置：暂停冻结，seek 直接对齐，不积累动画状态
+        const float angle = static_cast<float>(
+            std::fmod(std::max(0.0, songPositionMs), 3000.0)) / 3000.0f * 2.0f * pi;
+        D2D1_MATRIX_3X2_F previous{};
+        renderTarget_->GetTransform(&previous);
+        const float c = std::cos(angle) * radius;
+        const float s = std::sin(angle) * radius;
+        renderTarget_->SetTransform(
+            D2D1::Matrix3x2F(c, s, -s, c, starX, starY) * previous);
+        renderTarget_->FillGeometry(starGeometry_.Get(), stardustBrush_.Get());
+        renderTarget_->SetTransform(previous);
+    }
+    stardustBrush_->SetColor(baseColor);
+}
+
 void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       double progress,
                                                       bool enableKaraoke,
@@ -94,7 +265,11 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                                                       float opacity,
                                                       const float* overridePaddingRight,
                                                       const D2D1_RECT_F* overrideLayout,
-                                                      bool useHighlightColor) {
+                                                      bool useHighlightColor,
+                                                      double charProgress,
+                                                      double songPositionMs,
+                                                      bool isPlaying,
+                                                      bool allowStardust) {
     if (!renderTarget_ || !textFormat_ || text.empty() ||
         !highlightBrush_ || !normalBrush_) {
         return;
@@ -142,6 +317,7 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 cachedLayout_ = newLayout;
                 cachedKaraokeText_ = text;
                 cachedTextWidth_ = m.width;
+                cachedTextHeight_ = m.height;
                 cachedLayoutWidth_ = availableWidth;
                 cachedLayoutHeight_ = layoutHeight;
                 layoutValid = true;
@@ -153,6 +329,27 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
     // 垂直任务栏的歌词采用逐字上下排布，不能再把窄栏当成横向跑马灯区域。
     const bool verticalText = isVerticalTaskbar_ && overrideLayout;
+
+    // ── 星尘跟唱：仅单行水平逐字歌词，与翻译显示/悬停歌曲信息互斥 ──
+    // （allowStardust 由 Render() 按翻译显示状态传入）
+    const bool stardust = allowStardust && settings_.enableStardust &&
+                          !useHighlightColor && enableKaraoke && layoutValid &&
+                          !verticalText && progress > 0.0 && progress < 1.0;
+    // 歌词下沉：给顶边的星星留出活动空间，最多 8dp（参考实现同式）
+    float stardustShift = 0.0f;
+    float starPad = 0.0f;
+    if (stardust) {
+        const float starRadius = std::clamp(static_cast<float>(settings_.fontSize) * 0.40f,
+                                            5.5f, 8.5f);
+        starPad = starRadius * 2.0f + 10.0f;
+        const float textHeight = cachedTextHeight_ > 0.0f
+            ? cachedTextHeight_
+            : std::max(8.0f, static_cast<float>(settings_.fontSize)) * dpiScale * 1.4f;
+        stardustShift = std::min(8.0f,
+            std::max(0.0f, (static_cast<float>(height_) - textHeight) * 0.5f - 2.0f));
+        layoutRect.top += stardustShift;
+        layoutRect.bottom += stardustShift;
+    }
 
     // ── 判断是否需要跑马灯滚动 ──
     const bool needsMarquee = (!verticalText && layoutValid && textWidth > availableWidth + 1.0f
@@ -235,7 +432,12 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
 
         // 跑马灯文本会向左移动，必须裁剪到实际歌词区域；否则有封面时，
         // 滚动后的文字会穿透到封面左侧/下方（封面并不能可靠遮住透明区域）。
-        renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        // 星尘跟唱时裁剪上沿扩展 starPad，给字形顶边的星星留出可见空间。
+        {
+            D2D1_RECT_F clip = layoutRect;
+            if (stardust) clip.top -= starPad;
+            renderTarget_->PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        }
         renderTarget_->DrawTextLayout(
             D2D1::Point2F(textLeft, layoutRect.top), cachedLayout_.Get(), baseBrush);
 
@@ -261,11 +463,22 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                     D2D1::Point2F(textLeft, layoutRect.top), cachedLayout_.Get(), singGlowBrush_.Get());
             }
         }
+
+        // 星尘跟唱：星星沿字形顶边跳跃旋转 + 流星粒子拖尾
+        if (stardust) {
+            DrawStardust(text, layoutRect, cachedLayout_.Get(), textWidth, textLeft,
+                         progress, charProgress, songPositionMs, isPlaying, opacity);
+        }
         renderTarget_->PopAxisAlignedClip();
     } else {
         // ═══════ 非滚动模式：居中显示 ═══════
         // 裁剪到 layoutRect，避免长歌词文本溢出覆盖封面
-        renderTarget_->PushAxisAlignedClip(layoutRect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        // 星尘跟唱时裁剪上沿扩展 starPad，给字形顶边的星星留出可见空间
+        {
+            D2D1_RECT_F clip = layoutRect;
+            if (stardust) clip.top -= starPad;
+            renderTarget_->PushAxisAlignedClip(clip, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        }
         renderTarget_->DrawTextW(
             text.c_str(), length, textFormat_.Get(), layoutRect, baseBrush);
 
@@ -293,6 +506,13 @@ void TaskbarRenderer::DrawHighlightedTextPerCharacter(const std::wstring& text,
                 renderTarget_->DrawTextW(
                     text.c_str(), length, textFormat_.Get(), layoutRect, singGlowBrush_.Get());
             }
+        }
+
+        // 星尘跟唱：星星沿字形顶边跳跃旋转 + 流星粒子拖尾
+        if (stardust) {
+            const float centeredLeft = layoutRect.left + (availableWidth - textWidth) / 2.0f;
+            DrawStardust(text, layoutRect, cachedLayout_.Get(), textWidth, centeredLeft,
+                         progress, charProgress, songPositionMs, isPlaying, opacity);
         }
         renderTarget_->PopAxisAlignedClip();
     }

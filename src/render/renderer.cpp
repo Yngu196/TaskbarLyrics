@@ -230,6 +230,7 @@ bool TaskbarRenderer::Initialize(HWND hwnd) {
         const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
         const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
         renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
+        renderTarget_->CreateSolidColorBrush(hi, stardustBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
         renderTarget_->CreateSolidColorBrush(
             D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
@@ -302,6 +303,8 @@ void TaskbarRenderer::RecreateBrushes() {
     normalBrush_.Reset();
     translationBrush_.Reset();
     spectrumBrush_.Reset();
+    stardustBrush_.Reset();
+    starGeometry_.Reset();
     cardCurrentBrush_.Reset();
     cardHighlightBrush_.Reset();
     cardSingGlowBrush_.Reset();
@@ -318,6 +321,7 @@ void TaskbarRenderer::RecreateBrushes() {
     const D2D1_COLOR_F hi = ParseColor(settings_.highlightColor, 1.0f);
     const D2D1_COLOR_F no = ParseColor(settings_.normalColor, static_cast<float>(settings_.normalOpacity));
     renderTarget_->CreateSolidColorBrush(hi, highlightBrush_.GetAddressOf());
+    renderTarget_->CreateSolidColorBrush(hi, stardustBrush_.GetAddressOf());
     renderTarget_->CreateSolidColorBrush(no, normalBrush_.GetAddressOf());
     renderTarget_->CreateSolidColorBrush(
         D2D1::ColorF(0.7f, 0.7f, 0.7f, 0.8f),
@@ -412,6 +416,8 @@ void TaskbarRenderer::ApplySettings(const AppearanceConfig& s) {
         textFormat_.Reset();
         translationFormat_.Reset();
         highlightBrush_.Reset();
+        stardustBrush_.Reset();
+        starGeometry_.Reset();
         normalBrush_.Reset();
         translationBrush_.Reset();
         HWND h = hwnd_;
@@ -469,6 +475,8 @@ void TaskbarRenderer::Shutdown() {
     mediaIconFormat_.Reset();
     translationBrush_.Reset();
     highlightBrush_.Reset();
+    stardustBrush_.Reset();
+    starGeometry_.Reset();
     normalBrush_.Reset();
     spectrumBrush_.Reset();
     translationFormat_.Reset();
@@ -942,6 +950,12 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
                                         !state.currentTranslated.empty());
             const std::wstring displayLine = isReplaceMode
                 ? Utf8ToWide(state.currentTranslated) : lineW;
+            // 星尘跟唱与翻译显示互斥（参考实现语义：显示翻译时关闭星尘）
+            const bool stardustAllowed = settings_.enableStardust &&
+                                         !isReplaceMode &&
+                                         !(settings_.enableTranslation &&
+                                           !state.currentTranslated.empty());
+            const double songPositionMs = state.currentTime * 1000.0;
 
             // P3-①: 歌词行切换 fade 过渡 —— 旧行淡出 + 新行淡入，EaseOut 交叉
             if (lyricFadeActive_) {
@@ -963,7 +977,9 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
                 // 新行：弹簧平滑进度 + 卡拉OK + 跑马灯，渐显
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
                                                scrollOffset, padPtr, fadeT, padRightPtr, lyricLayoutOverride,
-                                               state.showSongInfo);
+                                               state.showSongInfo,
+                                               state.charProgress, songPositionMs,
+                                               state.isPlaying, stardustAllowed);
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);
                     DrawTranslatedText(trW, padPtr, fadeT, padRightPtr, translationLayoutOverride);
@@ -972,7 +988,9 @@ void TaskbarRenderer::Render(const RenderState& stateIn) {
                 // 非 fade：正常渲染（使用弹簧平滑进度）
                 DrawHighlightedTextPerCharacter(displayLine, smoothProgress, settings_.enableKaraoke,
                                                scrollOffset, padPtr, 1.0f, padRightPtr, lyricLayoutOverride,
-                                               state.showSongInfo);
+                                               state.showSongInfo,
+                                               state.charProgress, songPositionMs,
+                                               state.isPlaying, stardustAllowed);
 
                 if (settings_.enableTranslation && settings_.translationMode == "below" && !state.currentTranslated.empty()) {
                     const std::wstring trW = Utf8ToWide(state.currentTranslated);

@@ -292,6 +292,7 @@ RenderState LyricsParser::GetCurrentRenderState() const {
                 0.0, 1.0);
             out.progress = (static_cast<double>(chars.size() - 1) + inside) /
                            static_cast<double>(chars.size());
+            out.charProgress = inside;
         } else {
             // 进度 = (已唱完整字符数 + 当前字符内进度) / 总字符数
             const auto& cur = chars[charIdx];
@@ -301,6 +302,7 @@ RenderState LyricsParser::GetCurrentRenderState() const {
                 0.0, 1.0);
             out.progress = (static_cast<double>(charIdx) + inside) /
                            static_cast<double>(chars.size());
+            out.charProgress = inside;
         }
     } else {
         // 没有逐字时间轴 -> 使用整行
