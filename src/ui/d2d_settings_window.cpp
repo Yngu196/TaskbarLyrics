@@ -395,10 +395,6 @@ bool D2DSettingsWindow::Show(HINSTANCE hInstance, HWND parent, const Config& cur
     return true;
 }
 
-bool D2DSettingsWindow::IsVisible() const {
-    return hwnd_ && IsWindowVisible(hwnd_);
-}
-
 void D2DSettingsWindow::Close() {
     StopAnimationTimer();
     // 悬停/按下指针指向页面内部控件，页面即将随窗口销毁而释放；

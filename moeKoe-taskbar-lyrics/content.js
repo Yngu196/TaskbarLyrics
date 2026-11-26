@@ -13,11 +13,9 @@
     // ── 任务栏卡片拖动进度条 → 设置播放器进度 ──
     //
     // MoeKoeMusic 的播放器由 new Audio() 创建，不挂载在 DOM 上，
-    // document.querySelector('audio') 拿不到。这里用两条互不依赖的通道：
-    //   1) 向页面主世界 postMessage：audio-bridge.js 包装了 Audio 构造函数，
-    //      能拿到真实播放器实例并直接设置 currentTime
-    //   2) DOM 兜底：模拟拖动 MoeKoeMusic 自带进度条（.progress-bar），
-    //      由播放器自己的 Vue 逻辑换算并 seek，不依赖主世界脚本是否生效
+    // audio-bridge.js 在页面主世界包装 Audio 构造器，拿到真实实例后由
+    // applySeekRequest() 通过 postMessage 直接写入 currentTime。
+    // 请求来源有三条：runtime 消息、storage 轮询、EXE HTTP 轮询（见下）。
     var lastSeekPosition = -1;
     var lastSeekAt = 0;
     var lastSeekTs = 0;   // 已处理过的最新请求时间戳（防止轮询重复执行）
@@ -29,60 +27,6 @@
     }
 
     mark('__tl_injected', 'yes-' + Date.now());
-
-    function chooseProgressBar() {
-        var bars = document.querySelectorAll('.progress-bar');
-        for (var i = 0; i < bars.length; i++) {
-            var r = bars[i].getBoundingClientRect();
-            if (r.width > 20 && r.height > 0) return bars[i];
-        }
-        return null;
-    }
-
-    function simulateProgressBarSeek(position, duration) {
-        var total = Number(duration);
-        if (!isFinite(total) || total <= 0) {
-            mark('__tl_dom', 'skip-duration|' + total);
-            return;
-        }
-        var bar = chooseProgressBar();
-        if (!bar) {
-            mark('__tl_dom', 'no-bar|total=' + document.querySelectorAll('.progress-bar').length);
-            return;
-        }
-
-        var rect = bar.getBoundingClientRect();
-        if (!rect.width || rect.width < 20) {
-            mark('__tl_dom', 'bar-too-narrow|' + Math.round(rect.width));
-            return;
-        }
-
-        var ratio = Math.max(0, Math.min(1, position / total));
-        var clientX = Math.round(rect.left + ratio * rect.width);
-        var clientY = Math.round(rect.top + rect.height / 2);
-
-        // 命中该坐标下最深层元素，让事件冒泡到 Vue 绑定在 .progress-bar 上的处理函数
-        var hit = null;
-        try { hit = document.elementFromPoint(clientX, clientY); } catch (e) {}
-        if (!hit) hit = bar;
-
-        var opts = {
-            bubbles: true, cancelable: true, view: window,
-            clientX: clientX, clientY: clientY, button: 0
-        };
-        try {
-            // 完整拖动序列：mousedown（开始拖动）→ mousemove → mouseup（在 document 上结束并 seek）
-            hit.dispatchEvent(new MouseEvent('mousedown', opts));
-            document.dispatchEvent(new MouseEvent('mousemove', opts));
-            document.dispatchEvent(new MouseEvent('mouseup', opts));
-            // 点击兜底：播放器的 updateProgressFromEvent 会直接用 clientX 换算并 seek
-            hit.dispatchEvent(new MouseEvent('click', opts));
-            mark('__tl_dom', 'dispatched|ratio=' + ratio.toFixed(3) +
-                 '|hit=' + (hit.className || hit.tagName));
-        } catch (e) {
-            mark('__tl_dom', 'dispatch-error|' + e.message);
-        }
-    }
 
     function applySeekRequest(position, duration) {
         var target = Number(position);

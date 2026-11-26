@@ -92,16 +92,6 @@ struct Animation {
         easing = fn;
     }
 
-    // 从当前值启动
-    void StartFromCurrent(const T& currentVal, const T& toVal, float durMs, EasingFn fn = EaseOutCubic) {
-        from = currentVal;
-        to = toVal;
-        durationMs = durMs;
-        elapsedMs = 0;
-        active = true;
-        easing = fn;
-    }
-
     // 推进时间（返回是否仍在播放）
     bool Tick(float deltaMs) {
         if (!active) return false;
@@ -124,11 +114,6 @@ struct Animation {
     // 是否已完成
     bool IsDone() const { return !active; }
 
-    // 强制完成
-    void Finish() {
-        elapsedMs = durationMs;
-        active = false;
-    }
 };
 
 // Animation<D2D1_COLOR_F> 的 Current() 特化

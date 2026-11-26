@@ -167,7 +167,6 @@ public:
 
     // 左/右侧任务栏与上/下任务栏使用独立的位置配置。返回 true 表示已切换。
     bool SwitchTaskbarOrientation(bool vertical);
-    bool IsVerticalTaskbarProfile() const { return activeVerticalProfile_; }
 
     // ---- 路径 ----
     static std::string GetConfigPath();

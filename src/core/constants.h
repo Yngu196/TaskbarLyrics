@@ -24,11 +24,6 @@
 /// 由 TaskbarWindow 类发送，触发 Render() 调用
 #define WM_RENDER_UPDATE    0x0700
 
-/// 绑定模式进程退出通知 — WM_USER(0x0400) + 0x400 = 0x0800
-/// 由 ProcessMonitor 发送，表示 MoeKoeMusic.exe 已退出
-/// 接收方应自动关闭应用
-#define WM_PROCESS_EXITED   0x0800
-
 /// 显示歌词窗口请求（网络线程 → UI 线程）— WM_USER(0x0400) + 0x500 = 0x0900
 /// 由 WebSocket/HTTP 工作线程发送：工作线程不得直接调用 ShowWindow/SetWindowPos
 /// （跨线程窗口操作会向目标窗口所属线程发送消息，存在死锁风险），
@@ -44,11 +39,6 @@ namespace moekoe::constants {
 // ═══════════════════════════════════════
 // 网络通信端口
 // ═══════════════════════════════════════
-
-/// MoeKoeMusic WebSocket 服务端口（用于接收歌词数据）
-/// 参考：MoeKoeMusic 源代码中的 WebSocket 服务器初始化。
-/// ⚠️ 作为"默认值"使用；运行时优先从 config.json 读取 advanced.websocket_port。
-constexpr int WEBSOCKET_LISTEN_PORT = 6520;
 
 /// 本插件 HTTP 服务器端口（用于 Chrome Extension popup.js 通信）。
 /// ⚠️ 作为"默认值"使用；运行时优先从 config.json 读取 advanced.http_server_port。
@@ -116,20 +106,12 @@ constexpr int CARD_HEIGHT_BASE_DP = 42;
 /// 卡片模式最小宽度基础值（96 DPI）
 constexpr int CARD_MIN_WIDTH_BASE_DP = 180;
 
-/// 封面默认尺寸（96 DPI）
-constexpr int COVER_SIZE_DP = 34;
-
 /// 卡片封面圆角半径（96 DPI）
 constexpr float CARD_COVER_RADIUS_DP = 6.0f;   /// 封面圆角半径（DIP）
 constexpr float COVER_THEME_ALPHA = 0.18f;  /// 卡片背景主题色透明度（叠加在任务栏背景上）
 constexpr float COVER_FADE_DURATION_MS = 350.0f;  /// 封面 fade-in 动画时长（毫秒）
 constexpr int   COVER_BLUR_SAMPLE_SIZE = 32;  /// 模糊背景采样尺寸（像素，小尺寸拉伸产生柔焦）
 constexpr float COVER_BLUR_BG_ALPHA = 0.30f;  /// 模糊背景透明度
-
-/// 卡片模式文字阴影偏移 X（像素）
-constexpr float CARD_TEXT_SHADOW_OFFSET_X = 0.0f;
-/// 卡片模式文字阴影偏移 Y（像素）
-constexpr float CARD_TEXT_SHADOW_OFFSET_Y = 1.0f;
 
 // ═══════════════════════════════════════
 // UI / 渲染细节
@@ -155,15 +137,6 @@ constexpr float BUTTON_BG_BORDER_RADIUS = 3.0f;
 // 跑马灯（长歌词滚动）常量
 // ═══════════════════════════════════════
 
-/// 跑马灯默认延迟时间（毫秒）：歌词显示后多久开始滚动
-constexpr int MARQUEE_DEFAULT_DELAY_MS = 2000;
-
-/// 跑马灯默认端点暂停时间（毫秒）
-constexpr int MARQUEE_DEFAULT_PAUSE_MS = 1000;
-
-/// 跑马灯默认滚动速度（像素/秒）
-constexpr float MARQUEE_DEFAULT_SPEED_PX_PER_SEC = 40.0f;
-
 /// 超长歌词判定阈值：文本宽度 > 可用宽度 × 此倍数时自动加速
 constexpr float MARQUEE_SPEEDUP_THRESHOLD = 2.0f;
 
@@ -175,13 +148,6 @@ constexpr float MARQUEE_SPEEDUP_THRESHOLD = 2.0f;
 /// 超过此限制会被系统截断，因此提前截断以保证显示完整
 /// 参考：Microsoft 官方文档 WM_SETTEXT
 constexpr int WINDOWS_TOOLTIP_MAX_LEN = 127;
-
-// ═══════════════════════════════════════
-// 自定义消息号（WM_USER 基础偏移）
-// ═══════════════════════════════════════
-// 注意：此处必须使用 #define 宏而非 constexpr/enum，
-// 因为 MSVC 不接受嵌套命名空间内的 constexpr/enum 值作为 switch-case 常量表达式。
-// Windows 平台 WM_* 消息本身就是宏，此处保持一致。
 
 // ═══════════════════════════════════════
 // 媒体卡片（点击任务栏歌词弹出的歌曲卡片，96 DPI 基准值）
@@ -214,19 +180,8 @@ constexpr float MEDIA_CARD_TASKBAR_GAP_DP = 8.0f;
 constexpr int MEDIA_CARD_OUTSIDE_CHECK_MS = 120;
 
 // ═══════════════════════════════════════
-// 进程监控
-// ═══════════════════════════════════════
-
-/// 进程监控轮询间隔（毫秒）
-/// 用于绑定模式检测 MoeKoeMusic.exe 的启动/退出
-constexpr int PROCESS_MONITOR_INTERVAL_MS = 2000;
-
-// ═══════════════════════════════════════
 // WebSocket 重连策略
 // ═══════════════════════════════════════
-
-/// 已连接状态的轮询检查间隔
-constexpr int WS_CONNECTED_POLL_MS = 200;
 
 /// 重连退避等待的粒度（每次 sleep 的毫秒数）
 constexpr int RECONNECT_WAIT_GRANULARITY_MS = 100;
@@ -311,24 +266,9 @@ constexpr float SPECTRUM_SMOOTH_RELEASE = 0.88f;
 // Settings 2.0 窗口尺寸（DIP，96 DPI 基准）
 // ═══════════════════════════════════════
 
-/// Settings 2.0 窗口基准宽度（导航 + 内容）
-constexpr int SETTINGS_WIN_WIDTH_BASE_DP = 720;
-
 /// Settings 2.0 左侧导航宽度（普通窗口 / 最大化，最大化时加宽提升可读性）
 constexpr int SETTINGS_NAV_WIDTH_BASE_DP = 180;
 constexpr int SETTINGS_NAV_WIDTH_MAXIMIZED_DP = 230;
-
-/// Settings 2.0 右侧内容区宽度
-constexpr int SETTINGS_CONTENT_WIDTH_BASE_DP = 540;
-
-/// Settings 2.0 卡片圆角半径
-constexpr float SETTINGS_CARD_CORNER_RADIUS_DP = 12.0f;
-
-/// Settings 2.0 卡片内边距
-constexpr float SETTINGS_CARD_PADDING_DP = 20.0f;
-
-/// Settings 2.0 卡片间距
-constexpr float SETTINGS_CARD_GAP_DP = 12.0f;
 
 // ═══════════════════════════════════════
 // P3: 歌词切换动画 + 进度弹簧

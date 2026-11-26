@@ -6,7 +6,6 @@
 //   - HTTP 回退接口保留鉴权头
 
 // ── 运行时常量 ──────────────────────────────────────────────────────────────────
-const DEFAULT_WS_PORT = 6520;
 const DEFAULT_HTTP_PORT = 6523;
 const AUTH_HEADER = 'X-MoeKoe-Token';
 let httpPort = DEFAULT_HTTP_PORT;
@@ -17,8 +16,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const wsStatus = document.getElementById('wsStatus');
     const processStatus = document.getElementById('processStatus');
     const btnReconnect = document.getElementById('btnReconnect');
-    const diagPanel = document.getElementById('diagPanel');
-    const diagText = document.getElementById('diagText');
 
     // ---- 工具函数 ----
 

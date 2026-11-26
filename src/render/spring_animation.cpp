@@ -15,16 +15,6 @@ float TaskbarRenderer::EaseOutCubic(float t) {
     return 1.0f - inv * inv * inv;
 }
 
-float TaskbarRenderer::EaseInOutQuad(float t) {
-    // ease-in-out quad: t<0.5 → 2*t^2, 否则 1-(2-2t)^2/2
-    float c = std::clamp(t, 0.0f, 1.0f);
-    if (c < 0.5f) {
-        return 2.0f * c * c;
-    }
-    float inv = 1.0f - c;
-    return 1.0f - 2.0f * inv * inv;
-}
-
 float TaskbarRenderer::EaseOutBack(float t) {
     // ease-out back：末端轻微"冲出"然后回弹
     // f(t) = 1 + c3*(t-1)^3 + c2*(t-1)^2, c1=1.70158, c2=c1+1, c3=c1+1

@@ -80,7 +80,6 @@ public:
     // ── 子模块访问（供外部需要深入控制的代码） ──
     TaskbarGeometry&    Geometry()  { return geometry_; }
     FullscreenDetector& Fullscreen() { return fullscreenDetector_; }
-    TaskbarEmbedder&    Embedder()  { return embedder_; }
 
     // ── 回调 ──
     using RepositionCallback = std::function<void()>;
@@ -101,7 +100,6 @@ public:
     // ── 兼容模式 ──
     void SetCompatFlags(unsigned flags) { compatFlags_ = flags; }
     bool HasCompatFlag(CompatFlag flag) const { return (compatFlags_ & flag) != 0; }
-    unsigned GetCompatFlags() const { return compatFlags_; }
 
     // ── 静态：查找任务栏句柄 ──
     static HWND FindTaskbarHandle();

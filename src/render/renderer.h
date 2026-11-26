@@ -116,7 +116,6 @@ private:
                             float opacity = 1.0f,
                             const float* overridePaddingRight = nullptr,
                             const D2D1_RECT_F* overrideLayout = nullptr);
-    void DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset);
     void DrawHoverControls(bool isPlaying);
     void PresentToLayeredWindow();
     void ReleasePresentResources();
@@ -188,8 +187,6 @@ private:
         Delay,       // 延迟等待（卡片模式开始滚动前）
         ScrollLeft,  // 向左滚动中
         PauseRight,  // 终端态：滚动到末端后定住（复用自旧 bounce 命名）
-        ScrollRight, // （已废弃）旧 bounce 回滚，不再进入
-        PauseLeft,   // （已废弃）旧 bounce 左端点暂停，不再进入
     };
 
     /// 将字符串转换为 MarqueeMode
@@ -442,9 +439,6 @@ private:
 
     /// ease-out cubic: f(t) = 1 - (1-t)^3
     static float EaseOutCubic(float t);
-
-    /// ease-in-out quad: f(t) = t<0.5 ? 2t^2 : 1-(2-2t)^2/2
-    static float EaseInOutQuad(float t);
 
     /// ease-out back（带有轻微回弹，用于入场）
     static float EaseOutBack(float t);

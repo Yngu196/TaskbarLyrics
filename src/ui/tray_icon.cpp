@@ -172,11 +172,6 @@ void TrayIcon::RebuildMenu() {
     UINT alwaysTopFlags = MF_STRING | (checkedAlwaysTop_ ? MF_CHECKED : MF_UNCHECKED);
     ::AppendMenuW(hMenu_, alwaysTopFlags, ID_MENU_ALWAYS_TOP, L"始终置顶");
 
-    // 解除绑定（仅绑定模式显示）
-    if (boundMode_) {
-        ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_UNBIND, L"解除绑定");
-    }
-
     ::AppendMenuW(hMenu_, MF_SEPARATOR, 0, nullptr);
 
     ::AppendMenuW(hMenu_, MF_STRING, ID_MENU_EXIT, L"退出");
@@ -221,11 +216,6 @@ void TrayIcon::SetMenuCheckedLockFull(bool checked) {
 void TrayIcon::SetMenuCheckedAlwaysTop(bool checked) {
     if (checkedAlwaysTop_ == checked) return;
     checkedAlwaysTop_ = checked;
-    if (hMenu_) RebuildMenu();
-}
-
-void TrayIcon::SetMenuLabelEnable(const std::wstring& label) {
-    labelEnable_ = label;
     if (hMenu_) RebuildMenu();
 }
 

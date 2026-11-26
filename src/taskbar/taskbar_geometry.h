@@ -103,7 +103,6 @@ public:
     void ShutdownUiaWorker();
 
     // 自动隐藏状态
-    bool IsAutoHide() const { return info_.autoHide; }
     void SetAutoHideVisible(bool v) { taskbarVisible_ = v; }
     bool IsAutoHideVisible() const { return taskbarVisible_; }
 

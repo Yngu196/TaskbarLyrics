@@ -21,7 +21,6 @@ public:
 
     // Shell 菜单激活期间抑制全屏检测（阻止 MENUPOPUPSTART 恢复后被立即再次隐藏）
     void SetShellMenuSuppress(bool v) { shellMenuSuppress_ = v; }
-    bool IsShellMenuSuppress() const { return shellMenuSuppress_; }
 
 private:
     static bool IsForegroundFullscreen(bool debugLog);

@@ -13,20 +13,6 @@ namespace moekoe {
 
 using renderer_utils::GetCurrentTimeSeconds;
 
-void TaskbarRenderer::DrawCentered(const std::wstring& text, ID2D1Brush* brush, float yOffset) {
-    if (!renderTarget_ || !textFormat_ || !brush || text.empty()) return;
-    
-    // 水平偏移量（像素）
-    const float paddingX = constants::TEXT_PADDING_X * static_cast<float>(dpi_) / 96.0f;
-    
-    D2D1_RECT_F layout = D2D1::RectF(
-        paddingX, yOffset,
-        static_cast<FLOAT>(width_) - paddingX, yOffset + static_cast<FLOAT>(height_));
-    renderTarget_->DrawTextW(
-        text.c_str(), static_cast<UINT32>(text.size()),
-        textFormat_.Get(), layout, brush);
-}
-
 // ═══════════════════════════════════════
 // 跟唱流光：当前演唱行卡拉OK进度前沿的流动光晕
 // ═══════════════════════════════════════

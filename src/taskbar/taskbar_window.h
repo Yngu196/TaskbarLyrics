@@ -38,8 +38,6 @@ public:
 
     // ── 子模块访问（供需要深入控制的外部代码使用）──
     FullscreenDetector& Fullscreen() { return companion_.Fullscreen(); }
-    TaskbarGeometry&    Geometry()   { return companion_.Geometry(); }
-    TaskbarEmbedder&    Embedder()   { return companion_.Embedder(); }
 
     // 创建嵌入任务栏内部的歌词窗口
     //   hInstance : 当前进程实例
@@ -75,11 +73,9 @@ public:
     bool IsDragging() const { return isDragging_; }
 
     // 位置锁定：禁止拖动调整位置
-    bool IsPositionLocked() const { return positionLocked_; }
     void SetPositionLocked(bool locked) { positionLocked_ = locked; }
 
     // 完全锁定：禁止拖动+禁止悬停按钮交互
-    bool IsFullyLocked() const { return fullyLocked_; }
     void SetFullyLocked(bool locked) { fullyLocked_ = locked; }
 
     // APPBAR 自动隐藏状态查询（供主循环判断是否应跳过渲染）
@@ -110,7 +106,6 @@ public:
     // 手动窗口宽度覆盖（dp, 0=自动计算；>0 时作为最小宽度，
     // 用于任务栏空闲区域检测异常导致窗口过窄的场景）
     void SetWidthOverride(int widthDip) { widthOverrideDip_ = widthDip; }
-    int GetWidthOverride() const { return widthOverrideDip_; }
 
     // 显示模式（影响窗口尺寸计算）
     std::string GetDisplayMode() const { return displayMode_; }
@@ -154,9 +149,6 @@ public:
     // 自定义消息:通知外部(主循环)执行每帧任务
     static constexpr UINT WM_FRAME_TICK = WM_USER + 0x100;
     static constexpr UINT WM_DELAYED_REPOSITION = WM_USER + 0x101;  // WinEvent 触发的延迟定位
-
-    // Shell 交互解锁（供 WndProc 定时器回调）
-    void UnlockShell(int timerId) { companion_.UnlockShellInteraction(timerId); }
 
 private:
     // 窗口过程(静态 + 实例)

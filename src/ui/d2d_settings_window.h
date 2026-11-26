@@ -47,9 +47,6 @@ public:
     void OnConfigChanged(ConfigChangedCallback cb) { onConfigChanged_ = std::move(cb); }
     void OnExportAction(ExportActionCallback cb) { onExportAction_ = std::move(cb); }
 
-    // 是否正在显示
-    bool IsVisible() const;
-
     // 关闭窗口
     void Close();
 

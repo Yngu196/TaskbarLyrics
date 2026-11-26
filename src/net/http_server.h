@@ -42,9 +42,6 @@ public:
     // 通道不可用（EXE 非宿主托管启动）时仍能送达页面。
     void SetPendingSeek(double position, double duration);
 
-    // 是否正在运行
-    bool IsRunning() const { return running_.load(); }
-
 private:
     void ServerLoop(int port);
 

@@ -187,18 +187,6 @@ void OnTrayCommand(AppContext& app, UINT menuId) {
         }
         break;
     }
-    case ID_MENU_UNBIND: {
-        // 保留兼容：退出程序
-        int ret = ::MessageBoxW(app.hwnd,
-            L"确定要退出吗？",
-            L"退出", MB_YESNO | MB_ICONQUESTION);
-        if (ret == IDYES) {
-            // 同 ID_MENU_EXIT：当前仍在 TrackPopupMenuEx 模态循环内，
-            // PostQuitMessage 发出的 WM_QUIT 会被吞掉，仅设 running=false
-            app.running = false;
-        }
-        break;
-    }
     case ID_MENU_LOCK_POS: {
         const bool newState = !app.config->Position().lockPosition;
         app.config->MutablePosition().lockPosition = newState;

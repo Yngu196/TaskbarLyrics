@@ -7,7 +7,6 @@
 //   - 通过 Native Host Bridge 与 MoeKoeMusic 主进程通信，管理 C++ EXE 生命周期
 
 const DEFAULT_WS_PORT = 6520;
-const DEFAULT_HTTP_PORT = 6523;
 
 // MoeKoeMusic 1.7.2+ 需要通过 electronAPI.getApiModeUrl() 获取真实端点，
 // 端口与 WS 路径都可能被用户改过，下面是拿不到端点时的兜底。
