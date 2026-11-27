@@ -46,7 +46,9 @@ license_path = os.path.join(src_dir, "LICENSE")
 if not os.path.isfile(license_path):
     license_path = os.path.join(os.path.dirname(src_dir), "LICENSE")
 if not os.path.isfile(license_path):
-    fail("LICENSE not found in package or repository root")
+    license_path = os.path.join(os.getcwd(), "LICENSE")
+if not os.path.isfile(license_path):
+    fail("LICENSE not found in package, parent directory, or repository root")
 
 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
     for root, dirs, files in os.walk(src_dir):
