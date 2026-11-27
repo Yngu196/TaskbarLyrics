@@ -235,7 +235,7 @@ constexpr int PERF_STATS_INTERVAL_MS = 5000;
 // ═══════════════════════════════════════
 
 /// 插件版本号（与 CMakeLists.txt VERSION 同步）
-constexpr const char* PLUGIN_VERSION = "1.0.9";
+constexpr const char* PLUGIN_VERSION = "1.0.10";
 
 /// 频谱频段数
 constexpr int SPECTRUM_NUM_BANDS = 32;

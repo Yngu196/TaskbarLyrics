@@ -751,7 +751,7 @@ bool Config::SetAutoStartStartupFolder(bool enable) {
 
 // ── GetAuthToken ──
 // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取鉴权 token。
-// 首次运行时生成 UUID 写入注册表；回退使用 MachineGuid 哈希。
+// 首次运行时生成 UUID 写入注册表；生成失败返回空串并禁用 HTTP 服务。
 // 线程安全:HTTP 工作线程会并发调用，全部静态状态经 s_authMutex 串行化。
 static std::mutex s_authMutex;
 static bool s_fallbackToken = false;
@@ -800,33 +800,15 @@ std::string Config::GetAuthToken() {
         }
     }
 
-    // 3. 回退：使用 MachineGuid 的简单哈希
+    // 3. 生成失败：不构造可预测 token（旧版用 MachineGuid 哈希/硬编码兜底，
+    //    本机任何进程都可推算）。标记不安全并返回空串，调用方据此拒绝启动服务。
     if (token.empty()) {
-        wchar_t mguid[128] = {};
-        DWORD mgSize = sizeof(mguid);
-        lr = ::RegGetValueW(HKEY_LOCAL_MACHINE,
-            L"SOFTWARE\\Microsoft\\Cryptography",
-            L"MachineGuid", RRF_RT_REG_SZ, nullptr, mguid, &mgSize);
-        if (lr == ERROR_SUCCESS) {
-            std::string guidStr = WideToUtf8(mguid);
-            // 简单 DJB2 哈希避免直接暴露 MachineGuid
-            unsigned long hash = 5381;
-            for (char c : guidStr) hash = ((hash << 5) + hash) + (unsigned char)c;
-            char buf[32];
-            snprintf(buf, sizeof(buf), "MoeKoeTL-%08lx", hash);
-            token = buf;
-            Log("[AUTH] Fallback token generated from MachineGuid hash\n");
-        }
-    }
-
-    // 4. 仍失败：使用硬编码兜底 token（仅极端情况）
-    if (token.empty()) {
-        token = "MoeKoeTL-FALLBACK-UNSAFE";
         s_fallbackToken = true;
-        Log("[AUTH] WARNING: Using hardcoded fallback token (registry unavailable)\n");
+        Log("[AUTH] WARNING: Could not generate a secure token; auth unavailable\n");
+        return {};
     }
 
-    // 5. 写入注册表供后续使用
+    // 4. 写入注册表供后续使用
     lr = ::RegCreateKeyExW(HKEY_CURRENT_USER, kRegPath, 0, nullptr,
                            REG_OPTION_NON_VOLATILE, KEY_WRITE, nullptr, &hKey, nullptr);
     if (lr == ERROR_SUCCESS) {

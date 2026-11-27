@@ -63,27 +63,6 @@ async function handleBackgroundMessage(message) {
             break;
         }
 
-        case 'native-host:status': {
-            try {
-                const result = await window.electronAPI.nativeHost.getStatus(HOST_ID);
-                sendToBackground({
-                    type: 'native-host:response',
-                    requestId: message.requestId,
-                    seq: message.seq,
-                    result: result
-                });
-            } catch (e) {
-                console.error('[NativeBridge] getStatus 失败:', e);
-                sendToBackground({
-                    type: 'native-host:response',
-                    requestId: message.requestId,
-                    seq: message.seq,
-                    result: { success: false, message: e.message || 'Native Host 状态查询异常' }
-                });
-            }
-            break;
-        }
-
         case 'native-host:send': {
             try {
                 const result = await window.electronAPI.nativeHost.send(HOST_ID, message.payload);

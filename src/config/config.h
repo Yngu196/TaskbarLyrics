@@ -181,11 +181,11 @@ public:
     bool ResetToDefaults();
 
     // ---- 鉴权 Token ----
-    // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取。
-    // 首次调用时自动生成 UUID 写入注册表，回退使用 MachineGuid 哈希。
+    // 从注册表 HKCU\Software\MoeKoeMusic\TaskbarLyrics\authToken 读取；
+    // 首次调用时生成 UUID（RPC 随机源）并持久化。生成失败返回空串。
     static std::string GetAuthToken();
-    // 当所有 Token 来源均不可用时，GetAuthToken 会回退到硬编码 fallback。
-    // 调用方（如 HTTP Server）应检查此状态并决定是否拒绝启动。
+    // 安全 token 不可用时为 true。调用方（HTTP Server）必须拒绝启动，
+    // 不允许回退到可预测的 MachineGuid 哈希或硬编码 token。
     static bool IsUsingFallbackToken();
 
 private:

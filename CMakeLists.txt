@@ -4,7 +4,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(MoeKoeTaskbarLyrics
-    VERSION 1.0.9
+    VERSION 1.0.10
     DESCRIPTION "MoeKoeMusic Windows Taskbar Lyrics Plugin"
     LANGUAGES CXX)
 

@@ -104,7 +104,9 @@ async function decryptToken(encryptedToken) {
     return new TextDecoder().decode(plaintext);
 }
 
-// 获取本地鉴权令牌（首次自动生成并持久化，存储时加密）
+// 获取本地鉴权令牌。独立运行模式下由扩展生成；托管模式下 EXE 会通过
+// Native Host 下发注册表 token，adoptHostAuthToken() 覆盖此回退值——
+// 本地 HTTP 服务只认可 EXE 的 token，自生成值无法通过鉴权。
 async function getAuthToken() {
     if (cachedAuthToken) return cachedAuthToken;
     try {
@@ -117,7 +119,7 @@ async function getAuthToken() {
         // 解密失败（如浏览器重启后密钥丢失）→ 清除旧密文，走生成新令牌逻辑
         await chrome.storage.local.remove(TOKEN_STORAGE_KEY);
     }
-    // 不存在或解密失败 → 生成新令牌并加密存储
+    // 不存在或解密失败 → 生成新令牌并加密存储（仅作独立模式回退）
     const ts = Date.now().toString(36);
     const rnd = crypto.randomUUID();
     const extra = Array.from(crypto.getRandomValues(new Uint8Array(8)))
@@ -130,6 +132,45 @@ async function getAuthToken() {
     return token;
 }
 
+// 仅本机端点可接收鉴权 token（storage 中的端点可能被其他脚本篡改）。
+function isLocalEndpoint(url) {
+    if (typeof url !== 'string' || !url) return false;
+    try {
+        const u = new URL(url);
+        if (!['ws:', 'wss:', 'http:', 'https:'].includes(u.protocol)) return false;
+        const host = u.hostname.toLowerCase();
+        return host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
+    } catch (_) {
+        return false;
+    }
+}
+
+// 采纳 EXE 经 Native Host 下发的权威 token，覆盖扩展自生成回退值。
+async function adoptHostAuthToken(token) {
+    if (typeof token !== 'string' || token.length < 16 || token.length > 256) {
+        console.warn('[TaskbarLyrics] 忽略无效的宿主鉴权 token');
+        return;
+    }
+    if (cachedAuthToken === token) return;
+    cachedAuthToken = token;
+    try {
+        const encrypted = await encryptToken(token);
+        await chrome.storage.local.set({ [TOKEN_STORAGE_KEY]: encrypted });
+        scheduleStateSave(true);
+        console.log('[TaskbarLyrics] 已同步宿主鉴权 token');
+    } catch (e) {
+        console.error('[TaskbarLyrics] 持久化宿主 token 失败:', e);
+    }
+}
+
+// 向 EXE 索取权威 token；EXE 通过 native-host:event 主动推送，无需等待响应。
+function requestAuthToken() {
+    if (!bridgePort) return;
+    try {
+        bridgePort.postMessage({ type: 'native-host:send', payload: { action: 'getAuthToken' } });
+    } catch (_) {}
+}
+
 // ---- 端口配置 ----
 
 async function loadPortConfig() {
@@ -138,8 +179,8 @@ async function loadPortConfig() {
         wsPort = cfg.wsPort || DEFAULT_WS_PORT;
         wsProtocol = cfg.wsProtocol || DEFAULT_WS_PROTOCOL;
         const saved = cfg[ENDPOINT_STORAGE_KEY];
-        apiWsUrl = (saved && typeof saved.ws === 'string') ? saved.ws : '';
-        apiHttpUrl = (saved && typeof saved.http === 'string') ? saved.http : '';
+        apiWsUrl = (saved && isLocalEndpoint(saved.ws)) ? saved.ws : '';
+        apiHttpUrl = (saved && isLocalEndpoint(saved.http)) ? saved.http : '';
     } catch (e) {
         wsPort = DEFAULT_WS_PORT;
         wsProtocol = DEFAULT_WS_PROTOCOL;
@@ -150,14 +191,17 @@ async function loadPortConfig() {
 function applyApiEndpoint(endpoint) {
     const wsUrl = (endpoint && typeof endpoint.ws === 'string') ? endpoint.ws : '';
     const httpUrl = (endpoint && typeof endpoint.http === 'string') ? endpoint.http : '';
-    if (!wsUrl) {
-        console.warn('[TaskbarLyrics] 未获取到 API 模式端点，继续使用本地默认端口');
+    if (!wsUrl || !isLocalEndpoint(wsUrl)) {
+        console.warn('[TaskbarLyrics] 拒绝非本机 WS 端点，继续使用本地默认端口:', wsUrl);
         return;
+    }
+    if (httpUrl && !isLocalEndpoint(httpUrl)) {
+        console.warn('[TaskbarLyrics] 忽略非本机 HTTP 端点:', httpUrl);
     }
 
     const changed = wsUrl !== apiWsUrl;
     apiWsUrl = wsUrl;
-    apiHttpUrl = httpUrl;
+    apiHttpUrl = (httpUrl && isLocalEndpoint(httpUrl)) ? httpUrl : '';
     try {
         chrome.storage.local.set({ [ENDPOINT_STORAGE_KEY]: { ws: wsUrl, http: httpUrl } });
     } catch (_) {}
@@ -212,6 +256,8 @@ chrome.runtime.onConnect.addListener((port) => {
     console.log('[TaskbarLyrics] Native Host Bridge 已连接');
     // 桥接页连接后会主动上报端点，这里再索取一次，覆盖 SW 重启后的状态丢失
     requestApiEndpoint();
+    // 同步 EXE 注册表 token（HTTP 鉴权的唯一权威值）
+    requestAuthToken();
 
     port.onMessage.addListener((message) => {
         if (!message) return;
@@ -250,6 +296,11 @@ chrome.runtime.onConnect.addListener((port) => {
 
         // bridge 转发的 EXE 上报事件 → 广播给 popup
         if (message.type === 'native-host:event') {
+            // EXE 下发的权威 token：只更新本地缓存，不广播给其他页面
+            if (message.payload && message.payload.action === 'authToken') {
+                adoptHostAuthToken(message.payload.token);
+                return;
+            }
             // 任务栏卡片拖动进度条：EXE 上报 seek 事件，转发给 MoeKoeMusic 页面
             const seek = extractSeek(message.payload);
             if (seek) {
@@ -303,15 +354,6 @@ function sendBridgeRequest(type, payload) {
             }
         }, 10000);
     });
-}
-
-// 查询 EXE 状态（供 popup 调用）
-async function getHostStatus() {
-    try {
-        return await sendBridgeRequest('native-host:status');
-    } catch (e) {
-        return { success: false, message: e.message };
-    }
 }
 
 // 向 EXE 发送业务消息（供 popup 调用）
@@ -448,17 +490,19 @@ function connectWebSocket() {
                 port: wsPort
             });
 
-            // 发送身份验证令牌（服务端可选支持校验）
-            getAuthToken().then(token => {
-                try {
-                    if (socket.readyState === WebSocket.OPEN) {
-                        socket.send(JSON.stringify({ type: 'auth', token }));
-                    }
-                } catch (_) {}
-            }).catch(e => {
-                // 加密/存储失败不应成为未处理的 Promise 拒绝
-                console.error('[TaskbarLyrics] 获取鉴权令牌失败:', e);
-            });
+            // 仅向本机端点发送鉴权令牌；非本机端点一律匿名连接
+            if (isLocalEndpoint(url)) {
+                getAuthToken().then(token => {
+                    try {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({ type: 'auth', token }));
+                        }
+                    } catch (_) {}
+                }).catch(e => {
+                    // 加密/存储失败不应成为未处理的 Promise 拒绝
+                    console.error('[TaskbarLyrics] 获取鉴权令牌失败:', e);
+                });
+            }
         };
 
         ws.onmessage = (event) => {
@@ -619,12 +663,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             return true;
 
-        case 'getAuthToken':
-            getAuthToken()
-                .then(token => sendResponse({ token }))
-                .catch(e => sendResponse({ error: e && e.message ? e.message : String(e) }));
-            return true;
-
         case 'control':
             sendControl(message.command);
             sendResponse({ success: true });
@@ -646,10 +684,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             return true;
 
         // Native Host 相关消息类型
-        case 'getHostStatus':
-            getHostStatus().then(result => sendResponse(result));
-            return true;
-
         case 'sendToHost':
             sendToHost(message.payload).then(result => sendResponse(result));
             return true;
@@ -731,7 +765,7 @@ restoreState().then(() => {
     // 若上次已中止则不自动重连，等待用户手动触发
     if (!reconnectAborted) {
         connectWebSocket();
-        console.log(`[TaskbarLyrics] 插件已加载 (v1.0.9 Native Host 模式, WS端口: ${wsPort})`);
+        console.log(`[TaskbarLyrics] 插件已加载 (v1.0.10 Native Host 模式, WS端口: ${wsPort})`);
     } else {
         console.log(`[TaskbarLyrics] 插件已加载，但上次重连已中止，等待手动重连`);
         broadcastToPopup({

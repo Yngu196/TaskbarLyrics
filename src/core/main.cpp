@@ -490,6 +490,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR /*cmdLine*/, int /*nSho
                     app.spectrumCapture->SetWsPort(port);
                 }
             }
+
+            if (action == "getAuthToken") {
+                // 注册表 token 是本进程鉴权的唯一权威。扩展侧自生成的 token
+                // 无法通过本地 HTTP 鉴权，必须经此通道同步。
+                const std::string token = Config::GetAuthToken();
+                if (!token.empty()) {
+                    app.nativeHost->SendPayloadEvent({
+                        {"action", "authToken"},
+                        {"token", token}
+                    });
+                    Log("[NATIVE-HOST] Auth token sent to bridge\n");
+                } else {
+                    Log("[NATIVE-HOST] Auth token unavailable (secure generation failed)\n");
+                }
+            }
             // 未来可扩展: set-config, get-status 等
         }
     });

@@ -122,6 +122,22 @@ void HttpServer::ServerLoop(int port) {
         std::string allowHeaders = std::string("Content-Type, ") + moekoe::constants::LOCAL_AUTH_HEADER_NAME;
         res.set_header("Access-Control-Allow-Headers", allowHeaders.c_str());
 
+        // 免鉴权端点只允许本机页面、file://（Origin: null）与扩展页面访问。
+        // 普通外部站点不得消费 seek 请求或探测服务状态。
+        const std::string originHeader = req.get_header_value("Origin");
+        const bool allowedOrigin = originHeader.empty() ||
+            originHeader == "null" ||
+            originHeader.rfind("chrome-extension://", 0) == 0 ||
+            originHeader.rfind("moz-extension://", 0) == 0 ||
+            originHeader == "http://127.0.0.1:" + std::to_string(port) ||
+            originHeader == "http://localhost:" + std::to_string(port);
+        const auto rejectForeignOrigin = [&](httplib::Response& res) -> bool {
+            if (allowedOrigin) return false;
+            res.status = 403;
+            res.set_content("{\"error\":\"forbidden origin\"}", "application/json");
+            return true;
+        };
+
         // OPTIONS preflight - skip auth check
         if (req.method == "OPTIONS") {
             res.status = 204;
@@ -143,6 +159,7 @@ void HttpServer::ServerLoop(int port) {
         // 宿主已有行为。恶意页面的最坏影响是抢先消费 pending seek（导致
         // 一次拖动失效），不影响播放本身。
         if (req.method == "GET" && req.path == "/seek/pending") {
+            if (rejectForeignOrigin(res)) return httplib::Server::HandlerResponse::Handled;
             res.set_header("Access-Control-Allow-Origin", "*");
             nlohmann::json j;
             {
@@ -169,6 +186,7 @@ void HttpServer::ServerLoop(int port) {
         // 威胁模型权衡：响应只有存活布尔与服务名，无任何敏感数据；
         // 探测者至多得知"本机运行着任务栏歌词插件"。
         if (req.method == "GET" && req.path == "/ping") {
+            if (rejectForeignOrigin(res)) return httplib::Server::HandlerResponse::Handled;
             res.set_header("Access-Control-Allow-Origin", "*");
             res.set_content("{\"status\":\"ok\",\"service\":\"MoeKoeTaskbarLyrics\"}",
                             "application/json");

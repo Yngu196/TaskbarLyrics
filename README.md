@@ -5,8 +5,8 @@
 <h1 align="center">MoeKoeMusic TaskbarLyrics</h1>
 
 <p align="center">
-  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.9">
-    <img src="https://img.shields.io/badge/release-v1.0.9-blue" alt="release" />
+  <a href="https://github.com/Yngu196/TaskbarLyrics/releases/tag/v1.0.10">
+    <img src="https://img.shields.io/badge/release-v1.0.10-blue" alt="release" />
   </a>
   <a href="https://github.com/Yngu196/TaskbarLyrics?tab=License-1-ov-file">
     <img src="https://img.shields.io/badge/license-Apache--2.0-green" alt="license" />
@@ -27,7 +27,7 @@
 - [构建与测试](#构建与测试)
 - [界面预览](#界面预览)
 - [相关文档](#相关文档)
-- [第三方库](#第三方库)
+- [灵感来源](#灵感来源)
 - [许可证](#许可证)
 
 ## 项目简介
@@ -44,8 +44,8 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 
 ### 显示与渲染
 
-- **单行歌词**：Direct2D + DirectWrite 渲染，支持逐字高亮与卡拉 OK 进度动画。
-- **双行歌词**：当前行 + 下一行卡片布局，支持专辑封面异步下载、圆角裁切与模糊背景。
+- **单行歌词**：Direct2D + DirectWrite 渲染，支持逐字高亮与一些特效。
+- **双行歌词**：支持专辑封面、圆角裁切、逐字高亮与模糊背景。
 - **纯音乐频谱**：无歌词时显示频谱条，基于 WASAPI 进程级音频采集；柱数、柱宽、颜色、上下限与透明度均可调整。
 - **歌词翻译**：解析 KRC `[language:...]` 标签提取翻译内容，支持单行替换或双行对照。
 - **切换动画**：行切换淡入淡出，进度变化使用弹簧动画过渡。
@@ -63,7 +63,6 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 - **多方向任务栏**：支持底部 / 顶部 / 左侧 / 右侧任务栏（非底部方向测试偏少，可能会出现一些问题，欢迎反馈）。
 - **多显示器跟随**：按鼠标位置或活动窗口所在显示器绑定任务栏，跨屏移动时自动切换；也可在「设置 → 窗口」中手动锁定显示器。
 - **APPBAR 自动隐藏**：任务栏自动隐藏时歌词窗口跟随显隐（该功能已停止维护）。
-- **封面与元数据**：兼容 `artist` / `author` 等歌曲字段，歌词、封面、歌名与歌手会在独立消息之间保持合并，避免被进度消息清空。
 
 ### 诊断与配置
 
@@ -80,15 +79,15 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 
 ### 前置条件
 
-1. 安装 MoeKoeMusic **1.6.6 或更高版本**。
-2. 在 MoeKoeMusic 设置 → 系统中开启 **API 模式**。
-3. 修改 API 模式后需要重启 MoeKoeMusic 才会生效。
+1. 安装 MoeKoeMusic **1.7.2 或更高版本**。
+2. 仍需手动开启 API 模式：宿主会自动下发 `{ http, ws }` 端点，插件据此连接。
+   > 如果`API模式`选择`自动决定`，ws并不会发送歌词。
 
 ### 方式一：插件市场安装（推荐）
 
 1. 在 MoeKoeMusic 的插件管理页找到「任务栏歌词」。
 2. 点击「本地程序授权」。
-3. 确认已开启 API 模式，然后重启 MoeKoeMusic。
+3. 开启 API 模式，重启 MoeKoeMusic 。
 
 安装完成后，任务栏歌词程序会随 MoeKoeMusic 自动启动和关闭。
 
@@ -100,7 +99,7 @@ MoeKoeMusic TaskbarLyrics 是 [MoeKoeMusic](https://github.com/MoeKoeMusic/MoeKo
 %APPDATA%\moekoemusic\extensions
 ```
 
-解压后目录中应直接包含 `manifest.json` 以及 `x64` / `arm64` 等子目录。随后重启 MoeKoeMusic。
+解压后目录中应直接包含 `manifest.json` 以及 `x64` / `arm64` 等子目录。随后开启API模式并在插件页授权即可。
 
 ### 方式三：独立运行（不推荐）
 
@@ -159,13 +158,17 @@ cd TaskbarLyrics
 # ARM64（需 VS2022 ARM64 工具链）
 .\scripts\bootstrap.ps1 -Arch arm64 -Build
 
-# 全量发布包：x64 → ARM64 → 架构校验 → 打包
+# 全量发布包：环境预检 → x64 → ARM64 → CRT 校验 → 结构/架构校验 → 打包
 # （先分别 bootstrap 两个架构，再执行）；另需 Python 3
 .\build.cmd release all
 
 # 清理
 .\build.cmd clean x64
 ```
+
+> 测试目标默认不构建（`BUILD_TESTING=OFF`）。需要跑单测时重新配置并加 `-DBUILD_TESTING=ON`，
+> 再执行 `ctest --test-dir out/build/x64-Debug --output-on-failure --no-tests=error`；
+> `--no-tests=error` 用于防止测试被静默跳过时 CI 仍报成功。
 
 `bootstrap.ps1` 会把选定的 vcpkg 根目录写入 `.vcpkgroot`（已被 git 忽略）。
 `build.cmd`、`CMakeLists.txt` 与 `check_build_env.ps1` 都**优先**读取这个 pin，
@@ -185,9 +188,9 @@ cd TaskbarLyrics
 
 ### 依赖清单的唯一来源
 
-依赖名只在 `vcpkg.json` 的 `dependencies` 里声明（当前 5 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`）。
+依赖名只在 `vcpkg.json` 的 `dependencies` 里声明（当前 6 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`、`cpp-httplib`）。
 `bootstrap.ps1` 与 `check_build_env.ps1` 都通过 `scripts\vcpkg_contract.ps1` 读取它；该模块还持有**唯一一份**
-「CMake 实际会用的 12 个文件」清单，安装后校验与只读自检共用。所以**增删依赖只需改 `vcpkg.json` 一处**；
+「CMake 实际会用的 13 个文件」清单，安装后校验与只读自检共用。所以**增删依赖只需改 `vcpkg.json` 一处**；
 只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1`（文件路径无法从端口名推导）。
 
 `bootstrap.ps1` 安装时带 `--classic`：脚本工作目录里有 `vcpkg.json`，去掉该参数 vcpkg 会切到 manifest 模式、
