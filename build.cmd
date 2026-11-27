@@ -110,28 +110,47 @@ if /i not "%1"=="release" (
     goto :eof
 )
 echo.
-echo ===== Step 1/4: Build x64 Release =====
+echo ===== Step 1/6: Preflight build environment (x64) =====
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%scripts\check_build_env.ps1" -Arch x64
+if errorlevel 1 (
+    echo [all] build environment preflight failed!
+    exit /b 1
+)
+echo.
+echo ===== Step 2/6: Build x64 Release =====
 call "%~f0" release x64
 if errorlevel 1 (
     echo [all] x64 build failed!
     exit /b 1
 )
 echo.
-echo ===== Step 2/4: Build arm64 Release =====
+echo ===== Step 3/6: Build arm64 Release =====
 call "%~f0" release arm64
 if errorlevel 1 (
     echo [all] arm64 build failed!
     exit /b 1
 )
 echo.
-echo ===== Step 3/4: Verify package architecture =====
-python "%PROJECT_DIR%scripts\verify_package.py" "%PROJECT_DIR%moeKoe-taskbar-lyrics"
+echo ===== Step 4/6: Verify VC++ runtime DLLs =====
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%scripts\copy_vc_runtime.ps1" -Arch x64 -Destination "%PROJECT_DIR%moeKoe-taskbar-lyrics\x64" -VerifyOnly
 if errorlevel 1 (
-    echo [all] architecture verification failed!
+    echo [all] x64 VC++ runtime verification failed!
+    exit /b 1
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PROJECT_DIR%scripts\copy_vc_runtime.ps1" -Arch arm64 -Destination "%PROJECT_DIR%moeKoe-taskbar-lyrics\arm64" -VerifyOnly
+if errorlevel 1 (
+    echo [all] arm64 VC++ runtime verification failed!
     exit /b 1
 )
 echo.
-echo ===== Step 4/4: Package dual-arch zip =====
+echo ===== Step 5/6: Verify package structure and architecture =====
+python "%PROJECT_DIR%scripts\verify_package.py" "%PROJECT_DIR%moeKoe-taskbar-lyrics"
+if errorlevel 1 (
+    echo [all] package verification failed!
+    exit /b 1
+)
+echo.
+echo ===== Step 6/6: Package dual-arch zip =====
 python "%PROJECT_DIR%scripts\pack_zip.py" "%PROJECT_DIR%moeKoe-taskbar-lyrics" "%PROJECT_DIR%moeKoe-taskbar-lyrics.zip"
 if errorlevel 1 (
     echo [all] packaging failed!

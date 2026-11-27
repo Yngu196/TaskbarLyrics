@@ -80,6 +80,7 @@ function Get-VcpkgRequiredFiles {
         [pscustomobject]@{ Path = 'include\zlib.h';                  Detail = '' }
         [pscustomobject]@{ Path = 'include\nlohmann\json.hpp';       Detail = '' }
         [pscustomobject]@{ Path = 'include\kissfft\kiss_fft.h';      Detail = '' }
+        [pscustomobject]@{ Path = 'include\httplib\httplib.h';       Detail = 'header-only HTTP server' }
         [pscustomobject]@{ Path = 'include\ixwebsocket\IXWebSocket.h'; Detail = '' }
         [pscustomobject]@{ Path = 'lib\z.lib';                       Detail = '' }
         [pscustomobject]@{ Path = 'lib\mbedtls.lib';                 Detail = '' }

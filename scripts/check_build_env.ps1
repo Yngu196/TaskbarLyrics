@@ -194,8 +194,8 @@ $submoduleOk = Test-Path $submoduleHeader
 Report $(if ($submoduleOk) { 'OK' } else { 'WARN' }) 'ixwebsocket submodule' `
     $(if ($submoduleOk) { 'source build path (local)' } else { 'empty -> falls back to vcpkg prebuilt lib (CI path)' })
 
-$httplib = Join-Path $root 'third_party\httplib\httplib.h'
-Report $(if (Test-Path $httplib) { 'OK' } else { 'FAIL' }) 'third_party/httplib.h' ''
+# cpp-httplib 由 vcpkg 提供，已列入 Get-VcpkgRequiredFiles 的 include\httplib\httplib.h；
+# 上方契约循环统一校验，不再检查仓库内已删除的 third_party 副本。
 
 # CRT DLLs are no longer vendored in the repo. copy_vc_runtime.ps1 first reads
 # the build machine's own VS Redist, then falls back to Microsoft's official

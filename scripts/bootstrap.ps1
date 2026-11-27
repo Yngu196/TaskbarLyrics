@@ -155,9 +155,9 @@ if (-not (Test-Path $vcpkgExe)) {
 if ($CheckOnly) {
     $preflight = Join-Path $PSScriptRoot 'check_build_env.ps1'
     & $preflight -Arch $Arch -VcpkgRoot $selected
-    # 'return', not 'exit': GitHub Actions dot-sources PowerShell steps,
-    # where 'exit' would terminate the whole step before its remaining lines.
-    return
+    # 必须传播自检退出码：原先直接 return 会让契约校验失败仍显示“成功”。
+    # check_build_env.ps1 自身以 exit 0/1 结束，退出码即为最终结论。
+    exit $LASTEXITCODE
 }
 
 # --- 3.5 Ensure the ixwebsocket submodule is present ----------------------

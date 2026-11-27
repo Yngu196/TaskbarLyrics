@@ -76,6 +76,10 @@ def check_structure(root):
 
     if not os.path.isfile(launcher):
         errors.append("Launcher missing: MoeKoeTaskbarLyrics.exe")
+    if not os.path.isfile(os.path.join(root, "manifest.json")):
+        errors.append("manifest.json missing at package root (installPluginFromZip requires it)")
+    if not os.path.isfile(os.path.join(x64_dir, "MoeKoeTaskbarLyrics.exe")):
+        errors.append("x64 main executable missing: x64\\MoeKoeTaskbarLyrics.exe")
     if not os.path.isdir(x64_dir):
         errors.append("x64 directory missing")
     if not os.path.isdir(arm64_dir):
@@ -87,6 +91,17 @@ def check_structure(root):
         )
         if not has_exe:
             errors.append("arm64 directory contains no .exe")
+
+    # VC++ 运行库由 copy_vc_runtime.ps1 补齐，历史上曾出现静默缺失，
+    # 架构校验无法发现 DLL 不存在。这里作为发布硬校验。
+    crt = {
+        "x64": ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"],
+        "arm64": ["msvcp140.dll", "vcruntime140.dll"],
+    }
+    for arch, dlls in crt.items():
+        for dll in dlls:
+            if not os.path.isfile(os.path.join(root, arch, dll)):
+                errors.append("VC++ runtime missing: {0}\\{1}".format(arch, dll))
     return errors
 
 
