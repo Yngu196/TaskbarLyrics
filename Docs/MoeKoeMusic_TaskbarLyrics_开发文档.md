@@ -1,7 +1,7 @@
 # MoeKoeMusic 任务栏歌词插件 — 开发文档
 
-> **对应代码版本：** v1.0.9 |
-> **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** Apache-2.0 | **最后校对：** 2026-11-14
+> **对应代码版本：** v1.0.10 |
+> **语言：** C++17 | **平台：** Windows 10/11 (x64 / ARM64) | **协议：** Apache-2.0 | **最后校对：** 2026-11-26
 
 > 本文说明**设计取舍、模块边界与协议契约**；面向使用者和开发者的可执行命令以仓库根目录 [README](../README.md) 为准。两者不一致时，以代码与 README 为准。
 
@@ -29,8 +29,8 @@ MoeKoeMusic 是 Electron + Vue 3 开源音乐播放器，**缺少任务栏歌词
 | 通道 | 端点 | 用途 |
 | --- | --- | --- |
 | WebSocket 客户端 | `ws://127.0.0.1:6520/moekoe`（兜底）／宿主下发的完整 URL | 订阅宿主的歌词与播放状态，发送 `control` / `seek` |
-| HTTP 服务 | `http://127.0.0.1:6523` | 仅 `/ping` 探活与 `/seek/pending` 兜底轮询 |
-| Native Host | stdin/stdout JSON Lines | 宿主管理 EXE 生命周期、下发 `setApiEndpoint`、转发 `seek` 事件 |
+| HTTP 服务 | `http://127.0.0.1:6523` | 暴露 `/ping`（探活，扩展不再调用）与 `/seek/pending`（content script 兜底） |
+| Native Host | stdin/stdout JSON Lines | 宿主管理 EXE 生命周期、下发 `setApiEndpoint`、EXE 下发鉴权 token、转发 `seek` 事件 |
 
 MoeKoeMusic 1.7.2+ 由扩展调用 `getApiModeUrl()` 取得 `{ http, ws }`，经 `setApiEndpoint` 下发；EXE 以精确路径重连（`exactPath=true`），并把端口同步给频谱采集。端点不可用时回退本地端口，只有兜底 URL 的重连才交替尝试 `/moekoe` 与根路径。
 
@@ -116,7 +116,7 @@ MoeKoeMusic-TaskbarLyrics/
 │  │ 浮动歌词窗口 (TOPMOST + LAYERED) + 媒体卡片 │                         │
 │  │ 托盘图标 / D2D 设置界面 / WASAPI 频谱采集   │                         │
 │  └───────────────────────────────────────────┘                         │
-│  popup.js / content.js ↔ HTTP :6523（歌词推送、探活、seek 兜底）          │
+│  content.js ↔ HTTP :6523（seek 兜底轮询）                                 │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -157,10 +157,10 @@ MoeKoeMusic-TaskbarLyrics/
 
 | 分类  | 常量                           | 值              | 用途                |
 | --- | ---------------------------- | -------------- | ----------------- |
-| 版本  | PLUGIN\_VERSION              | 1.0.9          | 与 `CMakeLists.txt` 的 project VERSION 同步 |
+| 版本  | PLUGIN\_VERSION              | 1.0.10         | 与 `CMakeLists.txt` 的 project VERSION 同步 |
 | 端口  | WEBSOCKET\_LISTEN\_PORT      | 6520           | WS 歌词数据（运行时可被 config 覆盖） |
 | 端口  | HTTP\_SERVER\_PORT           | 6523           | Extension 通信（运行时可被 config 覆盖） |
-| 鉴权  | LOCAL\_AUTH\_HEADER\_NAME    | X-MoeKoe-Token | HTTP 鉴权头；Token 由 `Config::GetAuthToken()` 从注册表读取（首次生成 UUID） |
+| 鉴权  | LOCAL\_AUTH\_HEADER\_NAME    | X-MoeKoe-Token | HTTP 鉴权头；Token 由 EXE 从注册表生成，经 Native Host 下发给扩展 |
 | 渲染  | MIN\_FRAME\_INTERVAL\_MS     | 15             | 最小帧间隔             |
 | 渲染  | DEFAULT\_REFRESH\_RATE\_HZ   | 60             | 默认刷新率             |
 | 尺寸  | LYRIC\_HEIGHT\_BASE\_DP      | 28             | 歌词高度(96DPI)       |
@@ -218,8 +218,8 @@ MoeKoeMusic-TaskbarLyrics/
   其余请求                    → X-MoeKoe-Token 缺失/不符 → 403（恒定时间比较）
                              → 通过 → 未匹配路由 → 404（set_error_handler）
   ```
-  `/ping` 与 `/seek/pending` 免鉴权是有意的：前者是 popup 在桥接链路失效时的探活回退，后者供 `file://` 页面里的 content script 轮询（拿不到注册表 token）。两者响应都不含敏感数据。
-- **鉴权 Token：** `Config::GetAuthToken()` 从注册表读取（首次自动生成 UUID）；检测到 fallback token 时 `Start()` 直接拒绝启动，避免鉴权形同虚设
+  `/ping` 与 `/seek/pending` 免鉴权是有意的：前者保留为通用存活探测端点（扩展不再调用），后者供 `file://` 页面里的 content script 轮询（拿不到注册表 token）。两者响应都不含敏感数据。
+- **鉴权 Token：** EXE 从注册表读取 UUID（首次生成），经 `getAuthToken` action 下发；扩展自生成值仅作独立运行回退。安全 token 不可用时 `Start()` 直接拒绝启动，不再回退到可预测的哈希值
 - **CORS：** 默认 `Allow-Origin: http://127.0.0.1:<实际端口>`；两个免鉴权 GET 放宽为 `*`
 - **端点：** 仅 `GET /ping`（存活探测）与 `GET /seek/pending`（读后即清的 seek 兜底）；历史 `/lyrics`、`/` 与 `/shutdown` 端点已移除，其余请求由 `set_error_handler` 返回 404
 - **生命周期：** `Stop()` 把工作线程所有权移出临界区后再 `join()`；`ServerLoop()` 内另起 stopper 线程反复 `svr.stop()` 直到 `listenDone`。这套设计修复了早期「持锁 join + 端口 connect 唤醒」造成的锁序反转死锁，见 5.4
@@ -363,7 +363,7 @@ struct RenderState {
 - **范围验证：** `std::clamp` 校验 opacity\[0,1], fontSize\[8,72], port\[1024,65535], refreshRate\[1,120], 频谱 dB / 频率范围
 - **配置路径：** `%APPDATA%/MoeKoeTaskbarLyrics/config.json`
 - **自启动：** 注册表 `HKCU\...\Run\MoeKoeTaskbarLyrics`
-- **鉴权 Token：** 首次启动生成 UUID 写入注册表，`GetAuthToken()` 读取
+- **鉴权 Token：** 首次启动用 RPC 随机源生成 UUID 写入注册表；EXE 为唯一权威，扩展通过 Native Host 同步
 
 ### 3.8 系统托盘模块
 
@@ -586,14 +586,14 @@ struct RenderState {
 
 | 方法 | 路径 | 鉴权 | 响应 | 说明 |
 | --- | --- | --- | --- | --- |
-| GET | `/ping` | 免 | `{"status":"ok","service":"MoeKoeTaskbarLyrics"}` | popup 在桥接链路失效时的存活探测回退 |
+| GET | `/ping` | 免 | `{"status":"ok","service":"MoeKoeTaskbarLyrics"}` | 存活探测端点（扩展不再调用） |
 | GET | `/seek/pending` | 免 | `{"pending":true,"position":..,"duration":..,"seq":..}` | seek 兜底轮询，**读后即清** |
 | OPTIONS | `*` | 免 | 204 No Content | CORS 预检 |
 | 其他 | — | 需要 | 404 `{"error":"not found"}` | 历史 `POST /lyrics`、`POST /`、`POST /shutdown` 已移除 |
 
-**鉴权头：** `X-MoeKoe-Token: <Config::GetAuthToken() 生成的注册表 UUID>`，恒定时间比较；缺失或不匹配均 403。若 Token 退化为内置 fallback 值，`HttpServer::Start()` 直接拒绝启动。
+**鉴权头：** `X-MoeKoe-Token: <Config::GetAuthToken() 生成的注册表 UUID>`，恒定时间比较；缺失或不匹配均 403。安全 token 无法生成时 `HttpServer::Start()` 直接拒绝启动，不再使用可预测兜底值。
 
-> 两个 GET 免鉴权是刻意的：它们只暴露布尔/数字，且要保证「扩展 SW 休眠、桥接页未重连、`file://` 页面拿不到注册表 token」时仍能工作。
+> 两个 GET 免鉴权是刻意的：它们只暴露布尔/数字，且要保证「扩展 SW 休眠、桥接页未重连、`file://` 页面拿不到注册表 token」时仍能工作。两者都有来源白名单：仅接受本机页面、`file://`（`Origin: null`）与扩展页面，外部站点返回 403。
 
 ### 4.3 字段格式
 
@@ -647,7 +647,7 @@ struct RenderState {
 | vcpkg | 由 `scripts\bootstrap.ps1` 准备 | **classic 模式**，按 triplet 装到 `installed\x64-windows` / `installed\arm64-windows`；`-VcpkgCommit <sha>` 可锁定全新 clone 的版本 |
 | Python | 3.x | 仅 `verify_package.py` / `pack_zip.py` 与 `build.cmd release all` 需要 |
 
-**依赖清单唯一来源：`vcpkg.json` 的 `dependencies`**（当前 5 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`）。`bootstrap.ps1` 不再手写包名；两个 PowerShell 脚本都 dot-source `scripts\vcpkg_contract.ps1`，由它读取 `vcpkg.json`，并持有**唯一一份**「CMake 实际会读的 12 个文件」清单——`bootstrap.ps1` 装完后的校验与 `check_build_env.ps1` 的只读自检都消费同一份定义。增删依赖只需改 `vcpkg.json` 一处；只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1` 的文件清单（文件路径无法从端口名推导，这一处无法消除）。
+**依赖清单唯一来源：`vcpkg.json` 的 `dependencies`**（当前 6 项：`ixwebsocket`、`nlohmann-json`、`zlib`、`mbedtls`、`kissfft`、`cpp-httplib`）。`bootstrap.ps1` 不再手写包名；两个 PowerShell 脚本都 dot-source `scripts\vcpkg_contract.ps1`，由它读取 `vcpkg.json`，并持有**唯一一份**「CMake 实际会读的 13 个文件」清单（含 `include\httplib.h`）——`bootstrap.ps1` 装完后的校验与 `check_build_env.ps1` 的只读自检都消费同一份定义。增删依赖只需改 `vcpkg.json` 一处；只有当新依赖会产出新的必需文件时，才需要同步 `vcpkg_contract.ps1` 的文件清单（文件路径无法从端口名推导，这一处无法消除）。
 
 `bootstrap.ps1` 的 `--classic` **必须保留**：脚本 cwd 就是含 `vcpkg.json` 的项目根，去掉它 vcpkg 会切到 manifest 模式、把包装进 `vcpkg_installed\`，而 `CMakeLists.txt` 的 `find_library` 不读该目录。将来若真的切 manifest 模式，必须先从 `vcpkg.json` 移除 `ixwebsocket`——`CMakeLists.txt` 已通过 `add_subdirectory(third_party/ixwebsocket)` 定义 `ixwebsocket::ixwebsocket` target，两者会重名冲突。
 
@@ -728,7 +728,7 @@ ctest --test-dir out\build\x64-Release -C Release --output-on-failure --timeout 
 
 ### 5.6 部署流程
 
-**托管模式（推荐）**：插件目录是 `%APPDATA%\moekoemusic\extensions`（**不是** `plugins/extensions/`）。把 `moeKoe-taskbar-lyrics` 整个目录放进去，使其下直接包含 `manifest.json`、`x64/`、`arm64/`；在插件管理页点击「本地程序授权」，重启 MoeKoeMusic。前置条件：MoeKoeMusic ≥ `manifest.json` 的 `minversion`（当前 1.6.6）、设置中开启 **API 模式**并重启。`auto_start: true` 使 EXE 随宿主自动启动/退出。
+**托管模式（推荐）**：插件目录是 `%APPDATA%\moekoemusic\extensions`（**不是** `plugins/extensions/`）。把 `moeKoe-taskbar-lyrics` 整个目录放进去，使其下直接包含 `manifest.json`、`x64/`、`arm64/`；在插件管理页点击「本地程序授权」，重启 MoeKoeMusic。前置条件：MoeKoeMusic ≥ `manifest.json` 的 `minversion`（当前 1.7.2）；API 端点由宿主自动下发，无需手动开启 API 模式。`auto_start: true` 使 EXE 随宿主自动启动/退出。
 
 **独立模式（回退）**：双击根目录 `MoeKoeTaskbarLyrics.exe`（Launcher）或架构子目录内的真实程序，托盘菜单控制全部功能；建议开启开机自启。
 
